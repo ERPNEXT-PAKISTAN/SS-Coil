@@ -1,9 +1,14 @@
+import html
 import re
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-from frappe.utils import strip_html_tags
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, nowdate, strip_html_tags
+
+try:
+	import pyqrcode
+except ImportError:  # pragma: no cover - optional runtime dependency
+	pyqrcode = None
 
 
 def _format_number(value):
@@ -30,6 +35,51 @@ def _format_dimension_part(value):
 
 def _has_field(doctype, fieldname):
 	return bool(frappe.get_meta(doctype).get_field(fieldname))
+
+
+PROCESS_FIELDS = ("slitter", "leveler", "reshearing")
+PROCESS_LABELS = {
+	"slitter": "Slitter",
+	"leveler": "Leveler",
+	"reshearing": "Reshearing",
+}
+
+
+def _clean_text(value):
+	return strip_html_tags(value or "").strip()
+
+
+def _truthy_process_value(value):
+	return str(value or "").strip()
+
+
+def _get_enabled_processes_from_row(row, custom=False):
+	processes = []
+	for fieldname in PROCESS_FIELDS:
+		source_field = f"custom_{fieldname}" if custom else fieldname
+		if _truthy_process_value(getattr(row, source_field, None)):
+			processes.append(fieldname)
+	return processes
+
+
+def _next_process_for(current_process, configured_processes):
+	if not current_process:
+		return configured_processes[0] if configured_processes else ""
+	current_key = str(current_process or "").strip().lower()
+	keys = [field for field in configured_processes]
+	if current_key in keys:
+		index = keys.index(current_key)
+		return keys[index + 1] if index + 1 < len(keys) else ""
+	for field in configured_processes:
+		if PROCESS_LABELS[field].lower() == current_key:
+			index = configured_processes.index(field)
+			return configured_processes[index + 1] if index + 1 < len(configured_processes) else ""
+	return ""
+
+
+def _label_for_process(process_name):
+	key = str(process_name or "").strip().lower()
+	return PROCESS_LABELS.get(key, process_name or "")
 
 
 def _first_unique(values):
@@ -878,6 +928,102 @@ def prepare_ss_coil_output_tags(doc, method=None):
 				root_tag_no=root_tag_no or row_parent_tag or row.tag_no,
 				status="Produced",
 			)
+
+
+def _update_sales_order_item_process_status(sales_order_item=None):
+	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
+		return
+	if not _has_field("Sales Order Item", "custom_status"):
+		return
+
+	rows = frappe.get_all(
+		"SS Coil",
+		filters={"sales_order_item": sales_order_item},
+		fields=["name", "docstatus"],
+		order_by="modified desc",
+	)
+
+	status = ""
+	if any(row.docstatus == 1 for row in rows):
+		status = "Completed"
+	elif any(row.docstatus == 0 for row in rows):
+		status = "In Process"
+	elif rows:
+		status = "Closed"
+
+	frappe.db.set_value("Sales Order Item", sales_order_item, "custom_status", status, update_modified=False)
+
+
+def _build_qr_payload(row, ss_coil_doc):
+	payload = {
+		"tag_no": row.get("tag_no"),
+		"item": row.get("class"),
+		"customer": row.get("customer") or ss_coil_doc.get("customer"),
+		"sales_order": ss_coil_doc.get("order_no"),
+		"stock_entry": ss_coil_doc.get("stock_entry"),
+		"current_process": row.get("current_process"),
+		"next_process": row.get("next_process"),
+		"next_process_date": row.get("next_process_date"),
+		"dimension": " x ".join(filter(None, [_format_dimension_part(row.get("thickness")), _format_dimension_part(row.get("width")), _format_dimension_part(row.get("length"))])),
+		"estimated_wt": _format_number(row.get("estimated_wt")) if row.get("estimated_wt") not in (None, "") else "",
+	}
+	return "\n".join(f"{key}: {value}" for key, value in payload.items() if value)
+
+
+def _build_qr_html(payload_text):
+	if not payload_text:
+		return ""
+	if pyqrcode:
+		qr = pyqrcode.create(payload_text, error="M")
+		svg = qr.svg_as_string(scale=3)
+		if hasattr(svg, "decode"):
+			svg = svg.decode()
+		return f'<div class="ss-coil-qr" style="padding:8px; background:#fff; border:1px solid #dbe4f0; border-radius:10px; display:inline-block;">{svg}</div>'
+	return (
+		'<div class="ss-coil-qr-fallback" style="padding:12px; border:1px dashed #8aa2c1; '
+		'border-radius:10px; font-size:11px; color:#243b53; white-space:pre-wrap; background:#fff;">'
+		f"{html.escape(payload_text)}</div>"
+	)
+
+
+@frappe.whitelist()
+def get_coil_output_qr_html(payload_text):
+	return _build_qr_html(payload_text)
+
+
+def sync_ss_coil_process_tracking(doc, method=None):
+	operation_value = _clean_text(getattr(doc, "operation", None))
+	current_process = _label_for_process(operation_value)
+
+	so_row = (doc.so_item or [None])[0]
+	input_row = (doc.input_coil or [None])[0]
+
+	configured_processes = []
+	if so_row:
+		configured_processes = _get_enabled_processes_from_row(so_row)
+	if not configured_processes and input_row:
+		configured_processes = _get_enabled_processes_from_row(input_row)
+
+	next_process = _next_process_for(operation_value, configured_processes)
+	next_process_label = _label_for_process(next_process)
+	next_process_date = nowdate() if next_process_label else ""
+
+	for row in doc.input_coil or []:
+		for fieldname in PROCESS_FIELDS:
+			if not getattr(row, fieldname, None) and so_row and getattr(so_row, fieldname, None):
+				setattr(row, fieldname, getattr(so_row, fieldname, None))
+		if not getattr(row, "next_process", None):
+			row.next_process = current_process or next_process_label
+
+	for row in doc.job_output or []:
+		row.current_process = current_process
+		row.next_process = next_process_label or ""
+		row.next_process_date = next_process_date
+		row.barcode = row.tag_no or ""
+		row.qr_code = _build_qr_html(_build_qr_payload(row, doc))
+
+	if getattr(doc, "sales_order_item", None):
+		_update_sales_order_item_process_status(doc.sales_order_item)
 
 
 @frappe.whitelist()

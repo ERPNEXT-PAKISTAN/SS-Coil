@@ -5,7 +5,7 @@ app_description = "Silver Sheet Coil"
 app_email = "taimoor986@gmail.com"
 app_license = "mit"
 app_logo_url = "/assets/ss_coil/images/ss-coil-logo.svg"
-app_home = "/app/ss-coil"
+app_home = "/app/ss-coil-space"
 
 fixtures = [
 	{
@@ -90,7 +90,20 @@ doc_events = {
 		"after_insert": "ss_coil.api.sync_sales_order_item_tag_registry",
 		"on_update": "ss_coil.api.sync_sales_order_item_tag_registry",
 	},
-	"SS Coil": {"before_validate": "ss_coil.api.prepare_ss_coil_output_tags", "before_save": "ss_coil.api.prepare_ss_coil_output_tags"},
+	"SS Coil": {
+		"before_validate": [
+			"ss_coil.api.prepare_ss_coil_output_tags",
+			"ss_coil.api.sync_ss_coil_process_tracking",
+		],
+		"before_save": [
+			"ss_coil.api.prepare_ss_coil_output_tags",
+			"ss_coil.api.sync_ss_coil_process_tracking",
+		],
+		"after_insert": "ss_coil.api.sync_ss_coil_process_tracking",
+		"on_update": "ss_coil.api.sync_ss_coil_process_tracking",
+		"on_submit": "ss_coil.api.sync_ss_coil_process_tracking",
+		"on_cancel": "ss_coil.api.sync_ss_coil_process_tracking",
+	},
 	"Stock Entry": {"before_validate": "ss_coil.api.prepare_stock_entry_links", "before_save": "ss_coil.api.prepare_stock_entry_links"},
 	"Delivery Note": {"before_validate": "ss_coil.api.assign_delivery_note_item_tags"},
 	"Sales Invoice": {"before_validate": "ss_coil.api.assign_sales_invoice_item_tags"},

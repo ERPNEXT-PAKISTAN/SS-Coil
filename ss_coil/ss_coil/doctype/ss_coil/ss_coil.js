@@ -35,6 +35,9 @@ frappe.ui.form.on("SS Coil", {
 		update_remaining_width(frm);
 		update_input_coil_length(frm);
 	},
+	operation(frm) {
+		sync_process_preview(frm);
+	},
 	estimated_wt(frm) {
 		update_calc_ratio(frm);
 	},
@@ -48,9 +51,11 @@ frappe.ui.form.on("SS Coil", {
 		update_grand_totals(frm);
 	},
 	job_output_add(frm) {
+		sync_process_preview(frm);
 		update_grand_totals(frm);
 	},
 	job_output_remove(frm) {
+		sync_process_preview(frm);
 		update_grand_totals(frm);
 	},
 	order_no(frm) {
@@ -245,6 +250,7 @@ frappe.ui.form.on("SS Coil", {
 				});
 
 				update_input_coil_length(frm, row);
+				sync_process_preview(frm);
 				frm.refresh_field("input_coil");
 			},
 		});
@@ -310,6 +316,15 @@ frappe.ui.form.on("Cutting Scheme", {
 frappe.ui.form.on("Coil Output", {
 	estimated_wt(frm) {
 		update_grand_totals(frm);
+	},
+	tag_no(frm) {
+		sync_process_preview(frm);
+	},
+	class(frm) {
+		sync_process_preview(frm);
+	},
+	job_output_form_render(frm) {
+		sync_process_preview(frm);
 	},
 });
 
@@ -384,6 +399,84 @@ function update_input_coil_length(frm, target_row = null) {
 	});
 
 	frm.refresh_field("input_coil");
+}
+
+function sync_process_preview(frm) {
+	const currentProcess = formatProcessLabel(frm.doc.operation);
+	const configuredProcesses = getConfiguredProcesses(frm);
+	const nextProcessKey = getNextProcessKey(frm.doc.operation, configuredProcesses);
+	const nextProcess = formatProcessLabel(nextProcessKey);
+	const today = frappe.datetime ? frappe.datetime.get_today() : "";
+
+	(frm.doc.input_coil || []).forEach((row) => {
+		if (!row.next_process) {
+			row.next_process = currentProcess || nextProcess;
+		}
+	});
+
+	(frm.doc.job_output || []).forEach((row) => {
+		row.current_process = currentProcess;
+		row.next_process = nextProcess;
+		row.next_process_date = nextProcess ? today : "";
+		row.barcode = row.tag_no || "";
+		row.qr_code = buildOutputQrHtml(frm, row);
+	});
+
+	frm.refresh_field("input_coil");
+	frm.refresh_field("job_output");
+}
+
+function getConfiguredProcesses(frm) {
+	const row = (frm.doc.so_item || [])[0] || (frm.doc.input_coil || [])[0] || {};
+	return ["slitter", "leveler", "reshearing"].filter((fieldname) => Boolean(row[fieldname]));
+}
+
+function getNextProcessKey(currentProcess, configuredProcesses) {
+	if (!configuredProcesses.length) return "";
+	if (!currentProcess) return configuredProcesses[0];
+
+	const normalized = String(currentProcess || "").trim().toLowerCase();
+	const labels = {
+		slitter: "slitter",
+		leveler: "leveler",
+		reshearing: "reshearing",
+	};
+	const currentKey = labels[normalized] || normalized;
+	const index = configuredProcesses.indexOf(currentKey);
+	return index >= 0 && index + 1 < configuredProcesses.length ? configuredProcesses[index + 1] : "";
+}
+
+function formatProcessLabel(processName) {
+	const labelMap = {
+		slitter: "Slitter",
+		leveler: "Leveler",
+		reshearing: "Reshearing",
+	};
+	const key = String(processName || "").trim().toLowerCase();
+	return labelMap[key] || processName || "";
+}
+
+function buildOutputQrHtml(frm, row) {
+	const parts = [
+		["Tag No", row.tag_no],
+		["Item", row.class],
+		["Customer", row.customer || frm.doc.customer],
+		["Sales Order", frm.doc.order_no],
+		["Stock Entry", frm.doc.stock_entry],
+		["Current Process", row.current_process],
+		["Next Process", row.next_process],
+		["Next Process Date", row.next_process_date],
+		["Dimension", [row.thickness, row.width, row.length].filter((value) => value !== undefined && value !== null && value !== "").join(" x ")],
+		["Estimated WT", row.estimated_wt],
+	].filter((entry) => entry[1]);
+
+	if (!parts.length) return "";
+
+	return `
+		<div style="background:#fff;border:1px solid #d7e3f4;border-radius:10px;padding:10px;line-height:1.55;font-size:11px;color:#16324f;">
+			${parts.map(([label, value]) => `<div><b>${frappe.utils.escape_html(label)}:</b> ${frappe.utils.escape_html(String(value))}</div>`).join("")}
+		</div>
+	`;
 }
 
 function load_cutting_scheme_from_so_item(frm, rows) {

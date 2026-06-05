@@ -69,7 +69,7 @@ This app keeps customizations in the app itself so they can be deployed cleanly 
 - Sales Order dashboard with multiple operational sections
 - Tag Registry Trace report
 - Tag Trace print format
-- SS Coil workspace for ERPNext v16
+- SS Coil Space workspace for ERPNext v16
 
 ---
 
@@ -96,7 +96,7 @@ This app currently includes:
   - `Server Script`
 
 - Workspace:
-  - `SS Coil`
+  - `SS Coil Space`
 
 - Report:
   - `Tag Registry Trace`
@@ -108,49 +108,32 @@ This app currently includes:
 
 ## Screenshots
 
-### Workspace
-
-![SS Coil Workspace](docs/screenshots/coil1.avif)
-
-### Sales Order Dashboard
-
-![Sales Order Dashboard](docs/screenshots/coil2.avif)
-
-### SS Coil Operations
-
-![SS Coil Operations](docs/screenshots/coil3.avif)
-
-### Cutting Scheme and Planning
-
-![Cutting Scheme and Planning](docs/screenshots/coil4.avif)
-
-### Production and Output Tracking
-
-![Production and Output Tracking](docs/screenshots/coil5.avif)
-
-### Tag Registry and Traceability
-
-![Tag Registry and Traceability](docs/screenshots/coil6.avif)
-
-### Stock and Dispatch Flow
-
-![Stock and Dispatch Flow](docs/screenshots/coil7.jpeg)
-
-### Purchase and Inward Tracking
-
-![Purchase and Inward Tracking](docs/screenshots/coil8.jpeg)
-
-### Packing and Reporting
-
-![Packing and Reporting](docs/screenshots/coil9.jpeg)
-
-### Extended Dashboard Views
-
-![Extended Dashboard Views](docs/screenshots/coil10.jpg)
-
-### Additional Operational Screen
-
-![Additional Operational Screen](docs/screenshots/coil11.jpeg)
+<table>
+  <tr>
+    <td align="center"><b>Workspace</b><br><img src="docs/screenshots/coil1.avif" alt="SS Coil Workspace" width="100%"></td>
+    <td align="center"><b>Sales Order Dashboard</b><br><img src="docs/screenshots/coil2.avif" alt="Sales Order Dashboard" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>SS Coil Operations</b><br><img src="docs/screenshots/coil3.avif" alt="SS Coil Operations" width="100%"></td>
+    <td align="center"><b>Cutting Scheme and Planning</b><br><img src="docs/screenshots/coil4.avif" alt="Cutting Scheme and Planning" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Production and Output Tracking</b><br><img src="docs/screenshots/coil5.avif" alt="Production and Output Tracking" width="100%"></td>
+    <td align="center"><b>Tag Registry and Traceability</b><br><img src="docs/screenshots/coil6.avif" alt="Tag Registry and Traceability" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Stock and Dispatch Flow</b><br><img src="docs/screenshots/coil7.jpeg" alt="Stock and Dispatch Flow" width="100%"></td>
+    <td align="center"><b>Purchase and Inward Tracking</b><br><img src="docs/screenshots/coil8.jpeg" alt="Purchase and Inward Tracking" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Packing and Reporting</b><br><img src="docs/screenshots/coil9.jpeg" alt="Packing and Reporting" width="100%"></td>
+    <td align="center"><b>Extended Dashboard Views</b><br><img src="docs/screenshots/coil10.jpg" alt="Extended Dashboard Views" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Additional Operational Screen</b><br><img src="docs/screenshots/coil11.jpeg" alt="Additional Operational Screen" width="100%"></td>
+    <td align="center"><b>Additional Reference</b><br><img src="docs/screenshots/nut1.avif" alt="Additional Reference" width="100%"></td>
+  </tr>
+</table>
 
 ---
 
@@ -250,7 +233,7 @@ cd /home/frappe/frappe-bench/apps/ss_coil && git pull origin main && cd /home/fr
 
 After installation, open:
 
-- `/app/ss-coil`
+- `/app/ss-coil-space`
 - or search `SS Coil` from the Awesome Bar
 
 The workspace includes quick access to:
@@ -305,7 +288,7 @@ For another server:
 2. Run migration
 3. Build assets
 4. Clear cache
-5. Open `SS Coil` workspace
+5. Open `SS Coil Space` workspace
 
 Commands:
 

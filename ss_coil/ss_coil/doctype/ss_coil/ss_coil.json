@@ -1,0 +1,485 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:JS{YY}-.{#####}.-SL",
+ "creation": "2026-05-20 21:31:08.131515",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "job_sheet",
+  "operation",
+  "column_break_ywpb",
+  "column_break_ijei",
+  "section_break_qyjw",
+  "order_received_date",
+  "sc_date",
+  "column_break_twvh",
+  "job_sheet_no",
+  "order_no",
+  "column_break_wmcx",
+  "sales_order_item",
+  "column_break_bgis",
+  "customer_name",
+  "for_customer",
+  "section_break_mbrg",
+  "so_item",
+  "section_break_fkea",
+  "cutting_scheme",
+  "section_break_xqer",
+  "machine",
+  "column_break_kqkz",
+  "calc_ratio",
+  "column_break_etcy",
+  "calc_ratio_2",
+  "column_break_twrr",
+  "actual_ratio",
+  "column_break_rtqo",
+  "remaining_width",
+  "section_break_ajao",
+  "cutting_detail",
+  "grand_total_width",
+  "section_break_wqal",
+  "special_instructions",
+  "column_break_lnsp",
+  "remarks",
+  "section_break_ezfe",
+  "input",
+  "column_break_fuog",
+  "stock_entry",
+  "column_break_pmky",
+  "stock_entry_items",
+  "section_break_lmaa",
+  "thickness",
+  "section_break_qasa",
+  "width",
+  "column_break_cwla",
+  "ds",
+  "column_break_afmq",
+  "ctr",
+  "column_break_evbq",
+  "ws",
+  "column_break_slet",
+  "section_break_zbvk",
+  "mill",
+  "column_break_ajyx",
+  "specifications",
+  "column_break_kbpk",
+  "commodity",
+  "column_break_yzap",
+  "works",
+  "mother_coil_detail_section",
+  "input_coil",
+  "section_break_gydh",
+  "output",
+  "section_break_znud",
+  "job_output",
+  "grand_estimated_wt",
+  "section_break_ifey",
+  "planning",
+  "column_break_aovo",
+  "sales",
+  "column_break_titn",
+  "produciton",
+  "column_break_ueot",
+  "encoded_by"
+ ],
+ "fields": [
+  {
+   "fieldname": "job_sheet",
+   "fieldtype": "Heading",
+   "label": "Job Sheet"
+  },
+  {
+   "fieldname": "operation",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Operation",
+   "options": "Operation",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_ywpb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_ijei",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_qyjw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "order_received_date",
+   "fieldtype": "Date",
+   "label": "Order Received Date"
+  },
+  {
+   "default": "Today",
+   "fieldname": "sc_date",
+   "fieldtype": "Date",
+   "label": "SC Date"
+  },
+  {
+   "fieldname": "column_break_twvh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "job_sheet_no",
+   "fieldtype": "Data",
+   "label": "Job Sheet No"
+  },
+  {
+   "fieldname": "order_no",
+   "fieldtype": "Link",
+   "label": "Order No",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "sales_order_item",
+   "fieldtype": "Link",
+   "label": "Sales Order Item",
+   "options": "Sales Order Item"
+  },
+  {
+   "fieldname": "column_break_wmcx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_bgis",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "order_no.customer",
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name"
+  },
+  {
+   "fetch_from": "order_no.custom_for_customer",
+   "fieldname": "for_customer",
+   "fieldtype": "Data",
+   "label": "For Customer"
+  },
+  {
+   "fieldname": "section_break_mbrg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "so_item",
+   "fieldtype": "Table",
+   "label": "SO item",
+   "options": "Coil SO"
+  },
+  {
+   "fieldname": "section_break_fkea",
+   "fieldtype": "Section Break"
+  },
+  {
+   "bold": 1,
+   "button_color": "Warning",
+   "fieldname": "cutting_scheme",
+   "fieldtype": "Button",
+   "label": "Cutting Scheme"
+  },
+  {
+   "fieldname": "section_break_xqer",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "machine",
+   "fieldtype": "Link",
+   "label": "Machine",
+   "options": "Workstation"
+  },
+  {
+   "fieldname": "column_break_kqkz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "calc_ratio",
+   "fieldtype": "Float",
+   "label": "Calc Ratio"
+  },
+  {
+   "fieldname": "column_break_etcy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "calc_ratio_2",
+   "fieldtype": "Float",
+   "label": "Calc Ratio 2"
+  },
+  {
+   "fieldname": "column_break_twrr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "actual_ratio",
+   "fieldtype": "Float",
+   "label": "Actual Ratio"
+  },
+  {
+   "fieldname": "column_break_rtqo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "remaining_width",
+   "fieldtype": "Float",
+   "label": "Remaining Width"
+  },
+  {
+   "fieldname": "section_break_ajao",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "cutting_detail",
+   "fieldtype": "Table",
+   "label": "Cutting Detail",
+   "options": "Cutting Scheme"
+  },
+  {
+   "fieldname": "section_break_ezfe",
+   "fieldtype": "Section Break"
+  },
+  {
+   "button_color": "Info",
+   "fieldname": "input",
+   "fieldtype": "Button",
+   "label": "INPUT"
+  },
+  {
+   "fieldname": "section_break_wqal",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "special_instructions",
+   "fieldtype": "Small Text",
+   "label": "Special Instructions"
+  },
+  {
+   "fieldname": "column_break_lnsp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "section_break_lmaa",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "thickness",
+   "fieldtype": "Heading",
+   "label": "Thickness"
+  },
+  {
+   "fieldname": "section_break_qasa",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "label": "Width"
+  },
+  {
+   "fieldname": "column_break_cwla",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ds",
+   "fieldtype": "Float",
+   "label": "DS"
+  },
+  {
+   "fieldname": "column_break_afmq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ctr",
+   "fieldtype": "Float",
+   "label": "CTR"
+  },
+  {
+   "fieldname": "column_break_evbq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ws",
+   "fieldtype": "Float",
+   "label": "WS"
+  },
+  {
+   "fieldname": "column_break_slet",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_zbvk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "mill",
+   "fieldtype": "Data",
+   "label": "Mill"
+  },
+  {
+   "fieldname": "commodity",
+   "fieldtype": "Data",
+   "label": "Commodity"
+  },
+  {
+   "fieldname": "column_break_ajyx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "specifications",
+   "fieldtype": "Data",
+   "label": "Specifications"
+  },
+  {
+   "fieldname": "works",
+   "fieldtype": "Data",
+   "label": "Works"
+  },
+  {
+   "fieldname": "column_break_kbpk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mother_coil_detail_section",
+   "fieldtype": "Section Break",
+   "label": "Mother Coil Detail"
+  },
+  {
+   "fieldname": "section_break_gydh",
+   "fieldtype": "Section Break"
+  },
+  {
+   "button_color": "Info",
+   "fieldname": "output",
+   "fieldtype": "Button",
+   "label": "OUTPUT"
+  },
+  {
+   "fieldname": "section_break_znud",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "job_output",
+   "fieldtype": "Table",
+   "label": "Job Output",
+   "options": "Coil Output"
+  },
+  {
+   "fieldname": "section_break_ifey",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "planning",
+   "fieldtype": "Link",
+   "label": "Planning",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "column_break_aovo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales",
+   "fieldtype": "Link",
+   "label": "Sales",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "column_break_titn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "produciton",
+   "fieldtype": "Link",
+   "label": "Produciton",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "column_break_ueot",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "encoded_by",
+   "fieldtype": "Link",
+   "label": "Encoded By",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "grand_total_width",
+   "fieldtype": "Float",
+   "label": "Grand Total Width"
+  },
+  {
+   "fieldname": "grand_estimated_wt",
+   "fieldtype": "Float",
+   "label": "Grand Estimated WT"
+  },
+  {
+   "fieldname": "column_break_yzap",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "input_coil",
+   "fieldtype": "Table",
+   "label": "Input Coil",
+   "options": "Coil Input"
+  },
+  {
+   "fieldname": "column_break_fuog",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry"
+  },
+  {
+   "fieldname": "column_break_pmky",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "stock_entry_items",
+   "fieldtype": "Link",
+   "label": "Stock Entry Items",
+   "options": "Stock Entry Detail"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 02:00:39.038287",
+ "modified_by": "Administrator",
+ "module": "SS Coil",
+ "name": "SS Coil",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,157 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-20 00:26:25.482659",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "class",
+  "tag_no",
+  "column_break_acsa",
+  "estimated_qty",
+  "actual_qty",
+  "column_break_gchw",
+  "estimated_wt",
+  "actual_wt",
+  "column_break_fjzf",
+  "thickness",
+  "width",
+  "customer",
+  "column_break_bdgq",
+  "length",
+  "next_process",
+  "packing",
+  "section_break_abav",
+  "barcode",
+  "column_break_lori",
+  "qr_code"
+ ],
+ "fields": [
+  {
+   "fieldname": "class",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Class"
+  },
+  {
+   "fieldname": "estimated_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Estimated Qty"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "column_break_acsa",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "tag_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tag No"
+  },
+  {
+   "fieldname": "actual_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Actual Qty"
+  },
+  {
+   "fieldname": "packing",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Packing"
+  },
+  {
+   "fieldname": "column_break_fjzf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "thickness",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness",
+   "precision": "2"
+  },
+  {
+   "fieldname": "estimated_wt",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Estimated WT"
+  },
+  {
+   "fieldname": "column_break_gchw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Width"
+  },
+  {
+   "fieldname": "actual_wt",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Actual WT"
+  },
+  {
+   "fieldname": "column_break_bdgq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "length",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length"
+  },
+  {
+   "fieldname": "next_process",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Next Process",
+   "options": "Operation"
+  },
+  {
+   "fieldname": "section_break_abav",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Barcode",
+   "in_list_view": 1,
+   "label": "Barcode"
+  },
+  {
+   "fieldname": "column_break_lori",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qr_code",
+   "fieldtype": "HTML",
+   "label": "QR Code"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-21 00:43:48.781679",
+ "modified_by": "techcraft986@gmail.com",
+ "module": "SS Coil",
+ "name": "Coil Output",
+ "owner": "techcraft986@gmail.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

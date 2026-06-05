@@ -1,0 +1,132 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-03 00:41:31.801621",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "class",
+  "tag_no",
+  "dimension",
+  "length",
+  "column_break_oofc",
+  "estimated_qty",
+  "estimated_wt",
+  "column_break_hxea",
+  "actual_qty",
+  "actual_wt",
+  "column_break_elvl",
+  "previous_job_order",
+  "location",
+  "processed_date"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "fieldname": "class",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Class"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "tag_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tag No"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "processed_date",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Processed Date"
+  },
+  {
+   "fieldname": "column_break_oofc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "dimension",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Dimension"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "estimated_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Estimated Qty"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "estimated_wt",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Estimated WT"
+  },
+  {
+   "fieldname": "column_break_hxea",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "actual_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Actual Qty"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "actual_wt",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Actual WT"
+  },
+  {
+   "fieldname": "column_break_elvl",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "previous_job_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Previous Job Order",
+   "options": "Operation"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Location"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "length",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length",
+   "precision": "2"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-03 02:20:37.317133",
+ "modified_by": "Administrator",
+ "module": "SS Coil",
+ "name": "Coil Input",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

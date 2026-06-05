@@ -1,0 +1,197 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:tag_no",
+ "creation": "2026-06-05 18:05:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "tag_no",
+  "status",
+  "issued_on",
+  "section_break_1",
+  "item_code",
+  "column_break_1",
+  "item_name",
+  "column_break_2",
+  "sales_order",
+  "stock_entry",
+  "parent_tag_no",
+  "root_tag_no",
+  "section_break_2",
+  "source_doctype",
+  "source_docname",
+  "column_break_3",
+  "source_child_doctype",
+  "source_child_name",
+  "section_break_3",
+  "current_doctype",
+  "current_docname",
+  "column_break_4",
+  "current_child_doctype",
+  "current_child_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "tag_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tag No",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nProduced\nDelivered\nInvoiced\nCancelled"
+  },
+  {
+   "default": "Now",
+   "fieldname": "issued_on",
+   "fieldtype": "Datetime",
+   "label": "Issued On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Code"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry"
+  },
+  {
+   "fieldname": "parent_tag_no",
+   "fieldtype": "Data",
+   "label": "Parent Tag No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "root_tag_no",
+   "fieldtype": "Data",
+   "label": "Root Tag No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_2",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "source_doctype",
+   "fieldtype": "Data",
+   "label": "Source Doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_docname",
+   "fieldtype": "Data",
+   "label": "Source Document",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source_child_doctype",
+   "fieldtype": "Data",
+   "label": "Source Child Doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_child_name",
+   "fieldtype": "Data",
+   "label": "Source Child Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_3",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "current_doctype",
+   "fieldtype": "Data",
+   "label": "Current Doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_docname",
+   "fieldtype": "Data",
+   "label": "Current Document",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "current_child_doctype",
+   "fieldtype": "Data",
+   "label": "Current Child Doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_child_name",
+   "fieldtype": "Data",
+   "label": "Current Child Name",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-05 18:05:00.000000",
+ "modified_by": "Administrator",
+ "module": "SS Coil",
+ "name": "Tag Registry",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "tag_no,sales_order,item_code,item_name,parent_tag_no,root_tag_no,source_docname,current_docname",
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

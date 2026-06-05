@@ -1,0 +1,51 @@
+{% set children = frappe.get_all("Tag Registry", filters={"parent_tag_no": doc.tag_no}, fields=["tag_no", "status", "item_code", "item_name", "current_doctype", "current_docname", "issued_on"], order_by="tag_no asc") %}
+<div style="font-family: Inter, Arial, sans-serif; color:#102a43;">
+  <div style="background:linear-gradient(135deg,#16324f 0%,#1f56d2 100%); color:#fff; border-radius:18px; padding:22px 24px; margin-bottom:18px;">
+    <div style="font-size:12px; text-transform:uppercase; letter-spacing:.08em; opacity:.82;">Tag Trace</div>
+    <div style="font-size:28px; font-weight:800; margin-top:8px;">{{ doc.tag_no }}</div>
+    <div style="font-size:13px; margin-top:8px; opacity:.9;">Status: {{ doc.status or '-' }} | Root: {{ doc.root_tag_no or doc.tag_no }} | Parent: {{ doc.parent_tag_no or '-' }}</div>
+  </div>
+
+  <table style="width:100%; border-collapse:collapse; margin-bottom:18px;">
+    <tr>
+      <td style="width:50%; padding:10px; border:1px solid #dbe5f1;"><b>Sales Order</b><br>{{ doc.sales_order or '-' }}</td>
+      <td style="width:50%; padding:10px; border:1px solid #dbe5f1;"><b>Stock Entry</b><br>{{ doc.stock_entry or '-' }}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px; border:1px solid #dbe5f1;"><b>Source</b><br>{{ doc.source_doctype or '-' }} / {{ doc.source_docname or '-' }}</td>
+      <td style="padding:10px; border:1px solid #dbe5f1;"><b>Current</b><br>{{ doc.current_doctype or '-' }} / {{ doc.current_docname or '-' }}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px; border:1px solid #dbe5f1;"><b>Item Code</b><br>{{ doc.item_code or '-' }}</td>
+      <td style="padding:10px; border:1px solid #dbe5f1;"><b>Item Name</b><br>{{ doc.item_name or '-' }}</td>
+    </tr>
+  </table>
+
+  <h3 style="margin: 0 0 10px 0;">Produced Child Tags</h3>
+  <table style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr style="background:#eef4fb;">
+        <th style="padding:10px; border:1px solid #dbe5f1; text-align:left;">Tag No</th>
+        <th style="padding:10px; border:1px solid #dbe5f1; text-align:left;">Status</th>
+        <th style="padding:10px; border:1px solid #dbe5f1; text-align:left;">Item</th>
+        <th style="padding:10px; border:1px solid #dbe5f1; text-align:left;">Current Document</th>
+        <th style="padding:10px; border:1px solid #dbe5f1; text-align:left;">Issued On</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if children %}
+        {% for row in children %}
+        <tr>
+          <td style="padding:10px; border:1px solid #dbe5f1;">{{ row.tag_no }}</td>
+          <td style="padding:10px; border:1px solid #dbe5f1;">{{ row.status or '-' }}</td>
+          <td style="padding:10px; border:1px solid #dbe5f1;">{{ row.item_code or '-' }}{% if row.item_name %}<br><span style="color:#64748b;">{{ row.item_name }}</span>{% endif %}</td>
+          <td style="padding:10px; border:1px solid #dbe5f1;">{{ row.current_doctype or '-' }} / {{ row.current_docname or '-' }}</td>
+          <td style="padding:10px; border:1px solid #dbe5f1;">{{ row.issued_on or '-' }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="5" style="padding:10px; border:1px solid #dbe5f1; text-align:center; color:#64748b;">No child tags recorded for this tag.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

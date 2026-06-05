@@ -4,6 +4,27 @@ app_publisher = "Taimoor"
 app_description = "Silver Sheet Coil"
 app_email = "taimoor986@gmail.com"
 app_license = "mit"
+app_logo_url = "/assets/ss_coil/images/ss-coil-logo.svg"
+app_home = "/app/ss-coil"
+
+fixtures = [
+	{
+		"dt": "Custom Field",
+		"filters": [["dt", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Sales Order Item", "Stock Entry", "Stock Entry Detail", "Delivery Note Item", "Sales Invoice Item", "Purchase Receipt Item", "Purchase Invoice Item", "Expense Claim", "Journal Entry", "Payment Entry", "Purchase Order", "Purchase Receipt", "Purchase Invoice"]]],
+	},
+	{
+		"dt": "Property Setter",
+		"filters": [["doc_type", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Sales Order Item", "Stock Entry", "Stock Entry Detail", "Delivery Note Item", "Sales Invoice Item", "Purchase Receipt Item", "Purchase Invoice Item", "Expense Claim", "Journal Entry", "Payment Entry", "Purchase Order", "Purchase Receipt", "Purchase Invoice"]]],
+	},
+	{
+		"dt": "Client Script",
+		"filters": [["dt", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Stock Entry"]]],
+	},
+	{
+		"dt": "Server Script",
+		"filters": [["reference_doctype", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Stock Entry", "Stock Entry Detail"]]],
+	},
+]
 
 # Apps
 # ------------------
@@ -11,15 +32,14 @@ app_license = "mit"
 # required_apps = []
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "ss_coil",
-# 		"logo": "/assets/ss_coil/logo.png",
-# 		"title": "SS Coil",
-# 		"route": "/ss_coil",
-# 		"has_permission": "ss_coil.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "ss_coil",
+		"logo": app_logo_url,
+		"title": app_title,
+		"route": app_home,
+	}
+]
 
 # Includes in <head>
 # ------------------
@@ -43,7 +63,44 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Sales Order": "public/js/sales_order.js",
+	"Stock Entry": "public/js/stock_entry.js",
+	"Delivery Note": "public/js/delivery_note.js",
+	"Sales Invoice": "public/js/sales_invoice.js",
+	"Purchase Receipt": "public/js/purchase_receipt.js",
+	"Purchase Invoice": "public/js/purchase_invoice.js",
+	"Tag Registry": "ss_coil/doctype/tag_registry/tag_registry.js",
+}
+
+doctype_list_js = {
+	"Tag Registry": "public/js/tag_registry_list.js",
+}
+
+doc_events = {
+	"Sales Order": {
+		"before_validate": [
+			"ss_coil.api.sync_sales_order_item_dimensions",
+			"ss_coil.api.assign_sales_order_item_tags",
+		],
+		"before_save": [
+			"ss_coil.api.sync_sales_order_item_dimensions",
+			"ss_coil.api.assign_sales_order_item_tags",
+		],
+		"after_insert": "ss_coil.api.sync_sales_order_item_tag_registry",
+		"on_update": "ss_coil.api.sync_sales_order_item_tag_registry",
+	},
+	"SS Coil": {"before_validate": "ss_coil.api.prepare_ss_coil_output_tags", "before_save": "ss_coil.api.prepare_ss_coil_output_tags"},
+	"Stock Entry": {"before_validate": "ss_coil.api.prepare_stock_entry_links", "before_save": "ss_coil.api.prepare_stock_entry_links"},
+	"Delivery Note": {"before_validate": "ss_coil.api.assign_delivery_note_item_tags"},
+	"Sales Invoice": {"before_validate": "ss_coil.api.assign_sales_invoice_item_tags"},
+	"Expense Claim": {"before_validate": "ss_coil.api.populate_custom_sales_order", "before_save": "ss_coil.api.populate_custom_sales_order"},
+	"Journal Entry": {"before_validate": "ss_coil.api.populate_custom_sales_order", "before_save": "ss_coil.api.populate_custom_sales_order"},
+	"Payment Entry": {"before_validate": "ss_coil.api.populate_custom_sales_order", "before_save": "ss_coil.api.populate_custom_sales_order"},
+	"Purchase Order": {"before_validate": "ss_coil.api.populate_custom_sales_order", "before_save": "ss_coil.api.populate_custom_sales_order"},
+	"Purchase Receipt": {"before_validate": "ss_coil.api.prepare_purchase_receipt_links", "before_save": "ss_coil.api.prepare_purchase_receipt_links"},
+	"Purchase Invoice": {"before_validate": "ss_coil.api.prepare_purchase_invoice_links", "before_save": "ss_coil.api.prepare_purchase_invoice_links"},
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -255,4 +312,3 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

@@ -1,0 +1,73 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-06-05 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order",
+  "column_break_gqms",
+  "sales_order_item",
+  "section_break_qclz",
+  "cutting_scheme"
+ ],
+ "fields": [
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_gqms",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_order_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Order Item",
+   "options": "Sales Order Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_qclz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "cutting_scheme",
+   "fieldtype": "Table",
+   "label": "Cutting Scheme",
+   "options": "Cutting Scheme SO"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-05 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "SS Coil",
+ "name": "SO Production Plan",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

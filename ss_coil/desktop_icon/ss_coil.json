@@ -1,0 +1,21 @@
+{
+ "app": "ss_coil",
+ "bg_color": "gray",
+ "creation": "2026-06-05 21:05:35.253647",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon_type": "App",
+ "idx": 0,
+ "label": "SS Coil",
+ "link": "/app/ss-coil",
+ "link_type": "External",
+ "logo_url": "/assets/ss_coil/images/ss-coil-logo.svg",
+ "modified": "2026-06-05 21:05:35.253647",
+ "modified_by": "Administrator",
+ "name": "SS Coil",
+ "owner": "Administrator",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}

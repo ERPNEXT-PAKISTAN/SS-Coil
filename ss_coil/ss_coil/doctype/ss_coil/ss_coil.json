@@ -10,6 +10,7 @@
   "operation",
   "column_break_ywpb",
   "column_break_ijei",
+  "order_status",
   "section_break_qyjw",
   "order_received_date",
   "sc_date",
@@ -81,7 +82,9 @@
   "column_break_titn",
   "produciton",
   "column_break_ueot",
-  "encoded_by"
+  "encoded_by",
+  "dashboard_tab",
+  "order_status_report"
  ],
  "fields": [
   {
@@ -452,12 +455,28 @@
    "fieldtype": "Link",
    "label": "Stock Entry Items",
    "options": "Stock Entry Detail"
+  },
+  {
+   "fieldname": "order_status",
+   "fieldtype": "Select",
+   "label": "Order Status",
+   "options": "In Process\nNot Started\nCompleted\nPartially Completed\nClosed"
+  },
+  {
+   "fieldname": "dashboard_tab",
+   "fieldtype": "Tab Break",
+   "label": "Dashboard"
+  },
+  {
+   "fieldname": "order_status_report",
+   "fieldtype": "HTML",
+   "label": "Order Status Report"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 02:00:39.038287",
+ "modified": "2026-06-06 23:51:22.879498",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil",

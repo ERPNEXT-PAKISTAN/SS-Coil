@@ -1,9 +1,12 @@
 import html
 import re
+from io import BytesIO
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-from frappe.utils import cint, flt, nowdate, strip_html_tags
+from frappe.utils import cint, flt, now_datetime, nowdate, strip_html_tags
+from barcode import Code128
+from barcode.writer import SVGWriter
 
 try:
 	import pyqrcode
@@ -250,6 +253,14 @@ def _parse_tag_number(tag_no):
 	}
 
 
+def _strip_svg_preamble(svg):
+	if not svg:
+		return ""
+	svg = re.sub(r"<\?xml[^>]*\?>\s*", "", str(svg), flags=re.IGNORECASE)
+	svg = re.sub(r"<!DOCTYPE[^>]*>\s*", "", svg, flags=re.IGNORECASE)
+	return svg.strip()
+
+
 def _is_managed_tag(tag_no, settings=None):
 	settings = settings or _tag_settings()
 	parsed = _parse_tag_number(tag_no)
@@ -412,10 +423,14 @@ def _root_tag_for(tag_no):
 
 
 def _next_sub_tag(parent_tag_no):
-	parsed = _parse_tag_number(parent_tag_no)
-	if not parsed:
+	if not parent_tag_no:
 		return None
-	base = f"{parsed['prefix']}-{parsed['number']:0{cint(_tag_settings()['digits'])}d}"
+	parent_tag = str(parent_tag_no).strip()
+	settings = _tag_settings()
+	base = parent_tag
+	suffix = settings.get("suffix") or "-000"
+	if suffix and parent_tag.endswith(suffix):
+		base = parent_tag[: -len(suffix)]
 	existing = frappe.get_all(
 		"Tag Registry",
 		filters={"parent_tag_no": parent_tag_no},
@@ -423,11 +438,16 @@ def _next_sub_tag(parent_tag_no):
 	) if frappe.db.exists("DocType", "Tag Registry") else []
 	used = set()
 	for tag_no in existing:
-		child = _parse_tag_number(tag_no)
-		if child and child["prefix"] == parsed["prefix"] and child["number"] == parsed["number"]:
-			suffix = (child["suffix"] or "").lstrip("-")
-			if suffix.isdigit():
-				used.add(cint(suffix))
+		if not tag_no:
+			continue
+		tag_text = str(tag_no).strip()
+		if tag_text == parent_tag:
+			continue
+		if not tag_text.startswith(f"{base}-"):
+			continue
+		last_segment = tag_text.rsplit("-", 1)[-1]
+		if last_segment.isdigit():
+			used.add(cint(last_segment))
 	idx = 1
 	while idx in used:
 		idx += 1
@@ -435,14 +455,17 @@ def _next_sub_tag(parent_tag_no):
 
 
 def _is_child_subtag(candidate_tag, parent_tag_no):
-	parent = _parse_tag_number(parent_tag_no)
-	child = _parse_tag_number(candidate_tag)
-	if not parent or not child:
+	if not candidate_tag or not parent_tag_no:
 		return False
-	if parent["prefix"] != child["prefix"] or parent["number"] != child["number"]:
+	candidate = str(candidate_tag).strip()
+	parent = str(parent_tag_no).strip()
+	settings = _tag_settings()
+	suffix = settings.get("suffix") or "-000"
+	base = parent[:-len(suffix)] if suffix and parent.endswith(suffix) else parent
+	if not candidate.startswith(f"{base}-"):
 		return False
-	suffix = (child["suffix"] or "").lstrip("-")
-	return suffix.isdigit() and cint(suffix) > 0
+	last_segment = candidate.rsplit("-", 1)[-1]
+	return last_segment.isdigit() and cint(last_segment) > 0
 
 
 def _ensure_origin_tag_available(tag_no, source_doctype, source_docname, source_child_doctype, source_child_name):
@@ -456,11 +479,19 @@ def _ensure_origin_tag_available(tag_no, source_doctype, source_docname, source_
 	)
 	if not row:
 		return
+	if row.source_doctype == source_doctype and row.source_docname == source_docname:
+		return
 	if (
 		row.source_doctype == source_doctype
 		and row.source_docname == source_docname
 		and row.source_child_doctype == source_child_doctype
 		and row.source_child_name == source_child_name
+	):
+		return
+	if (
+		row.source_doctype == source_doctype
+		and row.source_docname == source_docname
+		and row.source_child_doctype == source_child_doctype
 	):
 		return
 	frappe.throw(
@@ -902,6 +933,9 @@ def assign_stock_entry_detail_tags(doc, method=None):
 
 
 def prepare_ss_coil_output_tags(doc, method=None):
+	if getattr(getattr(doc, "flags", None), "skip_auto_job_output", False):
+		return
+	_sync_job_output_rows_from_cutting_detail(doc)
 	parent_input = (doc.input_coil or [None])[0]
 	parent_tag_no = getattr(parent_input, "tag_no", None) if parent_input else None
 	root_tag_no = _root_tag_for(parent_tag_no) if parent_tag_no else None
@@ -930,6 +964,96 @@ def prepare_ss_coil_output_tags(doc, method=None):
 			)
 
 
+def _get_coil_output_target_fields():
+	meta = frappe.get_meta("Coil Output")
+	ignored_fieldtypes = {
+		"Section Break",
+		"Column Break",
+		"Tab Break",
+		"HTML",
+		"Button",
+		"Table",
+		"Table MultiSelect",
+	}
+	return [df.fieldname for df in meta.fields if df.fieldname and df.fieldtype not in ignored_fieldtypes]
+
+
+def _build_child_tag(parent_tag_no, sequence_number):
+	if not parent_tag_no:
+		return ""
+	parent_tag = str(parent_tag_no).strip()
+	sequence = str(cint(sequence_number)).zfill(3)
+	settings = _tag_settings()
+	suffix = settings.get("suffix") or "-000"
+	base = parent_tag[:-len(suffix)] if suffix and parent_tag.endswith(suffix) else parent_tag
+	return f"{base}-{sequence}"
+
+
+def _sync_job_output_rows_from_cutting_detail(doc):
+	input_row = (doc.input_coil or [None])[0]
+	so_row = (doc.so_item or [None])[0]
+	if not input_row:
+		return
+
+	existing_rows = list(doc.job_output or [])
+	cutting_rows = doc.cutting_detail or []
+	total_pieces = sum(max(0, cint(getattr(row, "strip", 0))) for row in cutting_rows)
+	target_fields = _get_coil_output_target_fields()
+
+	def apply_values(row, existing_row=None, sequence_number=1, output_width=None, pieces_count=1):
+		estimated_qty = flt(getattr(input_row, "estimated_qty", 0)) / pieces_count if pieces_count else flt(getattr(input_row, "estimated_qty", 0))
+		estimated_wt = flt(getattr(input_row, "estimated_wt", 0)) / pieces_count if pieces_count else flt(getattr(input_row, "estimated_wt", 0))
+		for fieldname in target_fields:
+			if fieldname == "class":
+				row.set("class", getattr(input_row, "class", None))
+			elif fieldname == "tag_no":
+				row.tag_no = getattr(existing_row, "tag_no", None) or _build_child_tag(getattr(input_row, "tag_no", None), sequence_number)
+			elif fieldname == "estimated_qty":
+				row.estimated_qty = estimated_qty
+			elif fieldname == "actual_qty":
+				row.actual_qty = getattr(existing_row, "actual_qty", None) or estimated_qty
+			elif fieldname == "estimated_wt":
+				row.estimated_wt = getattr(existing_row, "estimated_wt", None) or estimated_wt
+			elif fieldname == "actual_wt":
+				row.actual_wt = getattr(existing_row, "actual_wt", None) or estimated_wt
+			elif fieldname == "customer":
+				row.customer = getattr(doc, "customer_name", None)
+			elif fieldname == "thickness":
+				row.thickness = (getattr(existing_row, "thickness", None) or getattr(so_row, "thickness", None) or getattr(input_row, "thickness", None))
+			elif fieldname == "width":
+				row.width = output_width or getattr(existing_row, "width", None) or getattr(so_row, "width", None)
+			elif fieldname == "packing":
+				row.packing = getattr(existing_row, "packing", None) or getattr(so_row, "packing", None) or getattr(so_row, "custom_packing_type", None)
+			elif fieldname == "length":
+				row.length = getattr(existing_row, "length", None) or getattr(input_row, "length", None)
+			elif fieldname == "barcode":
+				row.barcode = getattr(existing_row, "barcode", None) or row.tag_no
+			elif fieldname in {"current_process", "next_process", "next_process_date", "qr_code"}:
+				continue
+			else:
+				existing_value = getattr(existing_row, fieldname, None) if existing_row else None
+				if existing_value not in (None, ""):
+					row.set(fieldname, existing_value)
+				else:
+					row.set(fieldname, getattr(input_row, fieldname, None))
+
+	doc.set("job_output", [])
+
+	if not cutting_rows or not total_pieces:
+		row = doc.append("job_output", {})
+		apply_values(row, existing_rows[0] if existing_rows else None, 1, flt(getattr(so_row, "width", 0)) or flt(getattr(input_row, "width", 0)), 1)
+		return
+
+	output_index = 0
+	for cutting_row in cutting_rows:
+		strip_count = max(0, cint(getattr(cutting_row, "strip", 0)))
+		for _ in range(strip_count):
+			existing_row = existing_rows[output_index] if output_index < len(existing_rows) else None
+			row = doc.append("job_output", {})
+			apply_values(row, existing_row, output_index + 1, flt(getattr(cutting_row, "width", 0)), total_pieces)
+			output_index += 1
+
+
 def _update_sales_order_item_process_status(sales_order_item=None):
 	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
 		return
@@ -939,15 +1063,17 @@ def _update_sales_order_item_process_status(sales_order_item=None):
 	rows = frappe.get_all(
 		"SS Coil",
 		filters={"sales_order_item": sales_order_item},
-		fields=["name", "docstatus"],
+		fields=["name", "docstatus", "order_status"],
 		order_by="modified desc",
 	)
 
 	status = ""
-	if any(row.docstatus == 1 for row in rows):
+	if any((row.order_status or "") == "Completed" or row.docstatus == 1 for row in rows):
 		status = "Completed"
-	elif any(row.docstatus == 0 for row in rows):
+	elif any((row.order_status or "") in ("Started", "In Process", "Partially Completed") for row in rows):
 		status = "In Process"
+	elif any((row.order_status or "") == "Not Started" for row in rows):
+		status = "Not Started"
 	elif rows:
 		status = "Closed"
 
@@ -958,7 +1084,7 @@ def _build_qr_payload(row, ss_coil_doc):
 	payload = {
 		"tag_no": row.get("tag_no"),
 		"item": row.get("class"),
-		"customer": row.get("customer") or ss_coil_doc.get("customer"),
+		"customer": row.get("customer") or ss_coil_doc.get("customer_name") or ss_coil_doc.get("customer"),
 		"sales_order": ss_coil_doc.get("order_no"),
 		"stock_entry": ss_coil_doc.get("stock_entry"),
 		"current_process": row.get("current_process"),
@@ -975,9 +1101,9 @@ def _build_qr_html(payload_text):
 		return ""
 	if pyqrcode:
 		qr = pyqrcode.create(payload_text, error="M")
-		svg = qr.svg_as_string(scale=3)
-		if hasattr(svg, "decode"):
-			svg = svg.decode()
+		buffer = BytesIO()
+		qr.svg(buffer, scale=3)
+		svg = _strip_svg_preamble(buffer.getvalue().decode())
 		return f'<div class="ss-coil-qr" style="padding:8px; background:#fff; border:1px solid #dbe4f0; border-radius:10px; display:inline-block;">{svg}</div>'
 	return (
 		'<div class="ss-coil-qr-fallback" style="padding:12px; border:1px dashed #8aa2c1; '
@@ -986,9 +1112,192 @@ def _build_qr_html(payload_text):
 	)
 
 
+def _build_barcode_html(value):
+	if not value:
+		return ""
+	buffer = BytesIO()
+	Code128(str(value), writer=SVGWriter()).write(
+		buffer,
+		options={
+			"module_width": 0.22,
+			"module_height": 12,
+			"font_size": 8,
+			"text_distance": 3,
+			"quiet_zone": 1,
+			"write_text": False,
+		},
+	)
+	svg = _strip_svg_preamble(buffer.getvalue().decode())
+	return (
+		'<div class="ss-coil-barcode" style="background:#fff;padding:6px;border:1px solid #dbe4f0;'
+		'border-radius:8px;display:inline-block;">'
+		f"{svg}<div style='text-align:center;font:700 11px/1.4 monospace;margin-top:4px;color:#111827;'>{html.escape(str(value))}</div></div>"
+	)
+
+
 @frappe.whitelist()
 def get_coil_output_qr_html(payload_text):
 	return _build_qr_html(payload_text)
+
+
+def _build_output_tag_cards_html(ss_coil_doc):
+	cards = []
+	for row in ss_coil_doc.get("job_output") or []:
+		payload = _build_qr_payload(row, ss_coil_doc)
+		qr_html = _build_qr_html(payload)
+		dimension = " x ".join(
+			filter(
+				None,
+				[
+					_format_dimension_part(row.get("thickness")),
+					_format_dimension_part(row.get("width")),
+					_format_dimension_part(row.get("length")),
+				],
+			)
+		)
+		cards.append(
+			f"""
+			<div class="tag-card">
+				<div class="tag-left">
+					<div class="tag-title">{html.escape(row.get("tag_no") or "-")}</div>
+					<div class="tag-line"><b>Item:</b> {html.escape(str(row.get("class") or "-"))}</div>
+					<div class="tag-line"><b>Customer:</b> {html.escape(str(row.get("customer") or ss_coil_doc.get("customer_name") or "-"))}</div>
+					<div class="tag-line"><b>Sales Order:</b> {html.escape(str(ss_coil_doc.get("order_no") or "-"))}</div>
+					<div class="tag-line"><b>Current Process:</b> {html.escape(str(row.get("current_process") or "-"))}</div>
+					<div class="tag-line"><b>Next Process:</b> {html.escape(str(row.get("next_process") or "-"))}</div>
+					<div class="tag-line"><b>Dimension:</b> {html.escape(dimension or "-")}</div>
+					<div class="tag-line"><b>Packing:</b> {html.escape(str(row.get("packing") or "-"))}</div>
+					<div class="tag-line"><b>Estimated WT:</b> {html.escape(_format_number(row.get("estimated_wt")) if row.get("estimated_wt") not in (None, "") else "-")}</div>
+				</div>
+				<div class="tag-right">
+					<div class="tag-code-block">{_build_barcode_html(row.get("barcode") or row.get("tag_no"))}</div>
+					<div class="tag-code-block">{qr_html}</div>
+				</div>
+			</div>
+			"""
+		)
+
+	return f"""
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<meta charset="utf-8">
+		<title>SS Coil Output Tags - {html.escape(ss_coil_doc.get('name') or '')}</title>
+		<style>
+			body {{
+				font-family: Arial, sans-serif;
+				margin: 16px;
+				color: #1f2937;
+				background: #ffffff;
+			}}
+			.page-title {{
+				font-size: 22px;
+				font-weight: 700;
+				margin-bottom: 4px;
+			}}
+			.page-subtitle {{
+				font-size: 13px;
+				color: #4b5563;
+				margin-bottom: 18px;
+			}}
+			.tag-grid {{
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 10px;
+			}}
+			.tag-card {{
+				border: 1px solid #0f172a;
+				border-radius: 10px;
+				padding: 10px;
+				display: grid;
+				grid-template-columns: 1.2fr 1fr;
+				gap: 8px;
+				align-items: start;
+				break-inside: avoid;
+				page-break-inside: avoid;
+				min-height: 94mm;
+			}}
+			.tag-title {{
+				font-size: 16px;
+				font-weight: 700;
+				color: #0f172a;
+				margin-bottom: 6px;
+			}}
+			.tag-line {{
+				font-size: 11px;
+				line-height: 1.5;
+			}}
+			.tag-right {{
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: flex-start;
+				gap: 8px;
+				min-height: 100%;
+			}}
+			.tag-code-block {{
+				width: 100%;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}}
+			.page-brand {{
+				display:flex;
+				align-items:center;
+				gap:10px;
+				margin-bottom:10px;
+			}}
+			.page-brand img {{
+				height:34px;
+				width:auto;
+			}}
+			@media print {{
+				@page {{ size: A4 portrait; margin: 8mm; }}
+				body {{ margin: 0; }}
+				.tag-grid {{ gap: 8px; }}
+			}}
+		</style>
+	</head>
+	<body>
+		<div class="page-brand">
+			<img src="/assets/ss_coil/images/ss-coil-logo.svg" alt="SS Coil Logo">
+			<div>
+				<div class="page-title">SS Coil Output Tags</div>
+				<div class="page-subtitle">{html.escape(ss_coil_doc.get('name') or '')} | Sales Order: {html.escape(str(ss_coil_doc.get('order_no') or '-'))}</div>
+			</div>
+		</div>
+		<div class="tag-grid">
+			{''.join(cards) if cards else '<div>No output tags found.</div>'}
+		</div>
+	</body>
+	</html>
+	"""
+
+
+@frappe.whitelist()
+def get_ss_coil_output_tags_html(ss_coil_name):
+	if not frappe.db.exists("SS Coil", ss_coil_name):
+		frappe.throw(f"SS Coil {ss_coil_name} not found")
+	doc = frappe.get_doc("SS Coil", ss_coil_name)
+	return _build_output_tag_cards_html(doc)
+
+
+@frappe.whitelist()
+def render_ss_coil_output_tags_page(ss_coil_name, print_view=0):
+	if not frappe.db.exists("SS Coil", ss_coil_name):
+		frappe.throw(f"SS Coil {ss_coil_name} not found")
+	doc = frappe.get_doc("SS Coil", ss_coil_name)
+	html_content = _build_output_tag_cards_html(doc)
+	if cint(print_view):
+		html_content = html_content.replace(
+			"</body>",
+			"<script>window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 400); });</script></body>",
+		)
+	frappe.response["type"] = "download"
+	frappe.response["filename"] = f"{doc.name}-output-tags.html"
+	frappe.response["filecontent"] = html_content.encode("utf-8")
+	frappe.response["content_type"] = "text/html; charset=utf-8"
+	frappe.response["display_content_as"] = "inline"
 
 
 def sync_ss_coil_process_tracking(doc, method=None):
@@ -1024,6 +1333,176 @@ def sync_ss_coil_process_tracking(doc, method=None):
 
 	if getattr(doc, "sales_order_item", None):
 		_update_sales_order_item_process_status(doc.sales_order_item)
+
+
+def _resolve_operation_name(process_value):
+	if not process_value:
+		return ""
+	process_text = str(process_value).strip()
+	if frappe.db.exists("Operation", process_text):
+		return process_text
+	match = frappe.db.sql(
+		"""
+		select name
+		from `tabOperation`
+		where lower(name) = lower(%s)
+		limit 1
+		""",
+		(process_text,),
+	)
+	return match[0][0] if match else process_text
+
+
+def _make_output_dimension(row):
+	return " x ".join(
+		part
+		for part in (
+			_format_dimension_part(getattr(row, "thickness", None)),
+			_format_dimension_part(getattr(row, "width", None)),
+			_format_dimension_part(getattr(row, "length", None)),
+		)
+		if part
+	)
+
+
+def _find_existing_next_process_doc(source_doc, next_operation, tag_no):
+	if not tag_no:
+		return None
+	rows = frappe.db.sql(
+		"""
+		select parent
+		from `tabCoil Input`
+		where tag_no = %s
+			and parenttype = 'SS Coil'
+			and parent in (
+				select name from `tabSS Coil`
+				where ifnull(order_no, '') = %s
+					and ifnull(sales_order_item, '') = %s
+					and ifnull(operation, '') = %s
+			)
+		order by creation desc
+		limit 1
+		""",
+		(tag_no, source_doc.order_no or "", source_doc.sales_order_item or "", next_operation or ""),
+		as_dict=True,
+	)
+	return rows[0].parent if rows else None
+
+
+@frappe.whitelist()
+def create_next_ss_coil_entry(source_name):
+	if not frappe.db.exists("SS Coil", source_name):
+		frappe.throw(f"SS Coil {source_name} not found")
+
+	source_doc = frappe.get_doc("SS Coil", source_name)
+	next_process = ""
+	for row in source_doc.job_output or []:
+		if getattr(row, "next_process", None):
+			next_process = row.next_process
+			break
+
+	if not next_process:
+		frappe.throw("No next process found in Job Output.")
+
+	next_operation = _resolve_operation_name(next_process)
+	created_docs = []
+	skipped_docs = []
+	for output_row in source_doc.job_output or []:
+		existing_name = _find_existing_next_process_doc(source_doc, next_operation, output_row.get("tag_no"))
+		if existing_name:
+			skipped_docs.append(
+				{
+					"name": existing_name,
+					"tag_no": output_row.get("tag_no"),
+					"operation": next_operation,
+					"order_status": frappe.db.get_value("SS Coil", existing_name, "order_status"),
+				}
+			)
+			continue
+
+		target_doc = frappe.new_doc("SS Coil")
+		target_doc.operation = next_operation
+		target_doc.order_status = "Not Started"
+		target_doc.order_no = source_doc.order_no
+		target_doc.sales_order_item = source_doc.sales_order_item
+		target_doc.customer_name = source_doc.customer_name
+		target_doc.for_customer = source_doc.for_customer
+		target_doc.order_received_date = source_doc.order_received_date
+		target_doc.sc_date = nowdate()
+		target_doc.job_sheet_no = source_doc.job_sheet_no
+		target_doc.machine = source_doc.machine
+		target_doc.special_instructions = source_doc.special_instructions
+		target_doc.remarks = source_doc.remarks
+
+		for fieldname in ("thickness", "width", "ds", "ctr", "ws", "mill", "specifications", "commodity", "works"):
+			if hasattr(target_doc, fieldname):
+				setattr(target_doc, fieldname, getattr(source_doc, fieldname, None))
+
+		for source_row in source_doc.so_item or []:
+			target_doc.append(
+				"so_item",
+				{
+					"item_name": source_row.item_name,
+					"dimension": source_row.dimension,
+					"ref_no": source_row.ref_no,
+					"location": source_row.location,
+					"tag_no": source_row.tag_no,
+					"specification": source_row.specification,
+					"thickness": source_row.thickness,
+					"qty": source_row.qty,
+					"width": source_row.width,
+					"so_number": source_row.so_number,
+					"estimated_wt": source_row.estimated_wt,
+					"length": source_row.length,
+					"length_c": source_row.length_c,
+					"qty_of_coil": source_row.qty_of_coil,
+					"condition": source_row.condition,
+					"remarks": source_row.remarks,
+					"comments": source_row.comments,
+					"slitter": source_row.slitter,
+					"leveler": source_row.leveler,
+					"reshearing": source_row.reshearing,
+				},
+			)
+
+		target_doc.append(
+			"input_coil",
+			{
+				"class": output_row.get("class"),
+				"tag_no": output_row.get("tag_no"),
+				"dimension": _make_output_dimension(output_row),
+				"length": output_row.get("length"),
+				"estimated_qty": output_row.get("estimated_qty"),
+				"estimated_wt": output_row.get("estimated_wt"),
+				"actual_qty": output_row.get("actual_qty"),
+				"actual_wt": output_row.get("actual_wt"),
+				"previous_job_order": source_doc.operation,
+				"processed_date": nowdate(),
+				"slitter": (source_doc.so_item[0].slitter if source_doc.so_item else ""),
+				"leveler": (source_doc.so_item[0].leveler if source_doc.so_item else ""),
+				"reshearing": (source_doc.so_item[0].reshearing if source_doc.so_item else ""),
+				"next_process": output_row.get("next_process"),
+			},
+		)
+
+		target_doc.flags.skip_auto_job_output = True
+		target_doc.insert(ignore_permissions=True)
+		created_docs.append(
+			{
+				"name": target_doc.name,
+				"tag_no": output_row.get("tag_no"),
+				"operation": target_doc.operation,
+				"order_status": target_doc.order_status,
+			}
+		)
+
+	frappe.db.commit()
+	return {
+		"created_docs": created_docs,
+		"skipped_docs": skipped_docs,
+		"count": len(created_docs),
+		"skipped_count": len(skipped_docs),
+	}
 
 
 @frappe.whitelist()
@@ -1071,6 +1550,341 @@ def sync_ss_coil_output_tags(ss_coil=None):
 
 	frappe.clear_cache()
 	return {"updated_docs": updated, "count": len(updated)}
+
+
+def _linked_rows_by_tags(doctype, child_doctype, parent_field, tag_field, tags, fields, order_by="modified desc"):
+	if not tags:
+		return []
+	tag_tuple = tuple(tags)
+	select_fields = ", ".join(fields)
+	return frappe.db.sql(
+		f"""
+		select
+			{select_fields}
+		from `tab{child_doctype}` child
+		inner join `tab{doctype}` parent on parent.name = child.parent
+		where child.{tag_field} in %(tags)s
+		order by {order_by}
+		""",
+		{"tags": tag_tuple},
+		as_dict=True,
+	)
+
+
+def _build_tag_hierarchy(root_tag_no):
+	if not root_tag_no or not frappe.db.exists("DocType", "Tag Registry"):
+		return {}
+
+	rows = frappe.get_all(
+		"Tag Registry",
+		filters={"root_tag_no": root_tag_no},
+		fields=[
+			"name",
+			"tag_no",
+			"status",
+			"source_doctype",
+			"source_docname",
+			"current_doctype",
+			"current_docname",
+			"parent_tag_no",
+			"root_tag_no",
+			"item_code",
+			"item_name",
+			"sales_order",
+		],
+		order_by="tag_no asc",
+	)
+	if not rows:
+		root_row = frappe.db.get_value(
+			"Tag Registry",
+			{"tag_no": root_tag_no},
+			[
+				"name",
+				"tag_no",
+				"status",
+				"source_doctype",
+				"source_docname",
+				"current_doctype",
+				"current_docname",
+				"parent_tag_no",
+				"root_tag_no",
+				"item_code",
+				"item_name",
+				"sales_order",
+			],
+			as_dict=True,
+		)
+		rows = [root_row] if root_row else []
+	if not rows:
+		return {}
+
+	nodes = {}
+	for row in rows:
+		nodes[row.tag_no] = {
+			**row,
+			"children": [],
+		}
+
+	root_node = None
+	for row in rows:
+		tag_no = row.tag_no
+		parent = row.parent_tag_no
+		if parent and parent in nodes and parent != tag_no:
+			nodes[parent]["children"].append(nodes[tag_no])
+		else:
+			if tag_no == root_tag_no:
+				root_node = nodes[tag_no]
+
+	if not root_node:
+		root_node = nodes.get(root_tag_no) or nodes[rows[0].tag_no]
+
+	def enrich(node, depth=0):
+		tag_no = node.get("tag_no")
+		node["depth"] = depth
+		prev_docs = frappe.db.sql(
+			"""
+			select distinct parent.name, parent.operation, parent.order_status
+			from `tabCoil Output` child
+			inner join `tabSS Coil` parent on parent.name = child.parent
+			where child.tag_no = %s
+			order by parent.modified desc
+			limit 5
+			""",
+			(tag_no,),
+			as_dict=True,
+		)
+		next_docs = frappe.db.sql(
+			"""
+			select distinct parent.name, parent.operation, parent.order_status
+			from `tabCoil Input` child
+			inner join `tabSS Coil` parent on parent.name = child.parent
+			where child.tag_no = %s
+			order by parent.modified desc
+			limit 5
+			""",
+			(tag_no,),
+			as_dict=True,
+		)
+		node["previous_docs"] = prev_docs
+		node["next_docs"] = next_docs
+		node["child_count"] = len(node.get("children") or [])
+		node["descendant_count"] = 0
+		for child in node.get("children") or []:
+			enrich(child, depth + 1)
+			node["descendant_count"] += 1 + cint(child.get("descendant_count"))
+		return node
+
+	return enrich(root_node, 0)
+
+
+@frappe.whitelist()
+def get_ss_coil_detail_dashboard(ss_coil_name):
+	if not frappe.db.exists("SS Coil", ss_coil_name):
+		frappe.throw(f"SS Coil {ss_coil_name} not found")
+
+	doc = frappe.get_doc("SS Coil", ss_coil_name)
+	so_item = (doc.so_item or [None])[0]
+	input_rows = [row.as_dict() for row in (doc.input_coil or [])]
+	output_rows = [row.as_dict() for row in (doc.job_output or [])]
+	cutting_rows = [row.as_dict() for row in (doc.cutting_detail or [])]
+
+	input_tags = [row.get("tag_no") for row in input_rows if row.get("tag_no")]
+	output_tags = [row.get("tag_no") for row in output_rows if row.get("tag_no")]
+	all_tags = list(dict.fromkeys(input_tags + output_tags))
+
+	previous_docs = []
+	if input_tags:
+		previous_docs = frappe.db.sql(
+			"""
+			select distinct
+				parent.name,
+				parent.operation,
+				parent.order_status,
+				parent.order_no,
+				parent.sales_order_item,
+				child.tag_no
+			from `tabCoil Output` child
+			inner join `tabSS Coil` parent on parent.name = child.parent
+			where child.tag_no in %(tags)s
+				and parent.name != %(current)s
+			order by parent.modified desc
+			""",
+			{"tags": tuple(input_tags), "current": doc.name},
+			as_dict=True,
+		)
+
+	next_docs = []
+	if output_tags:
+		next_docs = frappe.db.sql(
+			"""
+			select distinct
+				parent.name,
+				parent.operation,
+				parent.order_status,
+				parent.order_no,
+				parent.sales_order_item,
+				child.tag_no
+			from `tabCoil Input` child
+			inner join `tabSS Coil` parent on parent.name = child.parent
+			where child.tag_no in %(tags)s
+				and parent.name != %(current)s
+			order by parent.modified desc
+			""",
+			{"tags": tuple(output_tags), "current": doc.name},
+			as_dict=True,
+		)
+
+	stock_entry_details = []
+	if all_tags:
+		stock_entry_details = frappe.db.sql(
+			"""
+			select
+				parent.name as stock_entry,
+				parent.posting_date,
+				parent.purpose,
+				child.item_code,
+				child.item_name,
+				child.qty,
+				child.transfer_qty,
+				child.custom_tag_no as tag_no,
+				child.custom_dimension as dimension,
+				child.custom_estimated_wt as estimated_wt
+			from `tabStock Entry Detail` child
+			inner join `tabStock Entry` parent on parent.name = child.parent
+			where child.custom_tag_no in %(tags)s
+			order by parent.posting_date desc, child.idx asc
+			""",
+			{"tags": tuple(all_tags)},
+			as_dict=True,
+		)
+
+	delivery_details = []
+	if all_tags and _has_field("Delivery Note Item", "custom_tag_no"):
+		delivery_details = frappe.db.sql(
+			"""
+			select
+				parent.name as delivery_note,
+				parent.posting_date,
+				parent.status,
+				child.item_code,
+				child.item_name,
+				child.qty,
+				child.amount,
+				child.custom_tag_no as tag_no
+			from `tabDelivery Note Item` child
+			inner join `tabDelivery Note` parent on parent.name = child.parent
+			where child.custom_tag_no in %(tags)s
+			order by parent.posting_date desc, child.idx asc
+			""",
+			{"tags": tuple(all_tags)},
+			as_dict=True,
+		)
+
+	invoice_details = []
+	if all_tags and _has_field("Sales Invoice Item", "custom_tag_no"):
+		invoice_details = frappe.db.sql(
+			"""
+			select
+				parent.name as sales_invoice,
+				parent.posting_date,
+				parent.status,
+				parent.outstanding_amount,
+				child.item_code,
+				child.item_name,
+				child.qty,
+				child.amount,
+				child.custom_tag_no as tag_no
+			from `tabSales Invoice Item` child
+			inner join `tabSales Invoice` parent on parent.name = child.parent
+			where child.custom_tag_no in %(tags)s
+			order by parent.posting_date desc, child.idx asc
+			""",
+			{"tags": tuple(all_tags)},
+			as_dict=True,
+		)
+
+	tag_registry_rows = []
+	if all_tags and frappe.db.exists("DocType", "Tag Registry"):
+		tag_registry_rows = frappe.get_all(
+			"Tag Registry",
+			filters={"tag_no": ["in", all_tags]},
+			fields=[
+				"name",
+				"tag_no",
+				"status",
+				"source_doctype",
+				"source_docname",
+				"current_doctype",
+				"current_docname",
+				"parent_tag_no",
+				"root_tag_no",
+				"item_code",
+				"item_name",
+				"sales_order",
+			],
+			order_by="tag_no asc",
+		)
+
+	root_tag_no = ""
+	if tag_registry_rows:
+		root_tag_no = _first_unique([row.get("root_tag_no") or row.get("tag_no") for row in tag_registry_rows]) or ""
+	if not root_tag_no and input_tags:
+		root_tag_no = _root_tag_for(input_tags[0]) or input_tags[0]
+	tag_hierarchy = _build_tag_hierarchy(root_tag_no) if root_tag_no else {}
+
+	output_weight_total = sum(flt(row.get("estimated_wt")) for row in output_rows)
+	output_qty_total = sum(flt(row.get("estimated_qty")) for row in output_rows)
+	total_strips = sum(cint(row.get("strip")) for row in cutting_rows)
+
+	status_flow = {
+		"operation": doc.operation,
+		"order_status": doc.order_status,
+		"started_on": getattr(doc, "started_on", None),
+		"completed_on": getattr(doc, "completed_on", None),
+		"elapsed_time": getattr(doc, "elapsed_time", None),
+		"current_process": _label_for_process(doc.operation),
+		"next_process": _first_unique([row.get("next_process") for row in output_rows]) or "",
+	}
+
+	return {
+		"name": doc.name,
+		"order_no": doc.order_no,
+		"sales_order_item": doc.sales_order_item,
+		"stock_entry": doc.stock_entry,
+		"customer_name": doc.customer_name,
+		"machine": doc.machine,
+		"operation": doc.operation,
+		"order_status": doc.order_status,
+		"remarks": doc.remarks,
+		"status_flow": status_flow,
+		"so_item": so_item.as_dict() if so_item else {},
+		"input_rows": input_rows,
+		"output_rows": output_rows,
+		"cutting_rows": cutting_rows,
+		"input_tags": input_tags,
+		"output_tags": output_tags,
+		"summary": {
+			"input_count": len(input_rows),
+			"output_count": len(output_rows),
+			"cutting_count": len(cutting_rows),
+			"total_strips": total_strips,
+			"grand_total_width": flt(getattr(doc, "grand_total_width", 0)),
+			"grand_estimated_wt": flt(getattr(doc, "grand_estimated_wt", 0)),
+			"output_weight_total": output_weight_total,
+			"output_qty_total": output_qty_total,
+			"calc_ratio": flt(getattr(doc, "calc_ratio", 0)),
+			"actual_ratio": flt(getattr(doc, "actual_ratio", 0)),
+			"remaining_width": flt(getattr(doc, "remaining_width", 0)),
+		},
+		"previous_docs": previous_docs,
+		"next_docs": next_docs,
+		"stock_entry_details": stock_entry_details,
+		"delivery_details": delivery_details,
+		"invoice_details": invoice_details,
+		"tag_registry_rows": tag_registry_rows,
+		"root_tag_no": root_tag_no,
+		"tag_hierarchy": tag_hierarchy,
+	}
 
 
 @frappe.whitelist()

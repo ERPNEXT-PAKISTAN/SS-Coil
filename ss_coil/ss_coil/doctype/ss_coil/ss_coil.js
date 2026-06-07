@@ -40,6 +40,7 @@ frappe.ui.form.on("SS Coil", {
 		update_elapsed_time_display(frm);
 		render_job_output_qr_fields(frm);
 		render_ss_coil_dashboard(frm);
+		render_ss_coil_diagrams(frm);
 	},
 	operation(frm) {
 		sync_process_preview(frm);
@@ -295,6 +296,7 @@ frappe.ui.form.on("SS Coil", {
 		}
 		update_elapsed_time_display(frm);
 		render_ss_coil_dashboard(frm);
+		render_ss_coil_diagrams(frm);
 	},
 });
 
@@ -318,6 +320,30 @@ function render_ss_coil_dashboard(frm) {
 			if (!field.$wrapper) return;
 			field.$wrapper.html(buildSSCoilDashboardHtml(data));
 			bindSSCoilDashboardActions(frm, field.$wrapper, data);
+		},
+	});
+}
+
+function render_ss_coil_diagrams(frm) {
+	const field = frm.fields_dict.daigrams_view;
+	if (!field) return;
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		field.$wrapper && field.$wrapper.html(
+			`<div style="padding:18px;border:1px dashed #c9d7ea;border-radius:12px;background:#f8fbff;color:#486581;">
+				Save the SS Coil document once to load its live diagrams.
+			</div>`,
+		);
+		return;
+	}
+
+	frappe.call({
+		method: "ss_coil.api.get_ss_coil_detail_dashboard",
+		args: { ss_coil_name: frm.doc.name },
+		callback: function (r) {
+			const data = r.message || {};
+			if (!field.$wrapper) return;
+			field.$wrapper.html(buildSSCoilDiagramsHtml(data));
+			bindSSCoilDiagramActions(frm, field.$wrapper, data);
 		},
 	});
 }
@@ -563,11 +589,11 @@ function buildSSCoilDashboardHtml(data) {
 		return {
 			containsCurrent,
 			html: `
-			<li style="list-style:none;position:relative;padding-left:28px;margin:12px 0;">
-				<div style="position:absolute;left:10px;top:-4px;bottom:-12px;width:2px;background:linear-gradient(180deg,#cbd5e1,#e2e8f0);"></div>
-				<div style="position:absolute;left:10px;top:15px;width:16px;height:18px;border-left:2px solid #cbd5e1;border-bottom:2px solid #cbd5e1;border-bottom-left-radius:12px;"></div>
-				<div style="position:absolute;left:24px;top:23px;width:9px;height:9px;border-radius:999px;background:${lineDotColor};box-shadow:0 0 0 3px rgba(255,255,255,.96), 0 0 0 5px ${containsCurrent ? "rgba(37,99,235,.16)" : "rgba(148,163,184,.12)"};"></div>
-				<div class="ss-coil-tree-node" data-tag-no="${esc(node.tag_no)}" style="background:${containsCurrent ? "#f8fbff" : "#fff"};border:1px solid ${nodeBorder};border-radius:15px;padding:10px 12px;box-shadow:${nodeShadow};min-width:680px;max-width:860px;cursor:pointer;">
+			<li style="list-style:none;position:relative;padding-left:24px;margin:10px 0;">
+				<div style="position:absolute;left:8px;top:-4px;bottom:-10px;width:2px;background:linear-gradient(180deg,#d8e2ef,#e7eef7);"></div>
+				<div style="position:absolute;left:8px;top:15px;width:15px;height:18px;border-left:2px solid #cbd5e1;border-bottom:2px solid #cbd5e1;border-bottom-left-radius:12px;"></div>
+				<div style="position:absolute;left:21px;top:23px;width:8px;height:8px;border-radius:999px;background:${lineDotColor};box-shadow:0 0 0 3px rgba(255,255,255,.96), 0 0 0 5px ${containsCurrent ? "rgba(37,99,235,.16)" : "rgba(148,163,184,.12)"};"></div>
+				<div class="ss-coil-tree-node" data-tag-no="${esc(node.tag_no)}" style="background:${containsCurrent ? "#f8fbff" : "#fff"};border:1px solid ${nodeBorder};border-radius:15px;padding:10px 12px;box-shadow:${nodeShadow};min-width:560px;max-width:720px;cursor:pointer;margin:0 auto;">
 					<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
 						<div>
 							<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -582,12 +608,12 @@ function buildSSCoilDashboardHtml(data) {
 							</div>
 						</div>
 						<div style="display:flex;gap:8px;flex-wrap:wrap;">
-							${hasChildren ? `<button class="ss-coil-tree-toggle" data-tag-no="${esc(node.tag_no)}" data-default-open="${containsCurrent ? 1 : 0}" style="background:#0f172a;color:#fff;border:none;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:800;">${containsCurrent ? "Collapse" : "Expand"}</button>` : ""}
-							<span style="background:${badgeColor};color:#fff;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:800;">Children ${esc(node.child_count || 0)}</span>
-							<span style="background:#7c3aed;color:#fff;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:800;">Desc ${esc(node.descendant_count || 0)}</span>
+							${hasChildren ? `<button class="ss-coil-tree-toggle" data-tag-no="${esc(node.tag_no)}" style="background:#0f172a;color:#fff;border:none;border-radius:999px;padding:5px 10px;font-size:10px;font-weight:800;">Collapse</button>` : ""}
+							<span style="background:${badgeColor};color:#fff;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:800;">C:${esc(node.child_count || 0)}</span>
+							<span style="background:#7c3aed;color:#fff;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:800;">D:${esc(node.descendant_count || 0)}</span>
 						</div>
 					</div>
-					<div style="display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:8px;margin-top:12px;font-size:11px;color:#334e68;">
+					<div style="display:grid;grid-template-columns:repeat(5,minmax(96px,1fr));gap:8px;margin-top:12px;font-size:11px;color:#334e68;">
 						<div style="background:#f8fbff;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;"><b>Parent</b><br>${esc(node.parent_tag_no || "-")}</div>
 						<div style="background:#f8fbff;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;"><b>Root</b><br>${esc(node.root_tag_no || "-")}</div>
 						<div style="background:#f8fbff;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;"><b>Item</b><br>${esc(node.item_name || node.item_code || "-")}</div>
@@ -595,7 +621,7 @@ function buildSSCoilDashboardHtml(data) {
 						<div title="${esc(nextTitle || next || "-")}" style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:12px;padding:8px 10px;"><b>Next Flow</b><br>${esc(next || "-")}</div>
 					</div>
 				</div>
-				${children ? `<ul class="ss-coil-tree-children" data-parent-tag="${esc(node.tag_no)}" style="margin:10px 0 0 0;padding:0;display:${containsCurrent ? "block" : "none"};">${children}</ul>` : ""}
+				${children ? `<ul class="ss-coil-tree-children" data-parent-tag="${esc(node.tag_no)}" style="margin:10px 0 0 0;padding:0;display:block;">${children}</ul>` : ""}
 			</li>
 		`};
 	};
@@ -604,27 +630,25 @@ function buildSSCoilDashboardHtml(data) {
 		if (!node || !node.tag_no) {
 			return `<div style="color:#7b8794;font-size:13px;">No hierarchy available.</div>`;
 		}
-		const renderLevel = (current) => {
+		const renderLevel = (current, depth = 0) => {
 			const kids = current.children || [];
-			const currentStatusTone = statusColor(current.status);
-			const currentFlow = (current.previous_docs && current.previous_docs[0] && current.previous_docs[0].operation) || (current.next_docs && current.next_docs[0] && current.next_docs[0].operation) || "";
-			const currentProcessTone = processColor(currentFlow);
 			return `
-				<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
-					<div style="background:#0f172a;color:#fff;border-radius:14px;padding:12px 16px;min-width:220px;text-align:center;box-shadow:0 8px 20px rgba(15,23,42,.16);border:2px solid ${currentStatusTone.border};">
+				<div style="display:flex;flex-direction:column;align-items:center;gap:12px;min-width:max-content;">
+					<div style="background:#0f172a;color:#fff;border-radius:16px;padding:14px 18px;min-width:220px;max-width:260px;text-align:center;box-shadow:0 12px 28px rgba(15,23,42,.18);">
 						<div style="font-size:16px;font-weight:900;">${esc(current.tag_no)}</div>
-						<div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:6px;">
-							<span style="background:${currentProcessTone.bg};color:${currentProcessTone.text};border:1px solid ${currentProcessTone.border};border-radius:999px;padding:3px 7px;font-size:10px;font-weight:800;">${esc(currentFlow || "-")}</span>
-							<span style="background:${currentStatusTone.bg};color:${currentStatusTone.text};border:1px solid ${currentStatusTone.border};border-radius:999px;padding:3px 7px;font-size:10px;font-weight:800;">${esc(current.status || "-")}</span>
-						</div>
-						<div style="font-size:11px;opacity:.9;margin-top:6px;">${esc(current.current_doctype || current.source_doctype || "-")}</div>
+						<div style="font-size:12px;opacity:.95;margin-top:6px;">${esc(current.current_doctype || current.source_doctype || "-")} | ${esc(current.status || "-")}</div>
 					</div>
-					${kids.length ? `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;"><div style="width:2px;height:18px;background:#94a3b8;"></div><div style="width:10px;height:10px;border-radius:999px;background:${currentStatusTone.text};box-shadow:0 0 0 3px rgba(255,255,255,.95), 0 0 0 5px rgba(148,163,184,.16);"></div><div style="width:2px;height:18px;background:#94a3b8;"></div></div>` : ""}
-					${kids.length ? `<div style="display:flex;gap:14px;align-items:flex-start;justify-content:center;flex-wrap:wrap;">${kids.map((child) => renderLevel(child)).join("")}</div>` : ""}
+					${kids.length ? `
+						<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+							<div style="font-size:18px;font-weight:900;color:#2563eb;line-height:1;">↓</div>
+							${depth === 0 ? `<div style="font-size:11px;font-weight:800;color:#2563eb;letter-spacing:.03em;">child flow</div>` : ""}
+						</div>
+						<div style="display:flex;gap:16px;align-items:flex-start;justify-content:center;flex-wrap:nowrap;">${kids.map((child) => renderLevel(child, depth + 1)).join("")}</div>
+					` : ""}
 				</div>
 			`;
 		};
-		return `<div style="overflow:auto;padding:10px 0;">${renderLevel(node)}</div>`;
+		return `<div style="overflow:auto;padding:10px 0;"><div style="display:flex;justify-content:center;min-width:max-content;padding:0 12px;">${renderLevel(node)}</div></div>`;
 	};
 
 	return `
@@ -664,8 +688,8 @@ function buildSSCoilDashboardHtml(data) {
 				<div style="margin-top:16px;background:#fff;border:1px solid #dbe7f3;border-radius:16px;padding:16px;">
 					<div style="font-size:16px;font-weight:800;color:#102a43;">Hierarchy Detail Tree</div>
 					<div style="font-size:12px;color:#486581;margin-top:4px;">Every node shows parent/root tracking, current document, previous flow and next flow.</div>
-					<div style="margin-top:16px;overflow:auto;padding-bottom:8px;">
-						<ul style="margin:0;padding:0;min-width:980px;">${(buildHierarchyNode(data.tag_hierarchy) || {}).html || ""}</ul>
+					<div style="margin-top:16px;overflow:auto;padding-bottom:8px;display:flex;justify-content:center;">
+						<ul style="margin:0 auto;padding:0;min-width:760px;max-width:1100px;">${(buildHierarchyNode(data.tag_hierarchy) || {}).html || ""}</ul>
 					</div>
 				</div>
 			`)}
@@ -708,6 +732,397 @@ function buildSSCoilDashboardHtml(data) {
 	`;
 }
 
+function buildSSCoilDiagramsHtml(data) {
+	const esc = (value) => frappe.utils.escape_html(String(value ?? ""));
+	const root = data.tag_hierarchy || {};
+	const processNames = [
+		data.so_item?.slitter || data.so_item?.custom_slitter || "",
+		data.so_item?.leveler || data.so_item?.custom_leveler || "",
+		data.so_item?.reshearing || data.so_item?.custom_reshearing || "",
+	].filter(Boolean);
+	const rootTag = (data.input_tags && data.input_tags[0]) || data.root_tag_no || data.name || "-";
+	const status = data.order_status || "Not Started";
+	const outputs = data.output_rows || [];
+
+	const processColor = (value) => {
+		const key = String(value || "").toLowerCase();
+		if (key.includes("slitter")) return { main: "#2f6df6", soft: "#eaf2ff", glow: "rgba(47,109,246,.25)" };
+		if (key.includes("leveler")) return { main: "#18a957", soft: "#e9fbef", glow: "rgba(24,169,87,.24)" };
+		if (key.includes("reshearing")) return { main: "#ff8d1f", soft: "#fff1df", glow: "rgba(255,141,31,.24)" };
+		return { main: "#7c3aed", soft: "#f3e8ff", glow: "rgba(124,58,237,.22)" };
+	};
+	const statusColor = (value) => {
+		const key = String(value || "").toLowerCase();
+		if (key.includes("completed") && !key.includes("partial")) return { main: "#1c9c54", soft: "#dcfce7" };
+		if (key.includes("partial")) return { main: "#d97706", soft: "#fef3c7" };
+		if (key.includes("process")) return { main: "#2563eb", soft: "#dbeafe" };
+		if (key.includes("closed")) return { main: "#7c3aed", soft: "#ede9fe" };
+		return { main: "#64748b", soft: "#e2e8f0" };
+	};
+	const lighten = (hex, amt) => {
+		const value = String(hex || "").replace("#", "");
+		if (value.length !== 6) return hex;
+		let r = parseInt(value.slice(0, 2), 16);
+		let g = parseInt(value.slice(2, 4), 16);
+		let b = parseInt(value.slice(4, 6), 16);
+		r = Math.min(255, r + amt);
+		g = Math.min(255, g + amt);
+		b = Math.min(255, b + amt);
+		return `rgb(${r},${g},${b})`;
+	};
+	const pill = (text, bg, color) => `<span style="display:inline-block;background:${bg};color:${color};border-radius:999px;padding:8px 14px;font-size:12px;font-weight:800;letter-spacing:.02em;">${esc(text || "-")}</span>`;
+	const section = (title, subtitle, body) => `
+		<div style="margin-top:28px;background:#fff;border:1px solid #dbe7f3;border-radius:34px;box-shadow:0 22px 42px rgba(15,23,42,.07);overflow:hidden;">
+			<div style="padding:24px 30px;background:linear-gradient(135deg,#f8fbff,#ffffff);border-bottom:1px solid #e8eff7;">
+				<div style="font-size:28px;font-weight:900;color:#102a43;letter-spacing:-.02em;">${esc(title)}</div>
+				<div style="font-size:14px;color:#52667a;margin-top:8px;line-height:1.6;">${esc(subtitle || "")}</div>
+			</div>
+			<div style="padding:34px;">${body}</div>
+		</div>
+	`;
+	const processTag = (label, idx) => {
+		const tone = processColor(label);
+		return `
+			<div style="flex:1 1 260px;background:#fff;border-radius:30px;padding:24px 26px;box-shadow:0 22px 36px ${tone.glow};border:2px solid ${tone.main};position:relative;overflow:hidden;min-height:154px;">
+				<div style="position:absolute;right:-26px;top:-26px;width:104px;height:104px;border-radius:999px;background:${tone.soft};"></div>
+				<div style="font-size:13px;font-weight:800;color:${tone.main};letter-spacing:.1em;">STEP 0${idx + 1}</div>
+				<div style="font-size:30px;font-weight:900;color:#102a43;margin-top:12px;position:relative;line-height:1.1;">${esc(label)}</div>
+				<div style="font-size:13px;color:#64748b;margin-top:10px;position:relative;line-height:1.6;">Process defined from the selected Sales Order item.</div>
+			</div>
+		`;
+	};
+	const flowCard = (tag, caption, tone, tagNo = "", extra = "") => `
+		<div class="ss-coil-diagram-node" ${tagNo ? `data-tag-no="${esc(tagNo)}"` : ""} style="background:#fff;border:3px solid ${tone.main};border-radius:26px;padding:18px 20px;min-width:210px;text-align:center;box-shadow:0 20px 34px ${tone.glow};cursor:${tagNo ? "pointer" : "default"};">
+			<div style="width:92px;height:14px;border-radius:999px;background:${tone.main};opacity:.18;margin:0 auto 14px auto;"></div>
+			<div style="font-size:20px;font-weight:900;color:#102a43;line-height:1.2;">${esc(tag)}</div>
+			<div style="font-size:12px;color:#64748b;margin-top:8px;line-height:1.5;">${esc(caption)}</div>
+			${extra ? `<div style="margin-top:10px;">${extra}</div>` : ""}
+		</div>
+	`;
+	const collectLevels = (node, depth = 0, levels = []) => {
+		if (!node || !node.tag_no) return levels;
+		levels[depth] = levels[depth] || [];
+		levels[depth].push(node);
+		(node.children || []).forEach((child) => collectLevels(child, depth + 1, levels));
+		return levels;
+	};
+
+	const levels = collectLevels(root);
+	const levelHtml = levels.map((nodes, index) => `
+		<div style="display:flex;justify-content:center;gap:30px;flex-wrap:nowrap;position:relative;margin-top:${index ? 40 : 0}px;min-width:max-content;">
+			${nodes.map((node) => {
+				const proc = processColor((node.previous_docs && node.previous_docs[0] && node.previous_docs[0].operation) || data.operation);
+				const st = statusColor(node.status);
+				return `
+					<div style="display:flex;flex-direction:column;align-items:center;gap:14px;min-width:220px;">
+						<div style="width:2px;height:${index ? 30 : 0}px;background:${index ? "#cbd5e1" : "transparent"};"></div>
+						<div class="ss-coil-diagram-node" data-tag-no="${esc(node.tag_no)}" style="width:220px;background:#fff;border-radius:34px;padding:18px 18px 20px 18px;text-align:center;border:6px solid ${proc.main};box-shadow:0 22px 38px ${proc.glow};cursor:pointer;">
+							<div style="width:72px;height:72px;border-radius:999px;margin:0 auto 12px auto;background:${st.soft};border:4px solid ${st.main};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:${st.main};">${esc(String(index + 1))}</div>
+							<div style="font-size:16px;font-weight:900;color:#102a43;line-height:1.35;">${esc(node.tag_no)}</div>
+							<div style="font-size:12px;color:#64748b;margin-top:6px;">${esc((node.current_doctype || node.source_doctype || "-"))}</div>
+							<div style="margin-top:10px;">${pill(node.status || "-", st.soft, st.main)}</div>
+						</div>
+					</div>
+				`;
+			}).join("")}
+		</div>
+	`).join("");
+
+	const spiderSides = (() => {
+		const children = root.children || [];
+		const left = children.filter((_, i) => i % 2 === 0);
+		const right = children.filter((_, i) => i % 2 === 1);
+		const sideColumn = (items, align) => `
+			<div style="display:flex;flex-direction:column;gap:20px;align-items:${align};">
+				${items.map((node) => {
+					const tone = processColor((node.previous_docs && node.previous_docs[0] && node.previous_docs[0].operation) || data.operation);
+					return flowCard(node.tag_no, node.status || "-", tone, node.tag_no);
+				}).join("") || `<div style="font-size:13px;color:#94a3b8;">-</div>`}
+			</div>
+		`;
+		return `
+			<div style="display:flex;justify-content:center;align-items:center;gap:38px;overflow:auto;padding:18px 0;min-width:max-content;">
+				${sideColumn(left, "flex-end")}
+				<div style="display:flex;align-items:center;gap:20px;">
+					<div style="width:88px;height:3px;background:#1f2937;"></div>
+					<div style="width:260px;height:260px;border-radius:999px;background:linear-gradient(135deg,#8b5cf6,#60a5fa);display:flex;align-items:center;justify-content:center;box-shadow:0 28px 54px rgba(99,102,241,.24);">
+						<div style="width:184px;height:184px;border-radius:999px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;">
+							<div style="font-size:14px;font-weight:800;color:#64748b;">INPUT TAG</div>
+							<div style="font-size:26px;font-weight:900;color:#102a43;margin-top:8px;line-height:1.2;">${esc(rootTag)}</div>
+							<div style="margin-top:10px;">${pill(status, statusColor(status).soft, statusColor(status).main)}</div>
+						</div>
+					</div>
+					<div style="width:88px;height:3px;background:#1f2937;"></div>
+				</div>
+				${sideColumn(right, "flex-start")}
+			</div>
+		`;
+	})();
+
+	const wheelHtml = processNames.length ? `
+		<div style="display:flex;justify-content:center;align-items:center;min-height:560px;overflow:auto;">
+			<div style="position:relative;width:620px;height:620px;">
+				${processNames.slice(0, 6).map((name, idx) => {
+					const tone = processColor(name);
+					const angle = (idx / processNames.length) * 360;
+					return `
+						<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(${angle}deg) translateY(-230px) rotate(${-angle}deg);width:200px;">
+							<div style="background:${tone.main};color:#fff;border-radius:30px;padding:24px 20px;box-shadow:0 20px 34px ${tone.glow};text-align:center;">
+								<div style="font-size:13px;font-weight:800;opacity:.92;">0${idx + 1}</div>
+								<div style="font-size:20px;font-weight:900;margin-top:8px;line-height:1.2;">${esc(name)}</div>
+							</div>
+						</div>
+					`;
+				}).join("")}
+				<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:220px;height:220px;border-radius:999px;background:#fff;box-shadow:0 26px 44px rgba(15,23,42,.14);border:12px solid #eef2ff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;">
+					<div style="font-size:16px;font-weight:800;color:#64748b;">PROCESS FLOW</div>
+					<div style="font-size:30px;font-weight:900;color:#102a43;margin-top:8px;line-height:1.2;">${esc(rootTag)}</div>
+					<div style="font-size:13px;color:#64748b;margin-top:10px;">${esc(data.operation || "-")}</div>
+				</div>
+			</div>
+		</div>
+	` : `<div style="font-size:13px;color:#7b8794;">No process flow found on Sales Order item.</div>`;
+
+	const outputLaneHtml = outputs.length ? outputs.map((row, idx) => {
+		const tone = processColor(row.current_process || data.operation);
+		return `
+			<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:${idx ? 22 : 0}px;">
+				${flowCard(rootTag, "Input Tag", processColor(data.operation || processNames[0] || ""), rootTag, pill(data.operation || "-", "#eff6ff", "#1d4ed8"))}
+				<div style="flex:0 0 92px;height:5px;background:#111827;border-radius:999px;position:relative;">
+					<div style="position:absolute;right:-1px;top:-4px;width:13px;height:13px;border-radius:999px;background:${tone.main};"></div>
+				</div>
+				${flowCard(row.tag_no || "-", row.current_process || data.operation || "-", tone, row.tag_no || "", pill(row.next_process || "No Next Process", tone.soft, tone.main))}
+			</div>
+		`;
+	}).join("") : `<div style="font-size:13px;color:#7b8794;">No output tags available yet.</div>`;
+
+	const wheelPalette = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899"];
+	const wheelItems = (processNames.length ? processNames : [data.operation || "Process"]).slice(0, 6).map((name, idx) => ({
+		num: String(idx + 1).padStart(2, "0"),
+		label: name,
+		color: wheelPalette[idx % wheelPalette.length],
+		body: `Process step ${idx + 1} for ${rootTag}`,
+	}));
+	const polar = (cx, cy, r, deg) => {
+		const rad = (deg * Math.PI) / 180;
+		return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+	};
+	const arcPath = (cx, cy, outerR, innerR, startDeg, endDeg) => {
+		const s1 = polar(cx, cy, outerR, startDeg);
+		const e1 = polar(cx, cy, outerR, endDeg);
+		const s2 = polar(cx, cy, innerR, endDeg);
+		const e2 = polar(cx, cy, innerR, startDeg);
+		const large = endDeg - startDeg > 180 ? 1 : 0;
+		return `M ${s1[0]} ${s1[1]} A ${outerR} ${outerR} 0 ${large} 1 ${e1[0]} ${e1[1]} L ${s2[0]} ${s2[1]} A ${innerR} ${innerR} 0 ${large} 0 ${e2[0]} ${e2[1]} Z`;
+	};
+	const wheelChartHtml = (() => {
+		const cx = 280;
+		const cy = 280;
+		const outerR = 250;
+		const innerR = 118;
+		const gapDeg = 3;
+		const sliceDeg = 360 / Math.max(wheelItems.length, 1);
+		const startOffset = -90;
+		const defs = [];
+		const paths = [];
+		const labels = [];
+		wheelItems.forEach((seg, i) => {
+			const startDeg = startOffset + i * sliceDeg + gapDeg / 2;
+			const endDeg = startOffset + (i + 1) * sliceDeg - gapDeg / 2;
+			const gradId = `sscoilWheelGrad${i}`;
+			defs.push(`
+				<radialGradient id="${gradId}">
+					<stop offset="0%" stop-color="${lighten(seg.color, 35)}"></stop>
+					<stop offset="100%" stop-color="${seg.color}"></stop>
+				</radialGradient>
+			`);
+			paths.push(`<path d="${arcPath(cx, cy, outerR, innerR, startDeg, endDeg)}" fill="url(#${gradId})" style="filter:drop-shadow(0 3px 8px rgba(0,0,0,.14));"></path>`);
+			const midDeg = (startDeg + endDeg) / 2;
+			const [lx, ly] = polar(cx, cy, (outerR + innerR) / 2, midDeg);
+			labels.push(`
+				<text x="${lx}" y="${ly - 14}" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="28" font-weight="900">${esc(seg.num)}</text>
+				<text x="${lx}" y="${ly + 12}" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="800">${esc(seg.label)}</text>
+			`);
+		});
+		return `
+			<div style="background:#fff;border-radius:30px;box-shadow:0 24px 54px rgba(15,23,42,.12);padding:34px;max-width:820px;margin:0 auto;">
+				<div style="text-align:center;font-size:15px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#475569;margin-bottom:30px;">Process Wheel Infographic</div>
+				<div style="position:relative;width:560px;height:560px;margin:0 auto;max-width:100%;">
+					<svg viewBox="0 0 560 560" style="width:100%;height:100%;overflow:visible;">
+						<defs>${defs.join("")}</defs>
+						${paths.join("")}
+						${labels.join("")}
+					</svg>
+					<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:168px;height:168px;border-radius:50%;background:radial-gradient(circle at 35% 35%, #6ee7b7, #2563eb, #1e3a8a);display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 8px 32px rgba(37,99,235,.35);border:4px solid #fff;text-align:center;">
+						<div style="font-size:13px;font-weight:900;color:#fff;letter-spacing:.08em;text-transform:uppercase;">SS Coil</div>
+						<div style="font-size:22px;font-weight:900;color:#fff;line-height:1.15;margin-top:5px;">${esc(rootTag)}</div>
+						<div style="font-size:12px;font-weight:800;color:#fbbf24;margin-top:6px;text-transform:uppercase;">${esc(data.operation || "-")}</div>
+					</div>
+				</div>
+				<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px 18px;margin-top:26px;">
+					${wheelItems.map((seg) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#555;font-weight:700;"><span style="width:12px;height:12px;border-radius:3px;background:${seg.color};display:inline-block;"></span>${esc(seg.label)}</div>`).join("")}
+				</div>
+			</div>
+		`;
+	})();
+
+	const flowerItems = (outputs.length ? outputs : [{ tag_no: rootTag, current_process: data.operation || "Process" }]).slice(0, 6).map((row, idx) => ({
+		num: String(idx + 1).padStart(2, "0"),
+		tag: row.tag_no || rootTag,
+		process: row.current_process || data.operation || "Process",
+		color: wheelPalette[idx % wheelPalette.length],
+		dx: [0, 0.87, 0.87, 0, -0.87, -0.87][idx] || 0,
+		dy: [-1, -0.5, 0.5, 1, 0.5, -0.5][idx] || 0,
+	}));
+	const flowerChartHtml = (() => {
+		const petalW = 220;
+		const petalH = 220;
+		const cx = 300;
+		const cy = 300;
+		const offset = 118;
+		return `
+			<div style="background:#fff;border-radius:30px;box-shadow:0 24px 54px rgba(15,23,42,.12);padding:34px;max-width:860px;margin:0 auto;position:relative;overflow:hidden;">
+				<div style="position:absolute;inset:0;pointer-events:none;opacity:.06;background-image:radial-gradient(circle, #3b82f6 1px, transparent 1px);background-size:18px 18px;"></div>
+				<div style="text-align:center;font-size:15px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#475569;margin-bottom:30px;position:relative;">Output Tag Flower Infographic</div>
+				<div style="position:relative;width:600px;height:600px;margin:0 auto;max-width:100%;">
+					${flowerItems.map((p, i) => {
+						const px = cx + p.dx * offset - petalW / 2;
+						const py = cy + p.dy * offset - petalH / 2;
+						return `
+							<div class="ss-coil-diagram-node" data-tag-no="${esc(p.tag)}" style="position:absolute;left:${px}px;top:${py}px;width:${petalW}px;height:${petalH}px;border-radius:50%;display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-start;padding:18px 20px;background:radial-gradient(circle at 30% 30%, ${lighten(p.color, 40)}, ${p.color});box-shadow:0 10px 28px rgba(0,0,0,.18);overflow:hidden;cursor:pointer;z-index:${10 - i};">
+								<div style="font-size:36px;font-weight:900;color:rgba(255,255,255,.92);line-height:1;">${esc(p.num)}</div>
+								<div style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:2px;margin-top:2px;">Tag No</div>
+								<div style="font-size:14px;font-weight:800;color:#fff;margin-top:8px;max-width:132px;text-align:right;line-height:1.3;">${esc(p.tag)}</div>
+								<div style="font-size:10px;color:rgba(255,255,255,.88);line-height:1.5;text-align:right;margin-top:8px;max-width:120px;">${esc(p.process)}</div>
+							</div>
+						`;
+					}).join("")}
+					<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 35% 35%, #6ee7b7, #1d4ed8, #1e3a8a);display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 8px 36px rgba(29,78,216,.4);border:5px solid #fff;text-align:center;z-index:15;">
+						<div style="font-size:12px;font-weight:800;color:#fff;letter-spacing:.08em;text-transform:uppercase;">Input Tag</div>
+						<div style="font-size:22px;font-weight:900;color:#fff;line-height:1.15;margin-top:6px;">${esc(rootTag)}</div>
+						<div style="font-size:13px;font-weight:800;color:#fbbf24;margin-top:8px;text-transform:uppercase;">${esc(status)}</div>
+					</div>
+				</div>
+				<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px 18px;margin-top:26px;position:relative;">
+					${flowerItems.map((p) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#555;font-weight:700;"><span style="width:12px;height:12px;border-radius:3px;background:${p.color};display:inline-block;"></span>${esc(p.tag)}</div>`).join("")}
+				</div>
+			</div>
+		`;
+	})();
+	const branchChartHtml = (() => {
+		const processTone = processColor(data.operation || processNames[0] || "Process");
+		const leftNodes = (root.children || []).slice(0, Math.ceil((root.children || []).length / 2));
+		const rightNodes = (root.children || []).slice(Math.ceil((root.children || []).length / 2));
+		const branchPillCard = (row, color, align = "left") => `
+			<div class="ss-coil-diagram-node" data-tag-no="${esc(row.tag_no || "")}" style="width:260px;background:linear-gradient(90deg, ${color.main}, ${lighten(color.main, 18)});border-radius:999px;padding:18px 28px;box-shadow:0 18px 30px ${color.glow};color:#fff;cursor:pointer;position:relative;">
+				<div style="position:absolute;${align === "left" ? "right" : "left"}:18px;top:50%;transform:translateY(-50%);width:74px;height:74px;border-radius:999px;background:#fff;box-shadow:0 10px 20px rgba(15,23,42,.15);"></div>
+				<div style="font-size:17px;font-weight:900;line-height:1.2;max-width:140px;">${esc(row.tag_no || "-")}</div>
+				<div style="font-size:11px;opacity:.95;margin-top:6px;max-width:140px;">${esc(row.current_process || data.operation || "-")}</div>
+			</div>
+		`;
+		return `
+			<div style="background:#fff;border-radius:30px;box-shadow:0 24px 54px rgba(15,23,42,.12);padding:36px;max-width:1180px;margin:0 auto;">
+				<div style="display:flex;justify-content:center;align-items:center;gap:44px;overflow:auto;padding:16px 0;min-width:max-content;">
+					<div style="display:flex;flex-direction:column;gap:18px;align-items:flex-end;">
+						${leftNodes.map((node, idx) => branchPillCard({ tag_no: node.tag_no, current_process: node.current_doctype || node.source_doctype || data.operation }, processColor((node.previous_docs && node.previous_docs[0] && node.previous_docs[0].operation) || data.operation), "left")).join("") || `<div style="font-size:13px;color:#94a3b8;">-</div>`}
+					</div>
+					<div style="display:flex;align-items:center;gap:26px;">
+						<div style="width:90px;height:3px;background:#cbd5e1;border-radius:999px;"></div>
+						<div style="width:260px;height:260px;border-radius:999px;background:linear-gradient(135deg,#ffffff,#eef4ff);box-shadow:0 28px 52px rgba(15,23,42,.12);border:12px solid ${processTone.soft};display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;">
+							<div style="font-size:18px;font-weight:800;color:#64748b;">Title Here</div>
+							<div style="font-size:28px;font-weight:900;color:#102a43;margin-top:10px;line-height:1.2;">${esc(rootTag)}</div>
+							<div style="font-size:13px;color:#64748b;line-height:1.6;margin-top:10px;">${esc(data.operation || "-")} | ${esc(status)}</div>
+						</div>
+						<div style="width:90px;height:3px;background:#cbd5e1;border-radius:999px;"></div>
+					</div>
+					<div style="display:flex;flex-direction:column;gap:18px;align-items:flex-start;">
+						${rightNodes.map((node, idx) => branchPillCard({ tag_no: node.tag_no, current_process: node.current_doctype || node.source_doctype || data.operation }, processColor((node.previous_docs && node.previous_docs[0] && node.previous_docs[0].operation) || data.operation), "right")).join("") || `<div style="font-size:13px;color:#94a3b8;">-</div>`}
+					</div>
+				</div>
+			</div>
+		`;
+	})();
+	const orgTemplateHtml = (() => {
+		const processTone = processColor(data.operation || processNames[0] || "Process");
+		const firstLevel = levels[1] || root.children || [];
+		const secondLevel = levels[2] || [];
+		return `
+			<div style="background:#fff;border-radius:30px;box-shadow:0 24px 54px rgba(15,23,42,.12);padding:36px;max-width:1280px;margin:0 auto;overflow:auto;">
+				<div style="text-align:center;font-size:44px;font-weight:900;letter-spacing:-.03em;color:#102a43;margin-bottom:26px;">Organization chart design template</div>
+				<div style="display:flex;flex-direction:column;align-items:center;min-width:max-content;padding:0 20px;">
+					<div class="ss-coil-diagram-node" data-tag-no="${esc(rootTag)}" style="width:240px;background:#fff;border-radius:34px;padding:18px 18px 22px 18px;text-align:center;border:6px solid ${processTone.main};box-shadow:0 22px 38px ${processTone.glow};cursor:pointer;">
+						<div style="width:84px;height:84px;border-radius:999px;margin:0 auto 12px auto;background:${processTone.soft};border:4px solid ${processTone.main};display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:${processTone.main};">1</div>
+						<div style="font-size:18px;font-weight:900;color:#102a43;line-height:1.3;">${esc(rootTag)}</div>
+						<div style="font-size:13px;color:#64748b;margin-top:8px;">${esc(data.operation || "-")}</div>
+					</div>
+					<div style="width:2px;height:34px;background:#cbd5e1;"></div>
+					<div style="display:flex;justify-content:center;gap:56px;align-items:flex-start;">
+						${firstLevel.map((node, idx) => {
+							const tone = processColor((node.previous_docs && node.previous_docs[0] && node.previous_docs[0].operation) || data.operation);
+							const children = secondLevel.filter((child) => child.parent_tag_no === node.tag_no);
+							return `
+								<div style="display:flex;flex-direction:column;align-items:center;min-width:260px;">
+									<div style="width:2px;height:26px;background:#cbd5e1;"></div>
+									<div class="ss-coil-diagram-node" data-tag-no="${esc(node.tag_no)}" style="width:220px;background:#fff;border-radius:30px;padding:16px 16px 20px 16px;text-align:center;border:6px solid ${tone.main};box-shadow:0 20px 34px ${tone.glow};cursor:pointer;">
+										<div style="width:78px;height:78px;border-radius:999px;margin:0 auto 12px auto;background:${tone.soft};border:4px solid ${tone.main};display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:${tone.main};">2</div>
+										<div style="font-size:16px;font-weight:900;color:#102a43;line-height:1.3;">${esc(node.tag_no)}</div>
+										<div style="font-size:12px;color:#64748b;margin-top:8px;">${esc(node.status || "-")}</div>
+									</div>
+									${children.length ? `<div style="width:2px;height:26px;background:#cbd5e1;"></div><div style="display:flex;gap:24px;justify-content:center;align-items:flex-start;">${children.map((child) => {
+										const ct = processColor((child.previous_docs && child.previous_docs[0] && child.previous_docs[0].operation) || data.operation);
+										return `<div class="ss-coil-diagram-node" data-tag-no="${esc(child.tag_no)}" style="width:180px;background:#fff;border-radius:26px;padding:14px 14px 18px 14px;text-align:center;border:5px solid ${ct.main};box-shadow:0 16px 28px ${ct.glow};cursor:pointer;"><div style="width:64px;height:64px;border-radius:999px;margin:0 auto 10px auto;background:${ct.soft};border:3px solid ${ct.main};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:${ct.main};">3</div><div style="font-size:14px;font-weight:900;color:#102a43;line-height:1.3;">${esc(child.tag_no)}</div><div style="font-size:11px;color:#64748b;margin-top:6px;">${esc(child.status || "-")}</div></div>`;
+									}).join("")}</div>` : ""}
+								</div>
+							`;
+						}).join("")}
+					</div>
+				</div>
+			</div>
+		`;
+	})();
+
+	return `
+		<div style="font-family:'Avenir Next','Segoe UI',sans-serif;background:linear-gradient(180deg,#f9fbff,#ffffff);padding:24px;border-radius:30px;max-width:1920px;margin:0 auto;">
+			<div style="background:linear-gradient(135deg,#8fb4ff,#c3b0ff);padding:34px 38px;border-radius:36px;color:#102a43;box-shadow:0 28px 48px rgba(15,23,42,.09);">
+				<div style="font-size:42px;font-weight:900;letter-spacing:-.04em;line-height:1.05;">SS Coil Visual Diagrams</div>
+				<div style="font-size:17px;color:#334e68;margin-top:10px;line-height:1.7;">Focused only on process flow, input tag, output tags, and multi-level child relationships in a full-HD organization-chart presentation style.</div>
+				<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+					${pill(`Input ${rootTag}`, "#ffffff", "#102a43")}
+					${pill(`Operation ${data.operation || "-"}`, "#ffffff", "#102a43")}
+					${pill(`Status ${status}`, "#ffffff", "#102a43")}
+				</div>
+			</div>
+			${section("Organization Chart Hierarchy", "A full-HD hierarchy board from the input tag to every child, sub-child, and deeper branch.", `
+				<div style="overflow:auto;padding:18px 0;">
+					<div style="min-width:max-content;padding:0 30px;">
+						${levelHtml}
+					</div>
+				</div>
+			`)}
+			${section("Organization Chart Template", "A closer recreation of the organization-chart style from your shared reference images.", orgTemplateHtml)}
+			${section("Left-Right Branch Infographic", "A closer recreation of the side-branch infographic style using the root tag and first-level output tags.", branchChartHtml)}
+			${section("Process Wheel Infographic", "Recreated from your attached wheel-style chart and mapped to live process flow data.", wheelChartHtml)}
+			${section("Output Flower Infographic", "Recreated from your attached flower-style chart using input and output tags.", flowerChartHtml)}
+			${section("Hierarchy Spider Diagram", "A sample-style center-flow diagram focused only on the input tag and first-level output relationships.", spiderSides)}
+			${section("Process Route Wheel", "A clean infographic wheel using only your process steps around the selected input tag.", wheelHtml)}
+			${section("Process Step Cards", "Minimal infographic cards for the defined process plan on the Sales Order item.", `
+				<div style="display:flex;gap:22px;flex-wrap:wrap;">${processNames.length ? processNames.map((name, idx) => processTag(name, idx)).join("") : `<div style="font-size:13px;color:#7b8794;">No process steps found.</div>`}</div>
+			`)}
+			${section("Input to Output Flow", "A focused flow lane showing how the input tag branches into each output tag.", `
+				<div>${outputLaneHtml}</div>
+			`)}
+		</div>
+	`;
+}
+
+function bindSSCoilDiagramActions(frm, $wrapper) {
+	$wrapper.find(".ss-coil-diagram-node").on("click", function () {
+		const tagNo = $(this).data("tag-no");
+		if (!tagNo) return;
+		frappe.set_route("Form", "Tag Registry", tagNo);
+	});
+}
+
 function bindSSCoilDashboardActions(frm, $wrapper, data) {
 	$wrapper.find(".ss-coil-dash-link").on("click", function () {
 		const doctype = $(this).data("doctype");
@@ -735,8 +1150,8 @@ function bindSSCoilDashboardActions(frm, $wrapper, data) {
 		if (!tagNo) return;
 		const $children = $wrapper.find(`.ss-coil-tree-children[data-parent-tag="${tagNo}"]`);
 		if (!$children.length) return;
-		const isHidden = $children.is(":hidden");
-		$children.toggle(!isHidden);
+		const isHidden = $children.css("display") === "none";
+		$children.css("display", isHidden ? "block" : "none");
 		$(this).text(isHidden ? "Collapse" : "Expand");
 	});
 

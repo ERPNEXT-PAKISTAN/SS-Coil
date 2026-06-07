@@ -84,7 +84,9 @@
   "column_break_ueot",
   "encoded_by",
   "dashboard_tab",
-  "order_status_report"
+  "order_status_report",
+  "daigrams_tab",
+  "daigrams_view"
  ],
  "fields": [
   {
@@ -471,12 +473,22 @@
    "fieldname": "order_status_report",
    "fieldtype": "HTML",
    "label": "Order Status Report"
+  },
+  {
+   "fieldname": "daigrams_tab",
+   "fieldtype": "Tab Break",
+   "label": "Daigrams"
+  },
+  {
+   "fieldname": "daigrams_view",
+   "fieldtype": "HTML",
+   "label": "Daigrams View"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-06 23:51:22.879498",
+ "modified": "2026-06-07 01:05:23.869482",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil",

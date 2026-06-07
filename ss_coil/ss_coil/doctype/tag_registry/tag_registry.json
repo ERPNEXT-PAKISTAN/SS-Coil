@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "field:tag_no",
- "creation": "2026-06-05 18:05:00.000000",
+ "creation": "2026-06-05 18:05:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -16,8 +16,13 @@
   "column_break_2",
   "sales_order",
   "stock_entry",
+  "customer_name",
+  "current_process",
+  "next_process",
+  "generation_level",
   "parent_tag_no",
   "root_tag_no",
+  "lineage_path",
   "section_break_2",
   "source_doctype",
   "source_docname",
@@ -91,6 +96,30 @@
    "options": "Stock Entry"
   },
   {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_process",
+   "fieldtype": "Data",
+   "label": "Current Process",
+   "read_only": 1
+  },
+  {
+   "fieldname": "next_process",
+   "fieldtype": "Data",
+   "label": "Next Process",
+   "read_only": 1
+  },
+  {
+   "fieldname": "generation_level",
+   "fieldtype": "Int",
+   "label": "Generation Level",
+   "read_only": 1
+  },
+  {
    "fieldname": "parent_tag_no",
    "fieldtype": "Data",
    "label": "Parent Tag No",
@@ -100,6 +129,12 @@
    "fieldname": "root_tag_no",
    "fieldtype": "Data",
    "label": "Root Tag No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lineage_path",
+   "fieldtype": "Small Text",
+   "label": "Lineage Path",
    "read_only": 1
   },
   {
@@ -170,7 +205,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-05 18:05:00.000000",
+ "modified": "2026-06-07 23:02:14.764103",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "Tag Registry",
@@ -189,8 +224,8 @@
    "write": 1
   }
  ],
- "search_fields": "tag_no,sales_order,item_code,item_name,parent_tag_no,root_tag_no,source_docname,current_docname",
  "row_format": "Dynamic",
+ "search_fields": "tag_no,sales_order,item_code,item_name,parent_tag_no,root_tag_no,source_docname,current_docname",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

@@ -286,6 +286,59 @@ def _register_tag(
 	if not tag_no or not frappe.db.exists("DocType", "Tag Registry"):
 		return
 
+	resolved_root_tag = root_tag_no or parent_tag_no or tag_no
+	customer_name = None
+	current_process = None
+	next_process = None
+	generation_level = 0
+	lineage_path = str(tag_no)
+
+	if sales_order and frappe.db.exists("Sales Order", sales_order):
+		customer_name = frappe.db.get_value("Sales Order", sales_order, "customer")
+
+	if parent_tag_no and parent_tag_no != tag_no and frappe.db.exists("DocType", "Tag Registry"):
+		parent_meta = frappe.db.get_value(
+			"Tag Registry",
+			{"tag_no": parent_tag_no},
+			["generation_level", "lineage_path", "root_tag_no", "customer_name"],
+			as_dict=True,
+		)
+		if parent_meta:
+			generation_level = cint(parent_meta.generation_level) + 1
+			resolved_root_tag = parent_meta.root_tag_no or resolved_root_tag
+			lineage_path = f"{parent_meta.lineage_path or parent_tag_no} > {tag_no}"
+			customer_name = customer_name or parent_meta.customer_name
+		else:
+			generation_level = max(1, len([part for part in str(tag_no).split("-") if part.isdigit()]) - 1)
+			lineage_path = f"{parent_tag_no} > {tag_no}"
+
+	if source_doctype == "SS Coil" and source_docname and frappe.db.exists("SS Coil", source_docname):
+		ss_meta = frappe.db.get_value(
+			"SS Coil",
+			source_docname,
+			["operation", "customer_name", "order_no"],
+			as_dict=True,
+		)
+		if ss_meta:
+			current_process = _label_for_process(ss_meta.operation)
+			customer_name = customer_name or ss_meta.customer_name
+			if not sales_order:
+				sales_order = ss_meta.order_no
+		if source_child_doctype == "Coil Output" and source_child_name and frappe.db.exists("Coil Output", source_child_name):
+			output_meta = frappe.db.get_value(
+				"Coil Output",
+				source_child_name,
+				["current_process", "next_process"],
+				as_dict=True,
+			)
+			if output_meta:
+				current_process = output_meta.current_process or current_process
+				next_process = output_meta.next_process or next_process
+		elif source_child_doctype == "Coil Input" and source_child_name and frappe.db.exists("Coil Input", source_child_name):
+			input_meta = frappe.db.get_value("Coil Input", source_child_name, ["next_process"], as_dict=True)
+			if input_meta:
+				next_process = input_meta.next_process or next_process
+
 	registry = frappe.db.get_value("Tag Registry", {"tag_no": tag_no}, "name")
 	if registry:
 		doc = frappe.get_doc("Tag Registry", registry)
@@ -314,13 +367,79 @@ def _register_tag(
 	doc.sales_order = sales_order
 	doc.stock_entry = stock_entry
 	doc.parent_tag_no = parent_tag_no
-	doc.root_tag_no = root_tag_no or parent_tag_no or tag_no
+	doc.root_tag_no = resolved_root_tag
+	doc.customer_name = customer_name
+	doc.current_process = current_process
+	doc.next_process = next_process
+	doc.generation_level = generation_level
+	doc.lineage_path = lineage_path
 	doc.status = status or "Active"
 	doc.flags.ignore_permissions = True
 	if registry:
 		doc.save(ignore_permissions=True)
 	else:
 		doc.insert(ignore_permissions=True)
+
+
+def backfill_tag_registry_hierarchy():
+	if not frappe.db.exists("DocType", "Tag Registry"):
+		return {"updated": 0}
+
+	rows = frappe.get_all(
+		"Tag Registry",
+		fields=[
+			"name",
+			"tag_no",
+			"parent_tag_no",
+			"root_tag_no",
+			"sales_order",
+			"source_doctype",
+			"source_docname",
+			"source_child_doctype",
+			"source_child_name",
+			"current_doctype",
+			"current_docname",
+			"current_child_doctype",
+			"current_child_name",
+			"stock_entry",
+			"item_code",
+			"item_name",
+			"status",
+		],
+		order_by="creation asc",
+	)
+	updated = 0
+	for row in rows:
+		before = frappe.db.get_value(
+			"Tag Registry",
+			row.name,
+			["generation_level", "lineage_path", "customer_name", "current_process", "next_process"],
+			as_dict=True,
+		) or {}
+		_register_tag(
+			row.tag_no,
+			source_doctype=row.source_doctype or row.current_doctype,
+			source_docname=row.source_docname or row.current_docname,
+			source_child_doctype=row.source_child_doctype or row.current_child_doctype,
+			source_child_name=row.source_child_name or row.current_child_name,
+			item_code=row.item_code,
+			item_name=row.item_name,
+			sales_order=row.sales_order,
+			stock_entry=row.stock_entry,
+			parent_tag_no=row.parent_tag_no,
+			root_tag_no=row.root_tag_no,
+			status=row.status,
+		)
+		after = frappe.db.get_value(
+			"Tag Registry",
+			row.name,
+			["generation_level", "lineage_path", "customer_name", "current_process", "next_process"],
+			as_dict=True,
+		) or {}
+		if before != after:
+			updated += 1
+	frappe.db.commit()
+	return {"updated": updated}
 
 
 def _next_tag_number():

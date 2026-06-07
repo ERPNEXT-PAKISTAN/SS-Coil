@@ -8,17 +8,17 @@
  "field_order": [
   "job_sheet",
   "operation",
-  "column_break_ywpb",
   "column_break_ijei",
   "order_status",
   "section_break_qyjw",
   "order_received_date",
   "sc_date",
   "column_break_twvh",
-  "job_sheet_no",
   "order_no",
+  "job_sheet_no",
   "column_break_wmcx",
   "sales_order_item",
+  "stock_entry",
   "column_break_bgis",
   "customer_name",
   "for_customer",
@@ -46,9 +46,7 @@
   "section_break_ezfe",
   "input",
   "column_break_fuog",
-  "stock_entry",
   "column_break_pmky",
-  "stock_entry_items",
   "section_break_lmaa",
   "thickness",
   "section_break_qasa",
@@ -103,10 +101,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_ywpb",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "column_break_ijei",
    "fieldtype": "Column Break"
   },
@@ -138,6 +132,7 @@
   {
    "fieldname": "order_no",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Order No",
    "options": "Sales Order"
   },
@@ -453,14 +448,9 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "stock_entry_items",
-   "fieldtype": "Link",
-   "label": "Stock Entry Items",
-   "options": "Stock Entry Detail"
-  },
-  {
    "fieldname": "order_status",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Order Status",
    "options": "In Process\nNot Started\nCompleted\nPartially Completed\nClosed"
   },
@@ -488,7 +478,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-07 01:05:23.869482",
+ "modified": "2026-06-08 00:35:53.760029",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil",

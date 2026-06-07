@@ -15,15 +15,13 @@ frappe.ui.form.on("SS Coil", {
 				},
 			};
 		});
-		frm.set_query("stock_entry_items", function () {
-			if (!frm.doc.stock_entry) {
-				return { filters: { name: "" } };
+		frm.set_query("stock_entry", function () {
+			if (!frm.doc.order_no) {
+				return {};
 			}
-
 			return {
-				query: "ss_coil.api.stock_entry_item_query",
 				filters: {
-					parent: frm.doc.stock_entry,
+					custom_sales_order: frm.doc.order_no,
 				},
 			};
 		});
@@ -32,6 +30,7 @@ frappe.ui.form.on("SS Coil", {
 		add_ss_coil_tag_buttons(frm);
 		add_process_action_buttons(frm);
 		frm.set_df_property("order_status", "read_only", 1);
+		style_process_control_field(frm);
 		update_grand_totals(frm);
 		update_calc_ratio(frm);
 		update_remaining_width(frm);
@@ -41,9 +40,14 @@ frappe.ui.form.on("SS Coil", {
 		render_job_output_qr_fields(frm);
 		render_ss_coil_dashboard(frm);
 		render_ss_coil_diagrams(frm);
+		sync_linked_stock_entry_field(frm);
+		apply_sales_order_item_link_title(frm);
 	},
 	operation(frm) {
 		sync_process_preview(frm);
+	},
+	process_control_enabled(frm) {
+		style_process_control_field(frm);
 	},
 	estimated_wt(frm) {
 		update_calc_ratio(frm);
@@ -70,6 +74,7 @@ frappe.ui.form.on("SS Coil", {
 	order_no(frm) {
 		if (!frm.doc.order_no) {
 			frm.set_value("sales_order_item", "");
+			frm.set_value("stock_entry", "");
 			frm.clear_table("so_item");
 			frm.refresh_field("so_item");
 			frm.clear_table("input_coil");
@@ -81,6 +86,7 @@ frappe.ui.form.on("SS Coil", {
 			clear_sales_order_item_mapped_fields(frm);
 			update_elapsed_time_display(frm);
 			update_grand_totals(frm);
+			set_stock_entry_field_description(frm, []);
 			return;
 		}
 		frm.set_value("sales_order_item", "");
@@ -95,17 +101,10 @@ frappe.ui.form.on("SS Coil", {
 		clear_sales_order_item_mapped_fields(frm);
 		update_elapsed_time_display(frm);
 		update_grand_totals(frm);
+		sync_linked_stock_entry_field(frm);
 	},
 	stock_entry(frm) {
-		if (!frm.doc.stock_entry) {
-			frm.set_value("stock_entry_items", "");
-			frm.clear_table("input_coil");
-			frm.refresh_field("input_coil");
-			return;
-		}
-		frm.set_value("stock_entry_items", "");
-		frm.clear_table("input_coil");
-		frm.refresh_field("input_coil");
+		sync_linked_stock_entry_field(frm, true);
 	},
 	sales_order_item(frm) {
 		if (!frm.doc.order_no || !frm.doc.sales_order_item) {
@@ -134,6 +133,8 @@ frappe.ui.form.on("SS Coil", {
 			callback: function (r) {
 				const item = r.message;
 				if (!item) return;
+				set_sales_order_item_link_title(item.name, item.item_name || item.item_code || item.name);
+				frm.refresh_field("sales_order_item");
 
 				const target_fields = (frappe.meta.get_docfields("Coil SO") || [])
 					.filter(
@@ -209,81 +210,6 @@ frappe.ui.form.on("SS Coil", {
 			},
 		});
 	},
-	stock_entry_items(frm) {
-		if (!frm.doc.stock_entry || !frm.doc.stock_entry_items) {
-			frm.clear_table("input_coil");
-			frm.refresh_field("input_coil");
-			return;
-		}
-
-		frappe.call({
-			method: "frappe.client.get",
-			args: {
-				doctype: "Stock Entry Detail",
-				name: frm.doc.stock_entry_items,
-			},
-			freeze: true,
-			freeze_message: __("Loading Selected Stock Entry Item..."),
-			callback: function (r) {
-				const item = r.message;
-				if (!item) return;
-
-				const target_fields = (frappe.meta.get_docfields("Coil Input") || [])
-					.filter(
-						(df) =>
-							df.fieldname &&
-							![
-								"Section Break",
-								"Column Break",
-								"Tab Break",
-								"HTML",
-								"Button",
-								"Table",
-								"Table MultiSelect",
-							].includes(df.fieldtype),
-					)
-					.map((df) => df.fieldname);
-
-				const special_map = {
-					class: item.item_name || item.item_code,
-					tag_no: item.custom_tag_no,
-					dimension: item.custom_dimension,
-					estimated_wt: item.custom_estimated_wt,
-					location: item.custom_location,
-					estimated_qty: item.qty,
-					actual_qty: item.transfer_qty,
-				};
-
-				frm.clear_table("input_coil");
-				const row = frm.add_child("input_coil");
-
-				target_fields.forEach((fieldname) => {
-					if (special_map[fieldname] !== undefined) {
-						row[fieldname] = special_map[fieldname];
-						return;
-					}
-
-					if (fieldname === "length") {
-						return;
-					}
-
-					const direct_value = item[fieldname];
-					const custom_value = item[`custom_${fieldname}`];
-
-					if (direct_value !== undefined && direct_value !== null) {
-						row[fieldname] = direct_value;
-					} else if (custom_value !== undefined && custom_value !== null) {
-						row[fieldname] = custom_value;
-					}
-				});
-
-				update_input_coil_length(frm, row);
-				rebuild_job_output_from_input(frm);
-				sync_process_preview(frm);
-				frm.refresh_field("input_coil");
-			},
-		});
-	},
 	order_status(frm) {
 		if (frm.doc.order_status === "Completed" && !frm.doc.completed_on) {
 			frm.set_value("completed_on", frappe.datetime.now_datetime());
@@ -320,6 +246,66 @@ function render_ss_coil_dashboard(frm) {
 			if (!field.$wrapper) return;
 			field.$wrapper.html(buildSSCoilDashboardHtml(data));
 			bindSSCoilDashboardActions(frm, field.$wrapper, data);
+		},
+	});
+}
+
+function set_sales_order_item_link_title(name, title) {
+	if (!name || !title) return;
+	frappe._link_titles = frappe._link_titles || {};
+	frappe._link_titles[`Sales Order Item::${name}`] = title;
+}
+
+function apply_sales_order_item_link_title(frm) {
+	if (!frm.doc.sales_order_item) return;
+	const soRow = (frm.doc.so_item || [])[0];
+	const title = soRow?.item_name || soRow?.item_code;
+	if (title) {
+		set_sales_order_item_link_title(frm.doc.sales_order_item, title);
+	}
+}
+
+function set_stock_entry_field_description(frm, rows) {
+	const control = frm.fields_dict.stock_entry;
+	if (!control) return;
+	if (!rows || !rows.length) {
+		frm.set_df_property("stock_entry", "description", __("No linked Stock Entry found for this Sales Order."));
+		return;
+	}
+	const summary = rows
+		.map((row) => `${row.purpose || "Stock Entry"}: ${row.name}${row.posting_date ? ` (${row.posting_date})` : ""}`)
+		.join(" | ");
+	frm.set_df_property("stock_entry", "description", __("Linked Stock Entries: {0}", [summary]));
+}
+
+function sync_linked_stock_entry_field(frm, skipAutofill = false) {
+	if (!frm.doc.order_no) {
+		set_stock_entry_field_description(frm, []);
+		return;
+	}
+	frappe.call({
+		method: "frappe.client.get_list",
+		args: {
+			doctype: "Stock Entry",
+			filters: { custom_sales_order: frm.doc.order_no },
+			fields: ["name", "purpose", "posting_date", "docstatus", "modified"],
+			order_by: "modified desc",
+			limit_page_length: 20,
+		},
+		callback: function (r) {
+			const rows = r.message || [];
+			set_stock_entry_field_description(frm, rows);
+			if (skipAutofill) return;
+			if (!rows.length) {
+				if (frm.doc.stock_entry) {
+					frm.set_value("stock_entry", "");
+				}
+				return;
+			}
+			const selected = rows[0].name;
+			if (frm.doc.stock_entry !== selected) {
+				frm.set_value("stock_entry", selected);
+			}
 		},
 	});
 }
@@ -1282,65 +1268,87 @@ function add_process_action_buttons(frm) {
 		return;
 	}
 
-	const startAction = function () {
-		const now = frappe.datetime.now_datetime();
-		if (!frm.doc.started_on) {
-			frm.set_value("started_on", now);
+	const ensureProcessControl = function (actionLabel) {
+		if (!frm.doc.process_control_enabled) {
+			frappe.msgprint({
+				title: __("Process Control Locked"),
+				indicator: "orange",
+				message: __("Turn ON <b>Process Control ON</b> before using <b>{0}</b>.", [actionLabel]),
+			});
+			return false;
 		}
-		frm.set_value("elapsed_time", getElapsedTimeValue(frm, now));
-		frm.set_value("order_status", "In Process");
-		frm.save();
+		return true;
 	};
 
-	const inProcessAction = function () {
+	const saveProcessState = function (statusValue, extra = {}) {
+		if (!ensureProcessControl(statusValue)) return;
 		const now = frappe.datetime.now_datetime();
+		if (!frm.doc.started_on && ["In Process", "Partially Completed", "Completed"].includes(statusValue)) {
+			frm.set_value("started_on", now);
+		}
+		if (statusValue === "Completed") {
+			frm.set_value("completed_on", now);
+		}
+		if (statusValue !== "Completed" && extra.clear_completed_on) {
+			frm.set_value("completed_on", "");
+		}
+		frm.set_value("elapsed_time", getElapsedTimeValue(frm, now));
+		frm.set_value("order_status", statusValue);
+		frm.set_value("process_control_enabled", 0);
+		return frm.save();
+	};
+
+	const startAction = function () {
+		const now = frappe.datetime.now_datetime();
+		if (!ensureProcessControl("Start")) return;
 		if (!frm.doc.started_on) {
 			frm.set_value("started_on", now);
 		}
-		frm.set_value("elapsed_time", getElapsedTimeValue(frm, now));
-		frm.set_value("order_status", "In Process");
-		frm.save();
+		saveProcessState("In Process", { clear_completed_on: true });
 	};
 
 	const partialAction = function () {
-		const now = frappe.datetime.now_datetime();
-		if (!frm.doc.started_on) {
-			frm.set_value("started_on", now);
-		}
-		frm.set_value("elapsed_time", getElapsedTimeValue(frm, now));
-		frm.set_value("order_status", "Partially Completed");
-		frm.save();
+		saveProcessState("Partially Completed", { clear_completed_on: true });
 	};
 
 	const completeAction = function () {
-		const now = frappe.datetime.now_datetime();
-		if (!frm.doc.started_on) {
-			frm.set_value("started_on", now);
+		const result = saveProcessState("Completed");
+		if (result) {
+			result.then(() => {
+				createNextProcessEntries(frm, true);
+			});
 		}
-		frm.set_value("completed_on", now);
-		frm.set_value("elapsed_time", getElapsedTimeValue(frm, now));
-		frm.set_value("order_status", "Completed");
-		frm.save().then(() => {
-			createNextProcessEntries(frm, true);
-		});
 	};
 
-	frm.add_custom_button(__("Start"), startAction, __("Process"));
-	frm.add_custom_button(__("Partial"), partialAction, __("Process"));
-	frm.add_custom_button(__("Complete"), completeAction, __("Process"));
-
-	frm.add_custom_button(__("Close"), function () {
-		frm.set_value("order_status", "Closed");
-		frm.save();
-	}, __("Process"));
+	const closeAction = function () {
+		const result = saveProcessState("Closed");
+		if (result) {
+			result.then(() => update_elapsed_time_display(frm));
+		}
+	};
 
 	const nextProcess = getNextProcessLabelFromOutputs(frm);
+	const processButtons = [
+		{ label: __("Start"), action: startAction, active: ["In Process"].includes(frm.doc.order_status) && !frm.doc.completed_on },
+		{ label: __("Partial"), action: partialAction, active: frm.doc.order_status === "Partially Completed" },
+		{ label: __("Complete"), action: completeAction, active: frm.doc.order_status === "Completed" },
+		{ label: __("Close"), action: closeAction, active: frm.doc.order_status === "Closed" },
+	];
+
+	processButtons.forEach((button) => {
+		const $btn = frm.add_custom_button(button.label, button.action);
+		styleProcessButton($btn, button.active);
+	});
+
 	if (nextProcess) {
-		frm.add_custom_button(__("Create Next Process Entries"), function () {
+		const $nextBtn = frm.add_custom_button(__("Create Next Process"), function () {
+			if (!ensureProcessControl("Create Next Process Entries")) return;
+			frm.set_value("process_control_enabled", 0);
 			frm.save().then(() => {
-				createNextProcessEntries(frm, false);
+				createNextProcessEntries(frm, true);
 			});
-		}, __("Process"));
+		});
+		styleProcessButton($nextBtn, false);
 	}
 }
 
@@ -1501,22 +1509,89 @@ function update_input_coil_length(frm, target_row = null) {
 
 function formatCounterDuration(totalSeconds) {
 	const seconds = Math.max(0, cint(totalSeconds));
+	const days = Math.floor(seconds / 86400);
 	const hours = Math.floor(seconds / 3600);
 	const minutes = Math.floor((seconds % 3600) / 60);
 	const remainingSeconds = seconds % 60;
-	return [hours, minutes, remainingSeconds].map((value) => String(value).padStart(2, "0")).join(":");
+	return `${days}d ${String(hours % 24).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(remainingSeconds).padStart(2, "0")}s`;
 }
 
 function renderElapsedTimeField(frm, value) {
 	const control = frm.fields_dict.elapsed_time;
 	if (!control) return;
 	if (control.$input && control.$input.length) {
-		control.$input.val(value || "");
+		control.$input
+			.val(value || "")
+			.css({
+				"background": "linear-gradient(180deg,#020617,#0f172a)",
+				"border": "1px solid #1e293b",
+				"border-radius": "12px",
+				"box-shadow": "inset 0 0 0 1px rgba(56,189,248,.08), 0 10px 24px rgba(15,23,42,.14)",
+				"color": ["Completed", "Closed"].includes(frm.doc.order_status) ? "#f8fafc" : "#67e8f9",
+				"font-family": "'Courier New', 'SFMono-Regular', Consolas, monospace",
+				"font-size": "22px",
+				"font-weight": "800",
+				"letter-spacing": "0.16em",
+				"text-align": "center",
+				"text-shadow": ["Completed", "Closed"].includes(frm.doc.order_status) ? "0 0 10px rgba(248,250,252,.15)" : "0 0 14px rgba(103,232,249,.4)",
+				"padding": "12px 14px",
+			});
 		return;
 	}
 	if (control.disp_area) {
-		$(control.disp_area).text(value || "");
+		$(control.disp_area).html(`
+			<div style="
+				background:linear-gradient(180deg,#020617,#0f172a);
+				border:1px solid #1e293b;
+				border-radius:12px;
+				box-shadow:inset 0 0 0 1px rgba(56,189,248,.08), 0 10px 24px rgba(15,23,42,.14);
+				color:${["Completed", "Closed"].includes(frm.doc.order_status) ? "#f8fafc" : "#67e8f9"};
+				font-family:'Courier New','SFMono-Regular',Consolas,monospace;
+				font-size:22px;
+				font-weight:800;
+				letter-spacing:.16em;
+				text-align:center;
+				text-shadow:${["Completed", "Closed"].includes(frm.doc.order_status) ? "0 0 10px rgba(248,250,252,.15)" : "0 0 14px rgba(103,232,249,.4)"};
+				padding:12px 14px;
+			">${frappe.utils.escape_html(value || "0d 00h 00m 00s")}</div>
+		`);
 	}
+}
+
+function styleProcessButton($btn, isActive) {
+	if (!$btn || !$btn.length) return;
+	const color = isActive ? "#16a34a" : "#6b7280";
+	const activeShadow = isActive ? "0 0 0 3px rgba(34,197,94,.16), 0 12px 24px rgba(15,23,42,.18)" : "0 8px 18px rgba(15,23,42,.12)";
+	$btn.css({
+		"background": isActive ? `linear-gradient(135deg, ${color}, ${lightenHex(color, 18)})` : `linear-gradient(135deg, ${color}, ${lightenHex(color, 10)})`,
+		"border": "0",
+		"border-radius": "12px",
+		"box-shadow": activeShadow,
+		"color": "#ffffff",
+		"font-weight": "800",
+		"margin-right": "8px",
+		"padding": "10px 14px",
+	});
+}
+
+function lightenHex(hex, amount) {
+	const clean = String(hex || "").replace("#", "");
+	if (clean.length !== 6) return hex;
+	const parts = clean.match(/.{1,2}/g).map((part) => parseInt(part, 16));
+	const shifted = parts.map((value) => Math.max(0, Math.min(255, value + amount)));
+	return `#${shifted.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function style_process_control_field(frm) {
+	const control = frm.fields_dict.process_control_enabled;
+	if (!control || !control.$wrapper) return;
+	control.$wrapper.css({
+		"background": frm.doc.process_control_enabled ? "linear-gradient(135deg,#dcfce7,#bbf7d0)" : "linear-gradient(135deg,#fef2f2,#fee2e2)",
+		"border": frm.doc.process_control_enabled ? "1px solid #86efac" : "1px solid #fca5a5",
+		"border-radius": "14px",
+		"box-shadow": "0 10px 20px rgba(15,23,42,.06)",
+		"padding": "8px 12px",
+	});
 }
 
 function getElapsedTimeValue(frm, endValue = null) {

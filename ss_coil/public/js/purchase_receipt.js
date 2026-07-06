@@ -1,8 +1,55 @@
+frappe.ui.form.on("Purchase Receipt Item", {
+	item_code(frm, cdt, cdn) {
+		apply_inward_item_tag_default(frm, cdt, cdn);
+	},
+	custom_create_tag_no(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (!row.custom_create_tag_no && !row.custom_tag_no) {
+			return;
+		}
+		if (!frm.doc.custom_create_tag_numbers && row.custom_create_tag_no) {
+			frappe.show_alert({
+				message: __("Enable 'Create Tag Numbers' on the Purchase Receipt first."),
+				indicator: "orange",
+			});
+			frappe.model.set_value(cdt, cdn, "custom_create_tag_no", 0);
+		}
+	},
+});
+
+function apply_inward_item_tag_default(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row || !row.item_code) return;
+
+	frappe.db.get_value("Item", row.item_code, "custom_create_tag_on_receipt", (r) => {
+		if (r && r.custom_create_tag_on_receipt) {
+			frappe.model.set_value(cdt, cdn, "custom_create_tag_no", 1);
+			if (!frm.doc.custom_create_tag_numbers) {
+				frm.set_value("custom_create_tag_numbers", 1);
+			}
+		}
+	});
+}
+
 frappe.ui.form.on("Purchase Receipt", {
 	refresh(frm) {
 		add_purchase_receipt_tag_buttons(frm);
+		toggle_purchase_receipt_tag_fields(frm);
+	},
+	custom_create_tag_numbers(frm) {
+		toggle_purchase_receipt_tag_fields(frm);
 	},
 });
+
+function toggle_purchase_receipt_tag_fields(frm) {
+	const enabled = !!frm.doc.custom_create_tag_numbers;
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid) {
+		return;
+	}
+	grid.toggle_enable("custom_create_tag_no", enabled);
+	grid.toggle_display("custom_create_tag_no", enabled);
+}
 
 function add_purchase_receipt_tag_buttons(frm) {
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) return;

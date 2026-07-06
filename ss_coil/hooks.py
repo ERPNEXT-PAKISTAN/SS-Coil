@@ -10,7 +10,7 @@ app_home = "/app/ss-coil-space"
 fixtures = [
 	{
 		"dt": "Custom Field",
-		"filters": [["dt", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Sales Order Item", "Stock Entry", "Stock Entry Detail", "Delivery Note Item", "Sales Invoice Item", "Purchase Receipt Item", "Purchase Invoice Item", "Expense Claim", "Journal Entry", "Payment Entry", "Purchase Order", "Purchase Receipt", "Purchase Invoice"]]],
+		"filters": [["dt", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Sales Order Item", "Stock Entry", "Stock Entry Detail", "Delivery Note Item", "Sales Invoice Item", "Purchase Receipt Item", "Purchase Invoice Item", "Expense Claim", "Journal Entry", "Payment Entry", "Purchase Order", "Purchase Receipt", "Purchase Invoice", "Item"]]],
 	},
 	{
 		"dt": "Property Setter",
@@ -81,7 +81,6 @@ doc_events = {
 	"Sales Order": {
 		"before_validate": [
 			"ss_coil.api.sync_sales_order_item_dimensions",
-			"ss_coil.api.assign_sales_order_item_tags",
 		],
 		"before_save": [
 			"ss_coil.api.sync_sales_order_item_dimensions",

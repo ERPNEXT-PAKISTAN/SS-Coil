@@ -20,6 +20,10 @@ function add_sales_order_tag_buttons(frm) {
 		frappe.set_route("List", "Tag Registry", { sales_order: frm.doc.name });
 	}, __("Tags"));
 
+	frm.add_custom_button(__("Link Parent Tags"), function () {
+		open_sales_order_parent_tag_dialog(frm);
+	}, __("Tags"));
+
 	const tags = [...new Set((frm.doc.items || []).map((row) => row.custom_tag_no).filter(Boolean))];
 	if (tags.length === 1) {
 		frm.add_custom_button(__("Open Tag"), function () {
@@ -33,6 +37,19 @@ function add_sales_order_tag_buttons(frm) {
 }
 
 frappe.ui.form.on("Sales Order Item", {
+	item_code(frm, cdt, cdn) {
+		apply_sales_order_item_coil_defaults(frm, cdt, cdn);
+	},
+	custom_raw_material_item(frm, cdt, cdn) {
+		frappe.model.set_value(cdt, cdn, "custom_raw_material_tag_no", "");
+		frappe.model.set_value(cdt, cdn, "custom_raw_material_batch_no", "");
+	},
+	custom_stock_source_type(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (row.custom_stock_source_type === "Purchased" && !row.custom_raw_material_item) {
+			apply_sales_order_item_coil_defaults(frm, cdt, cdn);
+		}
+	},
 	custom_thickness(frm, cdt, cdn) {
 		set_custom_dimension_from_values(cdt, cdn);
 	},
@@ -48,7 +65,236 @@ frappe.ui.form.on("Sales Order Item", {
 	custom_manage_cutting_scheme(frm, cdt, cdn) {
 		open_cutting_scheme_dialog(frm, cdt, cdn);
 	},
+	custom_select_raw_material_tag(frm, cdt, cdn) {
+		open_raw_material_tag_dialog(frm, cdt, cdn);
+	},
 });
+
+function apply_sales_order_item_coil_defaults(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row || !row.item_code) return;
+
+	frappe.call({
+		method: "ss_coil.api.get_item_coil_defaults",
+		args: { item_code: row.item_code },
+		callback(r) {
+			const defaults = r.message || {};
+			if (defaults.custom_default_raw_material_item && !row.custom_raw_material_item) {
+				frappe.model.set_value(cdt, cdn, "custom_raw_material_item", defaults.custom_default_raw_material_item);
+			}
+			if (defaults.custom_ss_coil_item_type === "Raw Material" && !row.custom_stock_source_type) {
+				frappe.model.set_value(cdt, cdn, "custom_stock_source_type", "Purchased");
+			}
+			if (["Finished Good", "Semi Finished"].includes(defaults.custom_ss_coil_item_type) && !row.custom_stock_source_type) {
+				frappe.model.set_value(cdt, cdn, "custom_stock_source_type", "Purchased");
+			}
+		},
+		error() {
+			// Ignore if API is unavailable during reload; item defaults are optional.
+		},
+	});
+}
+
+function open_raw_material_tag_dialog(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row) return;
+
+	if (!row.custom_raw_material_item) {
+		frappe.msgprint(__("Select a Raw Material Item before choosing a parent tag."));
+		return;
+	}
+
+	frappe.call({
+		method: "ss_coil.api.get_available_raw_material_tags",
+		args: {
+			sales_order: frm.doc.name,
+			sales_order_item: row.name,
+			raw_material_item: row.custom_raw_material_item,
+		},
+		freeze: true,
+		freeze_message: __("Loading available parent tags..."),
+		callback(r) {
+			const payload = r.message || {};
+			const tags = payload.tags || [];
+			if (!tags.length) {
+				frappe.msgprint({
+					title: __("No Parent Tags Available"),
+					message: __(
+						"No unassigned parent tags were found for {0}. Receive the raw material on Purchase Receipt or Material Receipt Stock Entry first.",
+						[row.custom_raw_material_item],
+					),
+					indicator: "orange",
+				});
+				return;
+			}
+			show_raw_material_tag_picker_dialog(frm, cdt, cdn, row, tags);
+		},
+	});
+}
+
+function show_raw_material_tag_picker_dialog(frm, cdt, cdn, row, tags) {
+	const dialog = new frappe.ui.Dialog({
+		title: __("Select Raw Material Tag"),
+		size: "extra-large",
+		fields: [
+			{
+				fieldtype: "HTML",
+				fieldname: "tag_picker_html",
+			},
+		],
+		primary_action_label: __("Close"),
+		primary_action() {
+			dialog.hide();
+		},
+	});
+
+	const rows_html = tags
+		.map((tag) => {
+			const source_label =
+				tag.source_doctype === "Purchase Receipt"
+					? __("Purchased")
+					: tag.source_doctype === "Stock Entry"
+						? __("Customer Provided")
+						: tag.stock_source_type || "-";
+			return `
+				<tr>
+					<td><b>${escape_html(tag.tag_no || "-")}</b></td>
+					<td>${escape_html(tag.batch_no || "-")}</td>
+					<td>${escape_html(tag.dimension || "-")}</td>
+					<td>${escape_html(tag.specification || "-")}</td>
+					<td>${escape_html(String(tag.estimated_wt || "-"))}</td>
+					<td>${escape_html(source_label)}</td>
+					<td>${escape_html(tag.source_docname || tag.current_docname || "-")}</td>
+					<td>
+						<button class="btn btn-xs btn-primary ss-coil-pick-tag" data-tag-no="${escape_html(tag.tag_no || "")}">
+							${__("Select")}
+						</button>
+					</td>
+				</tr>
+			`;
+		})
+		.join("");
+
+	dialog.fields_dict.tag_picker_html.$wrapper.html(`
+		<div style="margin-bottom:10px;color:#475569;">
+			<b>${escape_html(row.item_name || row.item_code || "")}</b>
+			→ Raw Material: <b>${escape_html(row.custom_raw_material_item || "")}</b>
+			${row.custom_raw_material_tag_no ? ` | Current Tag: <b>${escape_html(row.custom_raw_material_tag_no)}</b>` : ""}
+		</div>
+		<div class="table-responsive">
+			<table class="table table-bordered table-sm">
+				<thead>
+					<tr>
+						<th>${__("Tag No")}</th>
+						<th>${__("Batch")}</th>
+						<th>${__("Dimension")}</th>
+						<th>${__("Specification")}</th>
+						<th>${__("Est WT")}</th>
+						<th>${__("Stock Source")}</th>
+						<th>${__("Inward Doc")}</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>${rows_html}</tbody>
+			</table>
+		</div>
+	`);
+
+	dialog.fields_dict.tag_picker_html.$wrapper.find(".ss-coil-pick-tag").on("click", function () {
+		const tag_no = $(this).attr("data-tag-no");
+		if (!tag_no) return;
+		frappe.call({
+			method: "ss_coil.api.assign_raw_material_tag_to_sales_order_item",
+			args: {
+				sales_order_item: row.name,
+				tag_no,
+			},
+			freeze: true,
+			freeze_message: __("Linking parent tag..."),
+			callback(res) {
+				const result = res.message || {};
+				frappe.model.set_value(cdt, cdn, "custom_raw_material_tag_no", result.tag_no || tag_no);
+				if (result.batch_no) {
+					frappe.model.set_value(cdt, cdn, "custom_raw_material_batch_no", result.batch_no);
+				}
+				if (result.stock_source_type) {
+					frappe.model.set_value(cdt, cdn, "custom_stock_source_type", result.stock_source_type);
+				}
+				frappe.show_alert({
+					message: __("Linked parent tag {0}", [result.tag_no || tag_no]),
+					indicator: "green",
+				});
+				dialog.hide();
+				frm.refresh_field("items");
+			},
+		});
+	});
+
+	dialog.show();
+}
+
+function open_sales_order_parent_tag_dialog(frm) {
+	frappe.call({
+		method: "ss_coil.api.get_sales_order_items_pending_raw_material_tags",
+		args: { sales_order: frm.doc.name },
+		freeze: true,
+		callback(r) {
+			const payload = r.message || {};
+			const pending = payload.pending || [];
+			if (!pending.length) {
+				frappe.msgprint({
+					title: __("All Lines Linked"),
+					message: __("Every Sales Order item with a raw material already has a parent tag assigned."),
+					indicator: "green",
+				});
+				return;
+			}
+
+			const dialog = new frappe.ui.Dialog({
+				title: __("Link Parent Tags"),
+				size: "large",
+				fields: [{ fieldtype: "HTML", fieldname: "pending_html" }],
+				primary_action_label: __("Close"),
+				primary_action() {
+					dialog.hide();
+				},
+			});
+
+			const pending_html = pending
+				.map(
+					(item) => `
+					<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #e2e8f0;">
+						<div>
+							<b>${escape_html(item.item_name || item.item_code || item.name)}</b><br>
+							<span style="color:#64748b;">${__("Raw Material")}: ${escape_html(item.custom_raw_material_item || "-")}</span>
+						</div>
+						<button class="btn btn-sm btn-primary ss-coil-open-tag-picker" data-row-name="${escape_html(item.name)}">
+							${__("Select Tag")}
+						</button>
+					</div>
+				`,
+				)
+				.join("");
+
+			dialog.fields_dict.pending_html.$wrapper.html(`
+				<div style="margin-bottom:12px;color:#475569;">
+					${__("{0} line(s) still need a parent raw material tag.", [pending.length])}
+				</div>
+				${pending_html}
+			`);
+
+			dialog.fields_dict.pending_html.$wrapper.find(".ss-coil-open-tag-picker").on("click", function () {
+				const row_name = $(this).attr("data-row-name");
+				const grid_row = (frm.doc.items || []).find((item) => item.name === row_name);
+				if (!grid_row) return;
+				dialog.hide();
+				open_raw_material_tag_dialog(frm, grid_row.doctype, grid_row.name);
+			});
+
+			dialog.show();
+		},
+	});
+}
 
 function bind_live_dimension_events(frm) {
 	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;

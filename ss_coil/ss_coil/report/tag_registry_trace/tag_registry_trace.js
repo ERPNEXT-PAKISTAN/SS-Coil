@@ -20,7 +20,14 @@ frappe.query_reports["Tag Registry Trace"] = {
 			fieldname: "status",
 			label: __("Status"),
 			fieldtype: "Select",
-			options: "\nActive\nProduced\nDelivered\nInvoiced\nCancelled",
+			options: "\nActive\nProduced\nDelivered\nInvoiced\nLinked\nCancelled",
 		},
 	],
+	formatter(value, row, column, data, default_formatter) {
+		value = default_formatter(value, row, column, data);
+		if (column.fieldname === "tree_label" && data && data.parent_tag_no) {
+			return `<span style="padding-left:12px;">${value || ""}</span>`;
+		}
+		return value;
+	},
 };

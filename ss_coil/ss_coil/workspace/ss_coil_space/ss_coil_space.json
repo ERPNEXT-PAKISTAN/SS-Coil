@@ -139,7 +139,7 @@
   },
   {
    "hidden": 0,
-   "is_query_report": 0,
+   "is_query_report": 1,
    "label": "Tag Registry Trace",
    "link_count": 0,
    "link_to": "Tag Registry Trace",

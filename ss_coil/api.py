@@ -1,4 +1,5 @@
 import html
+import json
 import re
 from io import BytesIO
 
@@ -38,6 +39,247 @@ def _format_dimension_part(value):
 
 def _has_field(doctype, fieldname):
 	return bool(frappe.get_meta(doctype).get_field(fieldname))
+
+
+TAG_ORIGIN_DOCTYPES = ("Purchase Receipt", "Stock Entry")
+
+
+def _is_material_receipt_stock_entry(doc):
+	if (doc.purpose or "") == "Material Receipt":
+		return True
+	stock_entry_type = getattr(doc, "stock_entry_type", None)
+	if not stock_entry_type:
+		return False
+	if stock_entry_type == "Material Receipt":
+		return True
+	if frappe.db.exists("Stock Entry Type", stock_entry_type):
+		purpose = frappe.db.get_value("Stock Entry Type", stock_entry_type, "purpose")
+		return purpose == "Material Receipt"
+	return False
+
+
+def _item_create_tag_on_receipt(item_code):
+	if not item_code or not _has_field("Item", "custom_create_tag_on_receipt"):
+		return False
+	return cint(frappe.get_cached_value("Item", item_code, "custom_create_tag_on_receipt"))
+
+
+def _tag_creation_enabled(doc, row):
+	if not cint(getattr(doc, "custom_create_tag_numbers", 0)):
+		return False
+	if cint(getattr(row, "custom_create_tag_no", 0)):
+		return True
+	return _item_create_tag_on_receipt(getattr(row, "item_code", None))
+
+
+def apply_inward_tag_row_defaults(doc):
+	needs_header = False
+	for row in doc.items or []:
+		if not _has_field(row.doctype, "custom_create_tag_no"):
+			continue
+		if _item_create_tag_on_receipt(row.item_code):
+			row.custom_create_tag_no = 1
+			needs_header = True
+	if needs_header and _has_field(doc.doctype, "custom_create_tag_numbers"):
+		doc.custom_create_tag_numbers = 1
+
+
+def _stock_source_for_origin(source_doctype):
+	if source_doctype == "Purchase Receipt":
+		return "Purchased"
+	if source_doctype == "Stock Entry":
+		return "Customer Provided"
+	return ""
+
+
+def _link_origin_tag_to_sales_order_items(tag_no, item_code, sales_order, batch_no=None, source_doctype=None):
+	if not tag_no or not item_code or not sales_order:
+		return
+	if not _has_field("Sales Order Item", "custom_raw_material_item"):
+		return
+
+	rows = frappe.get_all(
+		"Sales Order Item",
+		filters={
+			"parent": sales_order,
+			"custom_raw_material_item": item_code,
+			"custom_raw_material_tag_no": ["in", ["", None]],
+		},
+		fields=["name"],
+		order_by="idx asc",
+		limit=1,
+	)
+	if not rows:
+		return
+
+	values = {"custom_raw_material_tag_no": tag_no}
+	if _has_field("Sales Order Item", "custom_raw_material_batch_no"):
+		values["custom_raw_material_batch_no"] = batch_no or tag_no
+	stock_source = _stock_source_for_origin(source_doctype)
+	if stock_source and _has_field("Sales Order Item", "custom_stock_source_type"):
+		values["custom_stock_source_type"] = stock_source
+	frappe.db.set_value("Sales Order Item", rows[0].name, values, update_modified=False)
+
+
+def sync_sales_order_item_child_tags(doc, method=None):
+	if not getattr(doc, "sales_order_item", None):
+		return
+	child_tags = [row.tag_no for row in (doc.job_output or []) if getattr(row, "tag_no", None)]
+	if not child_tags:
+		return
+
+	primary_tag = child_tags[0]
+	values = {}
+	if _has_field("Sales Order Item", "custom_child_tag_no"):
+		values["custom_child_tag_no"] = ", ".join(child_tags)
+	if _has_field("Sales Order Item", "custom_tag_no"):
+		values["custom_tag_no"] = primary_tag
+	if values:
+		frappe.db.set_value("Sales Order Item", doc.sales_order_item, values, update_modified=False)
+
+
+def _find_tag_by_batch(batch_no, item_code=None):
+	if not batch_no:
+		return None
+	batch_no = str(batch_no).strip()
+	if frappe.db.exists("Tag Registry", {"tag_no": batch_no}):
+		return batch_no
+	if _has_field("Tag Registry", "batch_no"):
+		tag = frappe.db.get_value("Tag Registry", {"batch_no": batch_no}, "tag_no")
+		if tag:
+			return tag
+	return None
+
+
+def _find_stock_entry_detail_tag(stock_entry=None, se_detail=None, item_code=None, batch_no=None):
+	if se_detail and frappe.db.exists("Stock Entry Detail", se_detail):
+		tag_no = frappe.db.get_value("Stock Entry Detail", se_detail, "custom_tag_no")
+		if tag_no:
+			return tag_no
+	if stock_entry and item_code:
+		filters = {"parent": stock_entry, "item_code": item_code}
+		if batch_no:
+			filters["batch_no"] = batch_no
+		rows = frappe.get_all("Stock Entry Detail", filters=filters, pluck="custom_tag_no")
+		return _first_unique([tag for tag in rows if tag])
+	return None
+
+
+def _resolve_carried_tag(row, doc=None):
+	if getattr(row, "custom_tag_no", None):
+		return row.custom_tag_no
+
+	tag = _find_tag_by_batch(getattr(row, "batch_no", None), getattr(row, "item_code", None))
+	if tag:
+		return tag
+
+	if getattr(row, "purchase_receipt_item", None):
+		tag = _find_purchase_receipt_item_tag(pr_detail=row.purchase_receipt_item, item_code=row.item_code)
+		if tag:
+			return tag
+
+	if getattr(row, "reference_purchase_receipt", None):
+		tag = _find_purchase_receipt_item_tag(
+			purchase_receipt=row.reference_purchase_receipt,
+			item_code=row.item_code,
+		)
+		if tag:
+			return tag
+
+	if getattr(row, "serial_and_batch_bundle", None):
+		bundle_batches = frappe.get_all(
+			"Serial and Batch Entry",
+			filters={"parent": row.serial_and_batch_bundle, "batch_no": ["is", "set"]},
+			pluck="batch_no",
+		)
+		for batch in bundle_batches:
+			tag = _find_tag_by_batch(batch, row.item_code)
+			if tag:
+				return tag
+
+	return None
+
+
+def _ensure_batch_for_tag_row(row, tag_no):
+	if not tag_no or not getattr(row, "item_code", None):
+		return
+	if not _has_field(row.doctype, "batch_no"):
+		return
+	if row.batch_no:
+		return
+	has_batch = frappe.get_cached_value("Item", row.item_code, "has_batch_no")
+	if not has_batch:
+		return
+	if not frappe.db.exists("Batch", tag_no):
+		frappe.get_doc(
+			{
+				"doctype": "Batch",
+				"batch_id": tag_no,
+				"item": row.item_code,
+			}
+		).insert(ignore_permissions=True)
+	row.batch_no = tag_no
+
+
+def _create_origin_tag(doc, row, source_doctype, sales_order=None, stock_entry=None):
+	existing = _resolve_carried_tag(row, doc)
+	if existing:
+		row.custom_tag_no = existing
+		return existing
+
+	if row.custom_tag_no:
+		is_persisted = bool(doc.name and not str(doc.name).startswith("new-"))
+		if is_persisted:
+			_ensure_origin_tag_available(row.custom_tag_no, source_doctype, doc.name, row.doctype, row.name)
+		tag_no = row.custom_tag_no
+	else:
+		tag_no = _next_tag_number()
+		while frappe.db.exists("Tag Registry", {"tag_no": tag_no}):
+			tag_no = _next_tag_number()
+		if _has_field(row.doctype, "custom_tag_no"):
+			row.custom_tag_no = tag_no
+
+	_ensure_batch_for_tag_row(row, tag_no)
+	batch_no = getattr(row, "batch_no", None) or tag_no
+	sales_order = sales_order or getattr(doc, "custom_sales_order", None)
+	_register_tag(
+		tag_no,
+		source_doctype=source_doctype,
+		source_docname=doc.name,
+		source_child_doctype=row.doctype,
+		source_child_name=row.name,
+		item_code=row.item_code,
+		item_name=row.item_name,
+		sales_order=sales_order,
+		stock_entry=stock_entry,
+		batch_no=batch_no,
+		status="Active",
+	)
+	_link_origin_tag_to_sales_order_items(tag_no, row.item_code, sales_order, batch_no, source_doctype)
+	return tag_no
+
+
+def _update_tag_location(doc, row, status="Active", sales_order=None, stock_entry=None):
+	if not getattr(row, "custom_tag_no", None):
+		return
+	batch_no = getattr(row, "batch_no", None)
+	_register_tag(
+		row.custom_tag_no,
+		source_doctype=None,
+		source_docname=None,
+		source_child_doctype=None,
+		source_child_name=None,
+		item_code=row.item_code,
+		item_name=row.item_name,
+		sales_order=sales_order,
+		stock_entry=stock_entry,
+		batch_no=batch_no,
+		status=status,
+		current_doctype=doc.doctype,
+		current_docname=doc.name,
+		current_child_doctype=row.doctype,
+		current_child_name=row.name,
+	)
 
 
 PROCESS_FIELDS = ("slitter", "leveler", "reshearing")
@@ -281,7 +523,12 @@ def _register_tag(
 	stock_entry=None,
 	parent_tag_no=None,
 	root_tag_no=None,
+	batch_no=None,
 	status="Active",
+	current_doctype=None,
+	current_docname=None,
+	current_child_doctype=None,
+	current_child_name=None,
 ):
 	if not tag_no or not frappe.db.exists("DocType", "Tag Registry"):
 		return
@@ -358,10 +605,10 @@ def _register_tag(
 	):
 		doc.source_child_name = source_child_name
 
-	doc.current_doctype = source_doctype
-	doc.current_docname = source_docname
-	doc.current_child_doctype = source_child_doctype
-	doc.current_child_name = source_child_name
+	doc.current_doctype = current_doctype or source_doctype
+	doc.current_docname = current_docname or source_docname
+	doc.current_child_doctype = current_child_doctype or source_child_doctype
+	doc.current_child_name = current_child_name or source_child_name
 	doc.item_code = item_code
 	doc.item_name = item_name
 	doc.sales_order = sales_order
@@ -373,6 +620,8 @@ def _register_tag(
 	doc.next_process = next_process
 	doc.generation_level = generation_level
 	doc.lineage_path = lineage_path
+	if batch_no and _has_field("Tag Registry", "batch_no"):
+		doc.batch_no = batch_no
 	doc.status = status or "Active"
 	doc.flags.ignore_permissions = True
 	if registry:
@@ -917,45 +1166,27 @@ def backfill_sales_order_item_dimensions(sales_order=None):
 
 
 def assign_sales_order_item_tags(doc, method=None):
+	"""Sales Order does not create tags. Only sync manually linked tags to the registry."""
 	for row in doc.items or []:
-		is_persisted_source = bool(doc.name and frappe.db.exists("Sales Order", doc.name))
-		if row.get("custom_tag_no") and is_persisted_source:
-			_ensure_origin_tag_available(row.custom_tag_no, "Sales Order", doc.name, row.doctype, row.name)
-		if row.get("custom_tag_no"):
-			tag_no = row.get("custom_tag_no")
-		else:
-			tag_no = _next_tag_number()
-			if _has_field(row.doctype, "custom_tag_no"):
-				row.custom_tag_no = tag_no
-
-		if is_persisted_source:
-			_register_tag(
-				tag_no,
-				source_doctype="Sales Order",
-				source_docname=doc.name,
-				source_child_doctype=row.doctype,
-				source_child_name=row.name,
-				item_code=row.item_code,
-				item_name=row.item_name,
-				sales_order=doc.name,
-				status="Active",
-			)
+		if not row.get("custom_tag_no"):
+			continue
+		_update_tag_location(
+			doc,
+			row,
+			status="Linked",
+			sales_order=doc.name,
+		)
 
 
 def sync_sales_order_item_tag_registry(doc, method=None):
 	for row in doc.items or []:
 		if not row.get("custom_tag_no"):
 			continue
-		_register_tag(
-			row.get("custom_tag_no"),
-			source_doctype="Sales Order",
-			source_docname=doc.name,
-			source_child_doctype=row.doctype,
-			source_child_name=row.name,
-			item_code=row.item_code,
-			item_name=row.item_name,
+		_update_tag_location(
+			doc,
+			row,
+			status="Linked",
 			sales_order=doc.name,
-			status="Active",
 		)
 
 
@@ -963,89 +1194,78 @@ def assign_purchase_receipt_item_tags(doc, method=None):
 	for row in doc.items or []:
 		if not _has_field(row.doctype, "custom_tag_no"):
 			continue
-		derived_from_upstream = False
-		if not row.custom_tag_no and getattr(row, "purchase_invoice_item", None):
-			row.custom_tag_no = _find_purchase_invoice_item_tag(pi_detail=row.purchase_invoice_item, item_code=row.item_code)
-			derived_from_upstream = bool(row.custom_tag_no)
-		if not row.custom_tag_no and getattr(row, "sales_order_item", None):
-			row.custom_tag_no = _find_sales_order_item_tag(so_detail=row.sales_order_item, item_code=row.item_code)
-			derived_from_upstream = bool(row.custom_tag_no)
-		if row.custom_tag_no and not derived_from_upstream:
-			_ensure_origin_tag_available(row.custom_tag_no, "Purchase Receipt", doc.name, row.doctype, row.name)
-		tag_no = _get_or_create_tag(
-			source_doctype="Purchase Receipt",
-			source_docname=doc.name,
-			source_child_doctype=row.doctype,
-			source_child_name=row.name,
-			item_code=row.item_code,
-			item_name=row.item_name,
+
+		carried_tag = _resolve_carried_tag(row, doc)
+		if carried_tag:
+			row.custom_tag_no = carried_tag
+			_update_tag_location(
+				doc,
+				row,
+				sales_order=getattr(row, "sales_order", None) or getattr(doc, "custom_sales_order", None),
+			)
+			continue
+
+		if not _tag_creation_enabled(doc, row):
+			continue
+
+		_create_origin_tag(
+			doc,
+			row,
+			"Purchase Receipt",
 			sales_order=getattr(row, "sales_order", None) or getattr(doc, "custom_sales_order", None),
-			existing_tag=row.custom_tag_no,
 		)
-		row.custom_tag_no = tag_no
 
 
 def assign_purchase_invoice_item_tags(doc, method=None):
 	for row in doc.items or []:
 		if not _has_field(row.doctype, "custom_tag_no"):
 			continue
-		derived_from_upstream = False
+
 		if not row.custom_tag_no and getattr(row, "purchase_receipt_item", None):
-			row.custom_tag_no = _find_purchase_receipt_item_tag(pr_detail=row.purchase_receipt_item, item_code=row.item_code)
-			derived_from_upstream = bool(row.custom_tag_no)
-		if not row.custom_tag_no and getattr(row, "sales_order_item", None):
-			row.custom_tag_no = _find_sales_order_item_tag(so_detail=row.sales_order_item, item_code=row.item_code)
-			derived_from_upstream = bool(row.custom_tag_no)
-		if row.custom_tag_no and not derived_from_upstream:
-			_ensure_origin_tag_available(row.custom_tag_no, "Purchase Invoice", doc.name, row.doctype, row.name)
-		tag_no = _get_or_create_tag(
-			source_doctype="Purchase Invoice",
-			source_docname=doc.name,
-			source_child_doctype=row.doctype,
-			source_child_name=row.name,
-			item_code=row.item_code,
-			item_name=row.item_name,
-			sales_order=getattr(row, "sales_order", None) or getattr(doc, "custom_sales_order", None),
-			existing_tag=row.custom_tag_no,
-		)
-		row.custom_tag_no = tag_no
+			row.custom_tag_no = _find_purchase_receipt_item_tag(
+				pr_detail=row.purchase_receipt_item,
+				item_code=row.item_code,
+			)
+		if not row.custom_tag_no:
+			row.custom_tag_no = _resolve_carried_tag(row, doc)
+
+		if row.custom_tag_no:
+			_update_tag_location(
+				doc,
+				row,
+				sales_order=getattr(row, "sales_order", None) or getattr(doc, "custom_sales_order", None),
+			)
 
 
 def assign_stock_entry_detail_tags(doc, method=None):
-	is_receipt = (doc.purpose or "") == "Material Receipt"
+	is_receipt = _is_material_receipt_stock_entry(doc)
 	for row in doc.items or []:
 		if not _has_field(row.doctype, "custom_tag_no"):
 			continue
-		derived_from_upstream = False
-		if not row.custom_tag_no and getattr(row, "reference_purchase_receipt", None):
-			row.custom_tag_no = _find_purchase_receipt_item_tag(
-				purchase_receipt=row.reference_purchase_receipt,
-				item_code=row.item_code,
-			)
-			derived_from_upstream = bool(row.custom_tag_no)
-		if not row.custom_tag_no and is_receipt:
-			row.custom_tag_no = _get_or_create_tag(
-				source_doctype="Stock Entry",
-				source_docname=doc.name,
-				source_child_doctype=row.doctype,
-				source_child_name=row.name,
-				item_code=row.item_code,
-				item_name=row.item_name,
+
+		carried_tag = _resolve_carried_tag(row, doc)
+		if carried_tag:
+			row.custom_tag_no = carried_tag
+			_update_tag_location(
+				doc,
+				row,
 				sales_order=getattr(doc, "custom_sales_order", None),
 				stock_entry=doc.name,
-				existing_tag=row.custom_tag_no,
+			)
+			continue
+
+		if is_receipt and _tag_creation_enabled(doc, row):
+			_create_origin_tag(
+				doc,
+				row,
+				"Stock Entry",
+				sales_order=getattr(doc, "custom_sales_order", None),
+				stock_entry=doc.name,
 			)
 		elif row.custom_tag_no:
-			if is_receipt and not derived_from_upstream:
-				_ensure_origin_tag_available(row.custom_tag_no, "Stock Entry", doc.name, row.doctype, row.name)
-			_register_tag(
-				row.custom_tag_no,
-				source_doctype="Stock Entry",
-				source_docname=doc.name,
-				source_child_doctype=row.doctype,
-				source_child_name=row.name,
-				item_code=row.item_code,
-				item_name=row.item_name,
+			_update_tag_location(
+				doc,
+				row,
 				sales_order=getattr(doc, "custom_sales_order", None),
 				stock_entry=doc.name,
 			)
@@ -1452,6 +1672,7 @@ def sync_ss_coil_process_tracking(doc, method=None):
 
 	if getattr(doc, "sales_order_item", None):
 		_update_sales_order_item_process_status(doc.sales_order_item)
+	sync_sales_order_item_child_tags(doc, method=method)
 
 
 def _resolve_operation_name(process_value):
@@ -2087,11 +2308,13 @@ def resolve_sales_order_item_duplicate_tag(sales_order_item, replacement_tag=Non
 
 def prepare_stock_entry_links(doc, method=None):
 	populate_custom_sales_order(doc, method=method)
+	apply_inward_tag_row_defaults(doc)
 	assign_stock_entry_detail_tags(doc, method=method)
 
 
 def prepare_purchase_receipt_links(doc, method=None):
 	populate_custom_sales_order(doc, method=method)
+	apply_inward_tag_row_defaults(doc)
 	assign_purchase_receipt_item_tags(doc, method=method)
 
 
@@ -2105,22 +2328,19 @@ def assign_delivery_note_item_tags(doc, method=None):
 		if not _has_field(row.doctype, "custom_tag_no"):
 			continue
 		if not row.custom_tag_no:
+			row.custom_tag_no = _resolve_carried_tag(row, doc)
+		if not row.custom_tag_no:
 			row.custom_tag_no = _find_sales_order_item_tag(
 				so_detail=getattr(row, "so_detail", None),
 				sales_order=getattr(row, "against_sales_order", None),
 				item_code=row.item_code,
 			)
 		if row.custom_tag_no:
-			_register_tag(
-				row.custom_tag_no,
-				source_doctype="Delivery Note",
-				source_docname=doc.name,
-				source_child_doctype=row.doctype,
-				source_child_name=row.name,
-				item_code=row.item_code,
-				item_name=row.item_name,
-				sales_order=getattr(row, "against_sales_order", None),
+			_update_tag_location(
+				doc,
+				row,
 				status="Delivered",
+				sales_order=getattr(row, "against_sales_order", None),
 			)
 
 
@@ -2128,6 +2348,8 @@ def assign_sales_invoice_item_tags(doc, method=None):
 	for row in doc.items or []:
 		if not _has_field(row.doctype, "custom_tag_no"):
 			continue
+		if not row.custom_tag_no:
+			row.custom_tag_no = _resolve_carried_tag(row, doc)
 		if not row.custom_tag_no:
 			row.custom_tag_no = _find_sales_order_item_tag(
 				so_detail=getattr(row, "so_detail", None),
@@ -2137,20 +2359,19 @@ def assign_sales_invoice_item_tags(doc, method=None):
 		if not row.custom_tag_no and getattr(row, "delivery_note", None):
 			row.custom_tag_no = frappe.db.get_value(
 				"Delivery Note Item",
-				{"parent": row.delivery_note, "so_detail": getattr(row, "so_detail", None), "item_code": row.item_code},
+				{
+					"parent": row.delivery_note,
+					"so_detail": getattr(row, "so_detail", None),
+					"item_code": row.item_code,
+				},
 				"custom_tag_no",
 			)
 		if row.custom_tag_no:
-			_register_tag(
-				row.custom_tag_no,
-				source_doctype="Sales Invoice",
-				source_docname=doc.name,
-				source_child_doctype=row.doctype,
-				source_child_name=row.name,
-				item_code=row.item_code,
-				item_name=row.item_name,
-				sales_order=getattr(row, "sales_order", None),
+			_update_tag_location(
+				doc,
+				row,
 				status="Invoiced",
+				sales_order=getattr(row, "sales_order", None),
 			)
 
 
@@ -2190,6 +2411,488 @@ def backfill_custom_sales_order_links(limit_per_doctype=500):
 
 	frappe.clear_cache()
 	return results
+
+
+@frappe.whitelist()
+def setup_tag_origin_fields():
+	"""Create item, sales order, and inward controls for the coil tag flow."""
+	custom_fields = {
+		"Item": [
+			{
+				"fieldname": "custom_ss_coil_section",
+				"label": "SS Coil",
+				"fieldtype": "Section Break",
+				"insert_after": "description",
+				"collapsible": 1,
+			},
+			{
+				"fieldname": "custom_ss_coil_item_type",
+				"label": "SS Coil Item Type",
+				"fieldtype": "Select",
+				"insert_after": "custom_ss_coil_section",
+				"options": "\nRaw Material\nFinished Good\nSemi Finished",
+			},
+			{
+				"fieldname": "custom_create_tag_on_receipt",
+				"label": "Create Tag on Receipt",
+				"fieldtype": "Check",
+				"insert_after": "custom_ss_coil_item_type",
+				"default": "0",
+				"description": "When checked, inward rows for this item auto-enable tag creation on Purchase Receipt and Material Receipt Stock Entry.",
+			},
+			{
+				"fieldname": "custom_default_raw_material_item",
+				"label": "Default Raw Material Item",
+				"fieldtype": "Link",
+				"insert_after": "custom_create_tag_on_receipt",
+				"options": "Item",
+				"depends_on": "eval:['Finished Good','Semi Finished'].includes(doc.custom_ss_coil_item_type)",
+				"description": "Default raw material used when this finished/semi-finished item is added to a Sales Order.",
+			},
+		],
+		"Sales Order Item": [
+			{
+				"fieldname": "custom_raw_material_section",
+				"label": "Raw Material Link",
+				"fieldtype": "Section Break",
+				"insert_after": "custom_qty_of_coil",
+				"collapsible": 1,
+			},
+			{
+				"fieldname": "custom_stock_source_type",
+				"label": "Stock Source",
+				"fieldtype": "Select",
+				"insert_after": "custom_raw_material_section",
+				"options": "\nPurchased\nCustomer Provided",
+				"description": "Purchased = own stock via Purchase Receipt. Customer Provided = received via Material Receipt Stock Entry.",
+			},
+			{
+				"fieldname": "custom_raw_material_item",
+				"label": "Raw Material Item",
+				"fieldtype": "Link",
+				"insert_after": "custom_stock_source_type",
+				"options": "Item",
+			},
+			{
+				"fieldname": "custom_select_raw_material_tag",
+				"label": "Select Raw Material Tag",
+				"fieldtype": "Button",
+				"insert_after": "custom_raw_material_item",
+				"depends_on": "eval:doc.custom_raw_material_item",
+			},
+			{
+				"fieldname": "custom_raw_material_tag_no",
+				"label": "Raw Material Tag No",
+				"fieldtype": "Data",
+				"insert_after": "custom_select_raw_material_tag",
+				"read_only": 1,
+				"description": "Parent tag assigned when raw material is received on Purchase Receipt or Material Receipt Stock Entry.",
+			},
+			{
+				"fieldname": "custom_raw_material_batch_no",
+				"label": "Raw Material Batch No",
+				"fieldtype": "Link",
+				"insert_after": "custom_raw_material_tag_no",
+				"options": "Batch",
+				"read_only": 1,
+			},
+			{
+				"fieldname": "custom_child_tag_no",
+				"label": "Child Tag No",
+				"fieldtype": "Small Text",
+				"insert_after": "custom_raw_material_batch_no",
+				"read_only": 1,
+				"description": "Child tag numbers generated in SS Coil during slitting/leveling/reshearing.",
+			},
+		],
+		"Purchase Receipt": [
+			{
+				"fieldname": "custom_create_tag_numbers",
+				"label": "Create Tag Numbers",
+				"fieldtype": "Check",
+				"insert_after": "custom_sales_order",
+				"description": "Enable tag number creation for selected item rows on this Purchase Receipt.",
+			}
+		],
+		"Stock Entry": [
+			{
+				"fieldname": "custom_create_tag_numbers",
+				"label": "Create Tag Numbers",
+				"fieldtype": "Check",
+				"insert_after": "custom_sales_order",
+				"description": "Enable tag number creation for Material Receipt rows only.",
+			}
+		],
+		"Purchase Receipt Item": [
+			{
+				"fieldname": "custom_create_tag_no",
+				"label": "Create Tag No",
+				"fieldtype": "Check",
+				"insert_after": "item_name",
+				"in_list_view": 1,
+				"depends_on": "eval:parent.custom_create_tag_numbers",
+			}
+		],
+		"Stock Entry Detail": [
+			{
+				"fieldname": "custom_create_tag_no",
+				"label": "Create Tag No",
+				"fieldtype": "Check",
+				"insert_after": "custom_tag_no",
+				"in_list_view": 1,
+				"depends_on": "eval:parent.custom_create_tag_numbers && parent.purpose == 'Material Receipt'",
+			}
+		],
+	}
+	create_custom_fields(custom_fields, update=True)
+
+	for doctype, description in {
+		"Purchase Receipt Item": "Assigned automatically at material inward. Carried forward on downstream documents.",
+		"Stock Entry Detail": "Assigned automatically at Material Receipt inward. Carried forward on downstream documents.",
+		"Sales Order Item": "Child tag from SS Coil production. Parent tag is stored in Raw Material Tag No.",
+	}.items():
+		fieldname = f"{doctype}-custom_tag_no"
+		if frappe.db.exists("Custom Field", fieldname):
+			frappe.db.set_value(
+				"Custom Field",
+				fieldname,
+				{
+					"read_only": 1,
+					"description": description,
+				},
+				update_modified=False,
+			)
+
+	_update_sales_order_item_field_order()
+	_sync_workspace_query_report_links()
+
+	frappe.clear_cache()
+	return {"status": "ok"}
+
+
+def _sync_workspace_query_report_links():
+	script_reports = ("Tag Registry Trace",)
+	for report_name in script_reports:
+		frappe.db.sql(
+			"""
+			update `tabWorkspace Link`
+			set is_query_report = 1
+			where link_type = 'Report' and link_to = %s
+			""",
+			(report_name,),
+		)
+
+
+def _update_sales_order_item_field_order():
+	"""Ensure raw material link fields appear on the Sales Order Item grid form."""
+	ps_name = "Sales Order Item-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	new_fields = [
+		"custom_raw_material_section",
+		"custom_stock_source_type",
+		"custom_raw_material_item",
+		"custom_select_raw_material_tag",
+		"custom_raw_material_tag_no",
+		"custom_raw_material_batch_no",
+		"custom_child_tag_no",
+	]
+	anchor = "custom_qty_of_coil"
+	insert_at = order.index(anchor) + 1 if anchor in order else len(order)
+	changed = False
+	for fieldname in new_fields:
+		if fieldname in order:
+			continue
+		order.insert(insert_at, fieldname)
+		insert_at += 1
+		changed = True
+	if changed:
+		frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+
+
+@frappe.whitelist()
+def get_item_coil_defaults(item_code):
+	if not item_code or not frappe.db.exists("Item", item_code):
+		return {}
+	item = frappe.get_cached_value(
+		"Item",
+		item_code,
+		[
+			"custom_ss_coil_item_type",
+			"custom_create_tag_on_receipt",
+			"custom_default_raw_material_item",
+			"item_name",
+		],
+		as_dict=True,
+	)
+	return item or {}
+
+
+@frappe.whitelist()
+def get_raw_material_inward_details(tag_no):
+	if not tag_no:
+		return {}
+
+	registry = frappe.db.get_value(
+		"Tag Registry",
+		{"tag_no": tag_no},
+		[
+			"tag_no",
+			"batch_no",
+			"item_code",
+			"item_name",
+			"sales_order",
+			"source_doctype",
+			"source_docname",
+			"source_child_doctype",
+			"source_child_name",
+		],
+		as_dict=True,
+	)
+	if not registry:
+		return {"tag_no": tag_no}
+
+	details = {
+		"tag_no": registry.tag_no,
+		"batch_no": registry.batch_no,
+		"item_code": registry.item_code,
+		"item_name": registry.item_name,
+		"class": registry.item_name or registry.item_code,
+	}
+
+	if registry.source_child_doctype and registry.source_child_name:
+		if frappe.db.exists(registry.source_child_doctype, registry.source_child_name):
+			row = frappe.get_doc(registry.source_child_doctype, registry.source_child_name)
+			mapped = {
+				"dimension": getattr(row, "custom_dimension", None),
+				"thickness": getattr(row, "custom_thickness", None),
+				"width": getattr(row, "custom_width", None),
+				"length": getattr(row, "custom_length", None) or getattr(row, "custom_length_c", None),
+				"estimated_qty": getattr(row, "qty", None),
+				"estimated_wt": getattr(row, "custom_estimated_wt", None),
+				"actual_qty": getattr(row, "qty", None),
+				"actual_wt": getattr(row, "custom_estimated_wt", None),
+				"location": getattr(row, "custom_location", None),
+				"ref_no": getattr(row, "custom_ref_no", None),
+				"specification": getattr(row, "custom_specification", None),
+				"remarks": getattr(row, "custom_remarks", None),
+				"comments": getattr(row, "custom_comments", None),
+			}
+			for key, value in mapped.items():
+				if value not in (None, ""):
+					details[key] = value
+			if getattr(row, "batch_no", None):
+				details["batch_no"] = row.batch_no
+
+	return details
+
+
+def _enrich_tag_rows_with_inward_details(rows):
+	for row in rows:
+		row["stock_source_type"] = _stock_source_for_origin(row.get("source_doctype"))
+		inward = get_raw_material_inward_details(row.get("tag_no"))
+		row["dimension"] = inward.get("dimension") or ""
+		row["thickness"] = inward.get("thickness") or ""
+		row["width"] = inward.get("width") or ""
+		row["length"] = inward.get("length") or ""
+		row["estimated_wt"] = inward.get("estimated_wt") or ""
+		row["ref_no"] = inward.get("ref_no") or ""
+		row["specification"] = inward.get("specification") or ""
+	return rows
+
+
+@frappe.whitelist()
+def get_available_raw_material_tags(sales_order, sales_order_item=None, raw_material_item=None):
+	if sales_order_item and frappe.db.exists("Sales Order Item", sales_order_item):
+		so_row = frappe.db.get_value(
+			"Sales Order Item",
+			sales_order_item,
+			["custom_raw_material_item", "custom_raw_material_tag_no", "parent"],
+			as_dict=True,
+		)
+		if so_row:
+			raw_material_item = raw_material_item or so_row.custom_raw_material_item
+			sales_order = sales_order or so_row.parent
+
+	if not raw_material_item:
+		return {"tags": [], "message": "Select a Raw Material Item first."}
+
+	used_tags = frappe.get_all(
+		"Sales Order Item",
+		filters={
+			"custom_raw_material_tag_no": ["is", "set"],
+			"name": ["!=", sales_order_item] if sales_order_item else ["!=", ""],
+		},
+		pluck="custom_raw_material_tag_no",
+	)
+	used_tags = [tag for tag in used_tags if tag]
+
+	conditions = [
+		"generation_level = 0",
+		"ifnull(tag_no, '') != ''",
+		"item_code = %(raw_material_item)s",
+		"(ifnull(sales_order, '') = '' or sales_order = %(sales_order)s)",
+	]
+	params = {
+		"raw_material_item": raw_material_item,
+		"sales_order": sales_order or "",
+	}
+	if used_tags:
+		conditions.append("tag_no not in %(used_tags)s")
+		params["used_tags"] = tuple(used_tags)
+
+	rows = frappe.db.sql(
+		f"""
+		select
+			tag_no,
+			batch_no,
+			item_code,
+			item_name,
+			sales_order,
+			source_doctype,
+			source_docname,
+			status,
+			current_docname
+		from `tabTag Registry`
+		where {" and ".join(conditions)}
+		order by tag_no asc
+		""",
+		params,
+		as_dict=True,
+	)
+	return {
+		"tags": _enrich_tag_rows_with_inward_details(rows),
+		"raw_material_item": raw_material_item,
+		"sales_order": sales_order,
+		"count": len(rows),
+	}
+
+
+@frappe.whitelist()
+def assign_raw_material_tag_to_sales_order_item(sales_order_item, tag_no):
+	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
+		frappe.throw(f"Sales Order Item {sales_order_item} not found")
+	if not tag_no:
+		frappe.throw("Tag No is required")
+
+	row = frappe.get_doc("Sales Order Item", sales_order_item)
+	registry = frappe.db.get_value(
+		"Tag Registry",
+		{"tag_no": tag_no},
+		["tag_no", "batch_no", "item_code", "source_doctype", "sales_order", "generation_level"],
+		as_dict=True,
+	)
+	if not registry:
+		frappe.throw(f"Tag {tag_no} not found in Tag Registry")
+	if cint(registry.generation_level) > 0:
+		frappe.throw(f"{tag_no} is a child tag. Select a parent tag from inward stock.")
+
+	if row.custom_raw_material_item and registry.item_code != row.custom_raw_material_item:
+		frappe.throw(
+			f"Tag {tag_no} belongs to item {registry.item_code}, but this line expects {row.custom_raw_material_item}."
+		)
+
+	existing = frappe.db.exists(
+		"Sales Order Item",
+		{
+			"custom_raw_material_tag_no": tag_no,
+			"name": ["!=", sales_order_item],
+		},
+	)
+	if existing:
+		existing_row = frappe.db.get_value(
+			"Sales Order Item",
+			existing,
+			["parent", "item_code"],
+			as_dict=True,
+		)
+		frappe.throw(
+			f"Tag {tag_no} is already linked to Sales Order {existing_row.parent} / {existing_row.item_code}."
+		)
+
+	if registry.sales_order and registry.sales_order not in ("", row.parent):
+		frappe.throw(f"Tag {tag_no} belongs to Sales Order {registry.sales_order}.")
+
+	stock_source = _stock_source_for_origin(registry.source_doctype)
+	values = {
+		"custom_raw_material_tag_no": tag_no,
+		"custom_raw_material_batch_no": registry.batch_no or tag_no,
+	}
+	if stock_source:
+		values["custom_stock_source_type"] = stock_source
+	if not row.custom_raw_material_item and registry.item_code:
+		values["custom_raw_material_item"] = registry.item_code
+
+	frappe.db.set_value("Sales Order Item", sales_order_item, values, update_modified=False)
+	frappe.db.set_value("Tag Registry", {"tag_no": tag_no}, "sales_order", row.parent, update_modified=False)
+
+	return {
+		"sales_order_item": sales_order_item,
+		"tag_no": tag_no,
+		"batch_no": values.get("custom_raw_material_batch_no"),
+		"stock_source_type": stock_source,
+	}
+
+
+@frappe.whitelist()
+def get_sales_order_items_pending_raw_material_tags(sales_order):
+	if not sales_order or not frappe.db.exists("Sales Order", sales_order):
+		frappe.throw(f"Sales Order {sales_order} not found")
+
+	rows = frappe.get_all(
+		"Sales Order Item",
+		filters={"parent": sales_order},
+		fields=[
+			"name",
+			"item_code",
+			"item_name",
+			"custom_raw_material_item",
+			"custom_raw_material_tag_no",
+			"custom_stock_source_type",
+			"custom_dimension",
+		],
+		order_by="idx asc",
+	)
+	pending = [row for row in rows if row.custom_raw_material_item and not row.custom_raw_material_tag_no]
+	return {"items": rows, "pending": pending, "pending_count": len(pending)}
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def raw_material_tag_query(doctype, txt, searchfield, start, page_len, filters):
+	sales_order = (filters or {}).get("sales_order")
+	raw_material_item = (filters or {}).get("raw_material_item")
+	conditions = ["generation_level = 0", "ifnull(tag_no, '') != ''"]
+	params = {"txt": f"%{txt}%", "start": cint(start), "page_len": cint(page_len)}
+
+	if raw_material_item:
+		conditions.append("item_code = %(raw_material_item)s")
+		params["raw_material_item"] = raw_material_item
+	if sales_order:
+		conditions.append("(ifnull(sales_order, '') = '' or sales_order = %(sales_order)s)")
+		params["sales_order"] = sales_order
+
+	rows = frappe.db.sql(
+		f"""
+		select tag_no, item_code, item_name, batch_no, sales_order, status
+		from `tabTag Registry`
+		where {" and ".join(conditions)}
+			and tag_no like %(txt)s
+		order by tag_no asc
+		limit %(start)s, %(page_len)s
+		""",
+		params,
+		as_dict=True,
+	)
+	return [
+		[
+			row.tag_no,
+			f"{row.tag_no} | {row.item_name or row.item_code or ''} | {row.batch_no or '-'} | {row.status or ''}",
+		]
+		for row in rows
+	]
 
 
 @frappe.whitelist()
@@ -2555,6 +3258,11 @@ def get_sales_order_detail_dashboard(sales_order):
 				"qty": flt(item.qty),
 				"amount": flt(item.amount),
 				"tag_no": item.get("custom_tag_no"),
+				"child_tag_no": item.get("custom_child_tag_no"),
+				"raw_material_item": item.get("custom_raw_material_item"),
+				"raw_material_tag_no": item.get("custom_raw_material_tag_no"),
+				"raw_material_batch_no": item.get("custom_raw_material_batch_no"),
+				"stock_source_type": item.get("custom_stock_source_type"),
 				"ref_no": item.get("custom_ref_no"),
 				"thickness": item.get("custom_thickness"),
 				"width": item.get("custom_width"),

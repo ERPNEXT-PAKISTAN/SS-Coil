@@ -13,6 +13,7 @@
   "item_code",
   "column_break_1",
   "item_name",
+  "batch_no",
   "column_break_2",
   "sales_order",
   "stock_entry",
@@ -51,7 +52,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Active\nProduced\nDelivered\nInvoiced\nCancelled"
+   "options": "Active\nProduced\nDelivered\nInvoiced\nLinked\nCancelled"
   },
   {
    "default": "Now",
@@ -78,6 +79,14 @@
    "fieldname": "item_name",
    "fieldtype": "Data",
    "label": "Item Name"
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Batch No",
+   "options": "Batch",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_2",

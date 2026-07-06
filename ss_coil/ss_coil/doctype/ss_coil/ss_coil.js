@@ -171,6 +171,11 @@ frappe.ui.form.on("SS Coil", {
 						return;
 					}
 
+					if (fieldname === "tag_no") {
+						row.tag_no = item.custom_child_tag_no || item.custom_tag_no || "";
+						return;
+					}
+
 					const direct_value = item[fieldname];
 					const custom_value = item[`custom_${fieldname}`];
 
@@ -1649,41 +1654,58 @@ function get_mappable_fieldnames(doctype) {
 }
 
 function load_input_coil_from_sales_order_item(frm, item) {
-	const target_fields = get_mappable_fieldnames("Coil Input");
-	const special_map = {
-		class: item.item_name || item.item_code,
-		tag_no: item.custom_tag_no,
-		dimension: item.custom_dimension || item.custom_dimensin,
-		estimated_qty: item.qty,
-		estimated_wt: item.custom_estimated_wt || item.estimated_wt,
-		actual_qty: item.qty,
-		location: item.custom_location || item.location,
-		length: item.custom_length || item.length,
-		slitter: item.custom_slitter || item.slitter,
-		leveler: item.custom_leveler || item.leveler,
-		reshearing: item.custom_reshearing || item.reshearing,
+	const parent_tag = item.custom_raw_material_tag_no;
+	const apply_input = (details) => {
+		const target_fields = get_mappable_fieldnames("Coil Input");
+		frm.clear_table("input_coil");
+		const row = frm.add_child("input_coil");
+
+		target_fields.forEach((fieldname) => {
+			if (details[fieldname] !== undefined && details[fieldname] !== null && details[fieldname] !== "") {
+				row[fieldname] = details[fieldname];
+			}
+		});
+
+		if (!row.class) {
+			row.class = details.class || details.item_name || item.custom_raw_material_item || item.item_name;
+		}
+		if (!row.tag_no && parent_tag) {
+			row.tag_no = parent_tag;
+		}
+
+		["slitter", "leveler", "reshearing"].forEach((fieldname) => {
+			if (!row[fieldname]) {
+				row[fieldname] = item[`custom_${fieldname}`] || item[fieldname];
+			}
+		});
+
+		frm.refresh_field("input_coil");
 	};
 
-	frm.clear_table("input_coil");
-	const row = frm.add_child("input_coil");
+	if (parent_tag) {
+		frappe.call({
+			method: "ss_coil.api.get_raw_material_inward_details",
+			args: { tag_no: parent_tag },
+			callback(r) {
+				apply_input(r.message || { tag_no: parent_tag, class: item.custom_raw_material_item });
+			},
+		});
+		return;
+	}
 
-	target_fields.forEach((fieldname) => {
-		if (special_map[fieldname] !== undefined) {
-			row[fieldname] = special_map[fieldname];
-			return;
-		}
-
-		const direct_value = item[fieldname];
-		const custom_value = item[`custom_${fieldname}`];
-
-		if (direct_value !== undefined && direct_value !== null) {
-			row[fieldname] = direct_value;
-		} else if (custom_value !== undefined && custom_value !== null) {
-			row[fieldname] = custom_value;
-		}
+	apply_input({
+		class: item.custom_raw_material_item || item.item_name || item.item_code,
+		tag_no: "",
+		dimension: item.custom_dimension || "",
+		estimated_qty: item.qty,
+		estimated_wt: item.custom_estimated_wt,
+		actual_qty: item.qty,
+		length: item.custom_length || item.custom_length_c,
+		location: item.custom_location,
+		slitter: item.custom_slitter,
+		leveler: item.custom_leveler,
+		reshearing: item.custom_reshearing,
 	});
-
-	frm.refresh_field("input_coil");
 }
 
 function buildSubTag(parentTagNo, sequenceNumber) {

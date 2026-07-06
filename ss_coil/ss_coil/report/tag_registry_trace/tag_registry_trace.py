@@ -11,6 +11,8 @@ def execute(filters=None):
         {"label": _("Sales Order"), "fieldname": "sales_order", "fieldtype": "Link", "options": "Sales Order", "width": 170},
         {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Data", "width": 150},
         {"label": _("Item Name"), "fieldname": "item_name", "fieldtype": "Data", "width": 220},
+        {"label": _("Batch No"), "fieldname": "batch_no", "fieldtype": "Link", "options": "Batch", "width": 150},
+        {"label": _("Parent Tag No"), "fieldname": "parent_tag_no", "fieldtype": "Data", "width": 150},
         {"label": _("Source Doctype"), "fieldname": "source_doctype", "fieldtype": "Data", "width": 130},
         {"label": _("Source Document"), "fieldname": "source_docname", "fieldtype": "Data", "width": 170},
         {"label": _("Current Doctype"), "fieldname": "current_doctype", "fieldtype": "Data", "width": 130},
@@ -38,7 +40,7 @@ def execute(filters=None):
     rows = frappe.db.sql(
         f"""
         select
-            tag_no, status, sales_order, item_code, item_name,
+            tag_no, status, sales_order, item_code, item_name, batch_no,
             parent_tag_no, root_tag_no,
             source_doctype, source_docname,
             current_doctype, current_docname,

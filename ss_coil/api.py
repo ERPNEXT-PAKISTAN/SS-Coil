@@ -84,12 +84,102 @@ def apply_inward_tag_row_defaults(doc):
 		doc.custom_create_tag_numbers = 1
 
 
+STOCK_SOURCE_PURCHASE_RECEIPTS = "Purchase Receipts"
+STOCK_SOURCE_STOCK_ENTRY = "Stock Entry"
+
+LEGACY_STOCK_SOURCE_MAP = {
+	"Purchased": STOCK_SOURCE_PURCHASE_RECEIPTS,
+	"Customer Provided": STOCK_SOURCE_STOCK_ENTRY,
+}
+
+COIL_INWARD_SO_FIELDNAMES = (
+	"custom_mill",
+	"custom_location",
+	"custom_ref_no",
+	"custom_thickness",
+	"custom_js_number",
+	"custom_length_c",
+	"custom_po_no",
+	"custom_width",
+	"custom_condition",
+	"custom_commodity",
+	"custom_length",
+	"custom_remarks",
+	"custom_estimated_wt",
+	"custom_specification",
+	"custom_dimension",
+	"custom_comments",
+	"custom_qty_of_coil",
+)
+
+
+def _normalize_stock_source_type(value):
+	if not value:
+		return ""
+	return LEGACY_STOCK_SOURCE_MAP.get(value, value)
+
+
 def _stock_source_for_origin(source_doctype):
 	if source_doctype == "Purchase Receipt":
-		return "Purchased"
+		return STOCK_SOURCE_PURCHASE_RECEIPTS
 	if source_doctype == "Stock Entry":
-		return "Customer Provided"
+		return STOCK_SOURCE_STOCK_ENTRY
 	return ""
+
+
+def _origin_doctype_for_stock_source(stock_source_type):
+	normalized = _normalize_stock_source_type(stock_source_type)
+	if normalized == STOCK_SOURCE_PURCHASE_RECEIPTS:
+		return "Purchase Receipt"
+	if normalized == STOCK_SOURCE_STOCK_ENTRY:
+		return "Stock Entry"
+	return ""
+
+
+def _extract_coil_inward_row_details(row):
+	"""Return inward coil fields for SS Coil input and Sales Order item population."""
+	if not row:
+		return {}
+
+	details = {}
+	for fieldname in COIL_INWARD_SO_FIELDNAMES:
+		value = getattr(row, fieldname, None)
+		if value not in (None, ""):
+			details[fieldname] = value
+
+	short_map = {
+		"mill": "custom_mill",
+		"location": "custom_location",
+		"ref_no": "custom_ref_no",
+		"thickness": "custom_thickness",
+		"js_number": "custom_js_number",
+		"length_c": "custom_length_c",
+		"po_no": "custom_po_no",
+		"width": "custom_width",
+		"condition": "custom_condition",
+		"commodity": "custom_commodity",
+		"length": "custom_length",
+		"remarks": "custom_remarks",
+		"estimated_wt": "custom_estimated_wt",
+		"specification": "custom_specification",
+		"dimension": "custom_dimension",
+		"comments": "custom_comments",
+		"qty_of_coil": "custom_qty_of_coil",
+	}
+	for short_key, fieldname in short_map.items():
+		value = details.get(fieldname)
+		if value not in (None, ""):
+			details[short_key] = value
+
+	if getattr(row, "qty", None) not in (None, ""):
+		details["estimated_qty"] = row.qty
+		details["actual_qty"] = row.qty
+	if details.get("custom_estimated_wt"):
+		details["actual_wt"] = details["custom_estimated_wt"]
+	if getattr(row, "batch_no", None):
+		details["batch_no"] = row.batch_no
+
+	return details
 
 
 def _link_origin_tag_to_sales_order_items(tag_no, item_code, sales_order, batch_no=None, source_doctype=None):
@@ -1180,14 +1270,21 @@ def assign_sales_order_item_tags(doc, method=None):
 
 def sync_sales_order_item_tag_registry(doc, method=None):
 	for row in doc.items or []:
-		if not row.get("custom_tag_no"):
-			continue
-		_update_tag_location(
-			doc,
-			row,
-			status="Linked",
-			sales_order=doc.name,
-		)
+		if row.get("custom_tag_no"):
+			_update_tag_location(
+				doc,
+				row,
+				status="Linked",
+				sales_order=doc.name,
+			)
+		if row.get("custom_raw_material_tag_no"):
+			frappe.db.set_value(
+				"Tag Registry",
+				{"tag_no": row.custom_raw_material_tag_no},
+				"sales_order",
+				doc.name,
+				update_modified=False,
+			)
 
 
 def assign_purchase_receipt_item_tags(doc, method=None):
@@ -2463,8 +2560,8 @@ def setup_tag_origin_fields():
 				"label": "Stock Source",
 				"fieldtype": "Select",
 				"insert_after": "custom_raw_material_section",
-				"options": "\nPurchased\nCustomer Provided",
-				"description": "Purchased = own stock via Purchase Receipt. Customer Provided = received via Material Receipt Stock Entry.",
+				"options": f"\n{STOCK_SOURCE_PURCHASE_RECEIPTS}\n{STOCK_SOURCE_STOCK_ENTRY}",
+				"description": "Purchase Receipts = own stock received on Purchase Receipt. Stock Entry = customer material received on Material Receipt Stock Entry.",
 			},
 			{
 				"fieldname": "custom_raw_material_item",
@@ -2564,10 +2661,155 @@ def setup_tag_origin_fields():
 			)
 
 	_update_sales_order_item_field_order()
+	_setup_purchase_receipt_coil_fields()
+	_migrate_legacy_stock_source_values()
 	_sync_workspace_query_report_links()
 
 	frappe.clear_cache()
 	return {"status": "ok"}
+
+
+def _migrate_legacy_stock_source_values():
+	if not _has_field("Sales Order Item", "custom_stock_source_type"):
+		return
+	frappe.db.sql(
+		"""
+		update `tabSales Order Item`
+		set custom_stock_source_type = %(new_value)s
+		where custom_stock_source_type = %(old_value)s
+		""",
+		{"new_value": STOCK_SOURCE_PURCHASE_RECEIPTS, "old_value": "Purchased"},
+	)
+	frappe.db.sql(
+		"""
+		update `tabSales Order Item`
+		set custom_stock_source_type = %(new_value)s
+		where custom_stock_source_type = %(old_value)s
+		""",
+		{"new_value": STOCK_SOURCE_STOCK_ENTRY, "old_value": "Customer Provided"},
+	)
+	if frappe.db.exists("Custom Field", "Sales Order Item-custom_stock_source_type"):
+		frappe.db.set_value(
+			"Custom Field",
+			"Sales Order Item-custom_stock_source_type",
+			{
+				"options": f"\n{STOCK_SOURCE_PURCHASE_RECEIPTS}\n{STOCK_SOURCE_STOCK_ENTRY}",
+				"description": "Purchase Receipts = own stock received on Purchase Receipt. Stock Entry = customer material received on Material Receipt Stock Entry.",
+			},
+			update_modified=False,
+		)
+
+
+def _setup_purchase_receipt_coil_fields():
+	"""Mirror Stock Entry Detail coil inward fields on Purchase Receipt Item."""
+	ignore_fields = {"custom_create_tag_no"}
+	se_fields = frappe.get_all(
+		"Custom Field",
+		filters={"dt": "Stock Entry Detail", "fieldname": ["like", "custom_%"]},
+		fields=[
+			"fieldname",
+			"fieldtype",
+			"label",
+			"insert_after",
+			"options",
+			"precision",
+			"read_only",
+			"in_list_view",
+			"depends_on",
+			"collapsible",
+			"description",
+		],
+		order_by="idx asc",
+	)
+	if not se_fields:
+		return
+
+	pr_existing = set(
+		frappe.get_all("Custom Field", filters={"dt": "Purchase Receipt Item"}, pluck="fieldname")
+	)
+	new_fields = []
+	for cf in se_fields:
+		if cf.fieldname in ignore_fields or cf.fieldname in pr_existing:
+			continue
+		field_def = {
+			"fieldname": cf.fieldname,
+			"fieldtype": cf.fieldtype,
+			"label": cf.label,
+			"insert_after": cf.insert_after,
+		}
+		if cf.options:
+			field_def["options"] = cf.options
+		if cf.precision:
+			field_def["precision"] = cf.precision
+		if cf.read_only:
+			field_def["read_only"] = cf.read_only
+		if cf.in_list_view:
+			field_def["in_list_view"] = cf.in_list_view
+		if cf.depends_on:
+			field_def["depends_on"] = cf.depends_on
+		if cf.collapsible:
+			field_def["collapsible"] = cf.collapsible
+		if cf.description:
+			field_def["description"] = cf.description
+		if cf.fieldname == "custom_section_break_rajk0":
+			field_def["insert_after"] = "custom_create_tag_no"
+		new_fields.append(field_def)
+
+	if new_fields:
+		create_custom_fields({"Purchase Receipt Item": new_fields}, update=True)
+
+	if frappe.db.exists("Custom Field", "Purchase Receipt Item-custom_tag_no"):
+		frappe.db.set_value(
+			"Custom Field",
+			"Purchase Receipt Item-custom_tag_no",
+			{"insert_after": "custom_section_break_rajk0", "read_only": 1},
+			update_modified=False,
+		)
+
+	_update_purchase_receipt_item_field_order()
+
+
+def _update_purchase_receipt_item_field_order():
+	ps_name = "Purchase Receipt Item-main-field_order"
+	se_order_name = "Stock Entry Detail-main-field_order"
+	if not frappe.db.exists("Property Setter", se_order_name):
+		return
+
+	se_order = json.loads(frappe.db.get_value("Property Setter", se_order_name, "value") or "[]")
+	coil_fields = [fieldname for fieldname in se_order if fieldname.startswith("custom_")]
+	coil_fields = [fieldname for fieldname in coil_fields if fieldname != "custom_create_tag_no"]
+
+	if frappe.db.exists("Property Setter", ps_name):
+		order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	else:
+		order = [field.fieldname for field in frappe.get_meta("Purchase Receipt Item").fields]
+
+	for fieldname in order[:]:
+		if fieldname.startswith("custom_") and fieldname != "custom_create_tag_no":
+			order.remove(fieldname)
+
+	anchor = "custom_create_tag_no" if "custom_create_tag_no" in order else "item_name"
+	insert_at = order.index(anchor) + 1 if anchor in order else len(order)
+	for fieldname in coil_fields:
+		if fieldname in order:
+			continue
+		order.insert(insert_at, fieldname)
+		insert_at += 1
+
+	if frappe.db.exists("Property Setter", ps_name):
+		frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+	else:
+		frappe.make_property_setter(
+			{
+				"doctype": "Purchase Receipt Item",
+				"fieldname": None,
+				"property": "field_order",
+				"property_type": "Data",
+				"value": json.dumps(order),
+			},
+			ignore_validate=True,
+			is_system_generated=False,
+		)
 
 
 def _sync_workspace_query_report_links():
@@ -2665,27 +2907,19 @@ def get_raw_material_inward_details(tag_no):
 	if registry.source_child_doctype and registry.source_child_name:
 		if frappe.db.exists(registry.source_child_doctype, registry.source_child_name):
 			row = frappe.get_doc(registry.source_child_doctype, registry.source_child_name)
-			mapped = {
-				"dimension": getattr(row, "custom_dimension", None),
-				"thickness": getattr(row, "custom_thickness", None),
-				"width": getattr(row, "custom_width", None),
-				"length": getattr(row, "custom_length", None) or getattr(row, "custom_length_c", None),
-				"estimated_qty": getattr(row, "qty", None),
-				"estimated_wt": getattr(row, "custom_estimated_wt", None),
-				"actual_qty": getattr(row, "qty", None),
-				"actual_wt": getattr(row, "custom_estimated_wt", None),
-				"location": getattr(row, "custom_location", None),
-				"ref_no": getattr(row, "custom_ref_no", None),
-				"specification": getattr(row, "custom_specification", None),
-				"remarks": getattr(row, "custom_remarks", None),
-				"comments": getattr(row, "custom_comments", None),
-			}
+			mapped = _extract_coil_inward_row_details(row)
 			for key, value in mapped.items():
 				if value not in (None, ""):
 					details[key] = value
-			if getattr(row, "batch_no", None):
-				details["batch_no"] = row.batch_no
+			if mapped.get("batch_no"):
+				details["batch_no"] = mapped["batch_no"]
 
+	details["stock_source_type"] = _stock_source_for_origin(registry.source_doctype)
+	details["so_item_fields"] = {
+		fieldname: details[fieldname]
+		for fieldname in COIL_INWARD_SO_FIELDNAMES
+		if details.get(fieldname) not in (None, "")
+	}
 	return details
 
 
@@ -2704,26 +2938,34 @@ def _enrich_tag_rows_with_inward_details(rows):
 
 
 @frappe.whitelist()
-def get_available_raw_material_tags(sales_order, sales_order_item=None, raw_material_item=None):
+def get_available_raw_material_tags(
+	sales_order, sales_order_item=None, raw_material_item=None, stock_source_type=None
+):
 	if sales_order_item and frappe.db.exists("Sales Order Item", sales_order_item):
 		so_row = frappe.db.get_value(
 			"Sales Order Item",
 			sales_order_item,
-			["custom_raw_material_item", "custom_raw_material_tag_no", "parent"],
+			["custom_raw_material_item", "custom_raw_material_tag_no", "parent", "custom_stock_source_type"],
 			as_dict=True,
 		)
 		if so_row:
 			raw_material_item = raw_material_item or so_row.custom_raw_material_item
 			sales_order = sales_order or so_row.parent
+			stock_source_type = stock_source_type or so_row.custom_stock_source_type
 
 	if not raw_material_item:
 		return {"tags": [], "message": "Select a Raw Material Item first."}
+
+	stock_source_type = _normalize_stock_source_type(stock_source_type)
+	origin_doctype = _origin_doctype_for_stock_source(stock_source_type)
+	if stock_source_type and not origin_doctype:
+		return {"tags": [], "message": "Select a valid Stock Source first."}
 
 	used_tags = frappe.get_all(
 		"Sales Order Item",
 		filters={
 			"custom_raw_material_tag_no": ["is", "set"],
-			"name": ["!=", sales_order_item] if sales_order_item else ["!=", ""],
+			"name": ["!=", sales_order_item] if sales_order_item and not str(sales_order_item).startswith("new-") else ["!=", ""],
 		},
 		pluck="custom_raw_material_tag_no",
 	)
@@ -2742,6 +2984,19 @@ def get_available_raw_material_tags(sales_order, sales_order_item=None, raw_mate
 	if used_tags:
 		conditions.append("tag_no not in %(used_tags)s")
 		params["used_tags"] = tuple(used_tags)
+
+	if origin_doctype:
+		conditions.append("source_doctype = %(origin_doctype)s")
+		params["origin_doctype"] = origin_doctype
+		if origin_doctype == "Stock Entry":
+			conditions.append(
+				"""
+				source_docname in (
+					select name from `tabStock Entry`
+					where ifnull(purpose, '') = 'Material Receipt'
+				)
+				"""
+			)
 
 	rows = frappe.db.sql(
 		f"""
@@ -2766,18 +3021,15 @@ def get_available_raw_material_tags(sales_order, sales_order_item=None, raw_mate
 		"tags": _enrich_tag_rows_with_inward_details(rows),
 		"raw_material_item": raw_material_item,
 		"sales_order": sales_order,
+		"stock_source_type": stock_source_type,
 		"count": len(rows),
 	}
 
 
-@frappe.whitelist()
-def assign_raw_material_tag_to_sales_order_item(sales_order_item, tag_no):
-	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
-		frappe.throw(f"Sales Order Item {sales_order_item} not found")
+def _prepare_raw_material_tag_assignment(row, tag_no):
 	if not tag_no:
 		frappe.throw("Tag No is required")
 
-	row = frappe.get_doc("Sales Order Item", sales_order_item)
 	registry = frappe.db.get_value(
 		"Tag Registry",
 		{"tag_no": tag_no},
@@ -2789,18 +3041,26 @@ def assign_raw_material_tag_to_sales_order_item(sales_order_item, tag_no):
 	if cint(registry.generation_level) > 0:
 		frappe.throw(f"{tag_no} is a child tag. Select a parent tag from inward stock.")
 
-	if row.custom_raw_material_item and registry.item_code != row.custom_raw_material_item:
+	raw_material_item = row.get("custom_raw_material_item")
+	if raw_material_item and registry.item_code != raw_material_item:
 		frappe.throw(
-			f"Tag {tag_no} belongs to item {registry.item_code}, but this line expects {row.custom_raw_material_item}."
+			f"Tag {tag_no} belongs to item {registry.item_code}, but this line expects {raw_material_item}."
 		)
 
-	existing = frappe.db.exists(
-		"Sales Order Item",
-		{
-			"custom_raw_material_tag_no": tag_no,
-			"name": ["!=", sales_order_item],
-		},
-	)
+	exclude_name = row.get("name")
+	if exclude_name and not str(exclude_name).startswith("new-"):
+		existing = frappe.db.exists(
+			"Sales Order Item",
+			{
+				"custom_raw_material_tag_no": tag_no,
+				"name": ["!=", exclude_name],
+			},
+		)
+	else:
+		existing = frappe.db.exists(
+			"Sales Order Item",
+			{"custom_raw_material_tag_no": tag_no},
+		)
 	if existing:
 		existing_row = frappe.db.get_value(
 			"Sales Order Item",
@@ -2812,28 +3072,72 @@ def assign_raw_material_tag_to_sales_order_item(sales_order_item, tag_no):
 			f"Tag {tag_no} is already linked to Sales Order {existing_row.parent} / {existing_row.item_code}."
 		)
 
-	if registry.sales_order and registry.sales_order not in ("", row.parent):
+	parent_sales_order = row.get("parent")
+	if registry.sales_order and parent_sales_order and registry.sales_order not in ("", parent_sales_order):
 		frappe.throw(f"Tag {tag_no} belongs to Sales Order {registry.sales_order}.")
 
 	stock_source = _stock_source_for_origin(registry.source_doctype)
+	inward = get_raw_material_inward_details(tag_no)
 	values = {
 		"custom_raw_material_tag_no": tag_no,
 		"custom_raw_material_batch_no": registry.batch_no or tag_no,
 	}
 	if stock_source:
 		values["custom_stock_source_type"] = stock_source
-	if not row.custom_raw_material_item and registry.item_code:
+	if not raw_material_item and registry.item_code:
 		values["custom_raw_material_item"] = registry.item_code
 
-	frappe.db.set_value("Sales Order Item", sales_order_item, values, update_modified=False)
-	frappe.db.set_value("Tag Registry", {"tag_no": tag_no}, "sales_order", row.parent, update_modified=False)
+	so_item_fields = inward.get("so_item_fields") or {}
+	for fieldname, value in so_item_fields.items():
+		if _has_field("Sales Order Item", fieldname):
+			values[fieldname] = value
 
 	return {
-		"sales_order_item": sales_order_item,
+		"sales_order_item": row.get("name"),
 		"tag_no": tag_no,
 		"batch_no": values.get("custom_raw_material_batch_no"),
 		"stock_source_type": stock_source,
+		"so_item_fields": values,
+		"sales_order": parent_sales_order,
 	}
+
+
+@frappe.whitelist()
+def assign_raw_material_tag_to_sales_order_item(
+	sales_order_item, tag_no, sales_order=None, raw_material_item=None
+):
+	is_new_row = bool(sales_order_item and str(sales_order_item).startswith("new-"))
+
+	if is_new_row:
+		if not raw_material_item:
+			frappe.throw("Raw Material Item is required for unsaved Sales Order lines.")
+		row = frappe._dict(
+			{
+				"name": sales_order_item,
+				"parent": sales_order,
+				"custom_raw_material_item": raw_material_item,
+			}
+		)
+	elif sales_order_item and frappe.db.exists("Sales Order Item", sales_order_item):
+		row = frappe.get_doc("Sales Order Item", sales_order_item)
+	else:
+		frappe.throw(f"Sales Order Item {sales_order_item} not found")
+
+	prepared = _prepare_raw_material_tag_assignment(row, tag_no)
+	values = prepared.get("so_item_fields") or {}
+
+	if not is_new_row:
+		frappe.db.set_value("Sales Order Item", sales_order_item, values, update_modified=False)
+		if row.parent:
+			frappe.db.set_value(
+				"Tag Registry",
+				{"tag_no": tag_no},
+				"sales_order",
+				row.parent,
+				update_modified=False,
+			)
+
+	return prepared
 
 
 @frappe.whitelist()

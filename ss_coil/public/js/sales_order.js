@@ -46,7 +46,9 @@ frappe.ui.form.on("Sales Order Item", {
 	},
 	custom_stock_source_type(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
-		if (row.custom_stock_source_type === "Purchased" && !row.custom_raw_material_item) {
+		frappe.model.set_value(cdt, cdn, "custom_raw_material_tag_no", "");
+		frappe.model.set_value(cdt, cdn, "custom_raw_material_batch_no", "");
+		if (row.custom_stock_source_type === STOCK_SOURCE_PURCHASE_RECEIPTS && !row.custom_raw_material_item) {
 			apply_sales_order_item_coil_defaults(frm, cdt, cdn);
 		}
 	},
@@ -70,6 +72,9 @@ frappe.ui.form.on("Sales Order Item", {
 	},
 });
 
+const STOCK_SOURCE_PURCHASE_RECEIPTS = "Purchase Receipts";
+const STOCK_SOURCE_STOCK_ENTRY = "Stock Entry";
+
 function apply_sales_order_item_coil_defaults(frm, cdt, cdn) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row || !row.item_code) return;
@@ -83,10 +88,10 @@ function apply_sales_order_item_coil_defaults(frm, cdt, cdn) {
 				frappe.model.set_value(cdt, cdn, "custom_raw_material_item", defaults.custom_default_raw_material_item);
 			}
 			if (defaults.custom_ss_coil_item_type === "Raw Material" && !row.custom_stock_source_type) {
-				frappe.model.set_value(cdt, cdn, "custom_stock_source_type", "Purchased");
+				frappe.model.set_value(cdt, cdn, "custom_stock_source_type", STOCK_SOURCE_PURCHASE_RECEIPTS);
 			}
 			if (["Finished Good", "Semi Finished"].includes(defaults.custom_ss_coil_item_type) && !row.custom_stock_source_type) {
-				frappe.model.set_value(cdt, cdn, "custom_stock_source_type", "Purchased");
+				frappe.model.set_value(cdt, cdn, "custom_stock_source_type", STOCK_SOURCE_PURCHASE_RECEIPTS);
 			}
 		},
 		error() {
@@ -103,6 +108,10 @@ function open_raw_material_tag_dialog(frm, cdt, cdn) {
 		frappe.msgprint(__("Select a Raw Material Item before choosing a parent tag."));
 		return;
 	}
+	if (!row.custom_stock_source_type) {
+		frappe.msgprint(__("Select Stock Source (Purchase Receipts or Stock Entry) before choosing a parent tag."));
+		return;
+	}
 
 	frappe.call({
 		method: "ss_coil.api.get_available_raw_material_tags",
@@ -110,6 +119,7 @@ function open_raw_material_tag_dialog(frm, cdt, cdn) {
 			sales_order: frm.doc.name,
 			sales_order_item: row.name,
 			raw_material_item: row.custom_raw_material_item,
+			stock_source_type: row.custom_stock_source_type,
 		},
 		freeze: true,
 		freeze_message: __("Loading available parent tags..."),
@@ -117,11 +127,17 @@ function open_raw_material_tag_dialog(frm, cdt, cdn) {
 			const payload = r.message || {};
 			const tags = payload.tags || [];
 			if (!tags.length) {
+				const source_label =
+					row.custom_stock_source_type === STOCK_SOURCE_PURCHASE_RECEIPTS
+						? __("Purchase Receipts")
+						: row.custom_stock_source_type === STOCK_SOURCE_STOCK_ENTRY
+							? __("Stock Entry")
+							: row.custom_stock_source_type;
 				frappe.msgprint({
 					title: __("No Parent Tags Available"),
 					message: __(
-						"No unassigned parent tags were found for {0}. Receive the raw material on Purchase Receipt or Material Receipt Stock Entry first.",
-						[row.custom_raw_material_item],
+						"No unassigned parent tags were found for {0} from {1}. Receive the raw material first.",
+						[row.custom_raw_material_item, source_label],
 					),
 					indicator: "orange",
 				});
@@ -151,11 +167,12 @@ function show_raw_material_tag_picker_dialog(frm, cdt, cdn, row, tags) {
 	const rows_html = tags
 		.map((tag) => {
 			const source_label =
-				tag.source_doctype === "Purchase Receipt"
-					? __("Purchased")
+				tag.stock_source_type ||
+				(tag.source_doctype === "Purchase Receipt"
+					? STOCK_SOURCE_PURCHASE_RECEIPTS
 					: tag.source_doctype === "Stock Entry"
-						? __("Customer Provided")
-						: tag.stock_source_type || "-";
+						? STOCK_SOURCE_STOCK_ENTRY
+						: "-");
 			return `
 				<tr>
 					<td><b>${escape_html(tag.tag_no || "-")}</b></td>
@@ -203,34 +220,56 @@ function show_raw_material_tag_picker_dialog(frm, cdt, cdn, row, tags) {
 	dialog.fields_dict.tag_picker_html.$wrapper.find(".ss-coil-pick-tag").on("click", function () {
 		const tag_no = $(this).attr("data-tag-no");
 		if (!tag_no) return;
-		frappe.call({
-			method: "ss_coil.api.assign_raw_material_tag_to_sales_order_item",
-			args: {
-				sales_order_item: row.name,
-				tag_no,
-			},
-			freeze: true,
-			freeze_message: __("Linking parent tag..."),
-			callback(res) {
-				const result = res.message || {};
-				frappe.model.set_value(cdt, cdn, "custom_raw_material_tag_no", result.tag_no || tag_no);
-				if (result.batch_no) {
-					frappe.model.set_value(cdt, cdn, "custom_raw_material_batch_no", result.batch_no);
-				}
-				if (result.stock_source_type) {
-					frappe.model.set_value(cdt, cdn, "custom_stock_source_type", result.stock_source_type);
-				}
-				frappe.show_alert({
-					message: __("Linked parent tag {0}", [result.tag_no || tag_no]),
-					indicator: "green",
-				});
-				dialog.hide();
-				frm.refresh_field("items");
-			},
-		});
+		assign_raw_material_tag_to_row(frm, cdt, cdn, row, tag_no, dialog);
 	});
 
 	dialog.show();
+}
+
+function assign_raw_material_tag_to_row(frm, cdt, cdn, row, tag_no, dialog) {
+	frappe.call({
+		method: "ss_coil.api.assign_raw_material_tag_to_sales_order_item",
+		args: {
+			sales_order_item: row.name,
+			tag_no,
+			sales_order: frm.doc.name,
+			raw_material_item: row.custom_raw_material_item,
+		},
+		freeze: true,
+		freeze_message: __("Linking parent tag..."),
+		callback(res) {
+			const result = res.message || {};
+			apply_raw_material_tag_to_sales_order_row(cdt, cdn, result);
+			frappe.show_alert({
+				message: __("Linked parent tag {0}", [result.tag_no || tag_no]),
+				indicator: "green",
+			});
+			if (dialog) {
+				dialog.hide();
+			}
+			frm.refresh_field("items");
+		},
+	});
+}
+
+function apply_raw_material_tag_to_sales_order_row(cdt, cdn, result) {
+	const values = result.so_item_fields || {};
+	if (!Object.keys(values).length) {
+		if (result.tag_no) {
+			values.custom_raw_material_tag_no = result.tag_no;
+		}
+		if (result.batch_no) {
+			values.custom_raw_material_batch_no = result.batch_no;
+		}
+		if (result.stock_source_type) {
+			values.custom_stock_source_type = result.stock_source_type;
+		}
+	}
+	Object.entries(values).forEach(([fieldname, value]) => {
+		if (value !== undefined && value !== null && value !== "") {
+			frappe.model.set_value(cdt, cdn, fieldname, value);
+		}
+	});
 }
 
 function open_sales_order_parent_tag_dialog(frm) {

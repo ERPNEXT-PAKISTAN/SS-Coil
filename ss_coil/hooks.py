@@ -155,7 +155,8 @@ doc_events = {
 # ------------
 
 # before_install = "ss_coil.install.before_install"
-# after_install = "ss_coil.install.after_install"
+after_install = "ss_coil.install.after_install"
+after_migrate = "ss_coil.install.after_migrate"
 
 # Uninstallation
 # ------------

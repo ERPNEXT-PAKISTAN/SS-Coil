@@ -169,14 +169,18 @@ For this app, keeping screenshots inside `docs/screenshots/` is the best option 
 
 ### Fresh Install on a New Server
 
+Use this only when `ss_coil` is **not** already in `apps/`.
+
 ```bash
 cd /home/frappe/frappe-bench
 bench get-app https://github.com/ERPNEXT-PAKISTAN/SS-Coil.git --branch main
 bench --site your-site-name install-app ss_coil
 bench --site your-site-name migrate
-bench --site your-site-name clear-cache
 bench build --app ss_coil
+bench --site your-site-name clear-cache
 ```
+
+Tag-related custom fields are created automatically during `install-app` and `migrate` via the app install hook.
 
 If you manage processes manually, restart after installation:
 
@@ -184,47 +188,122 @@ If you manage processes manually, restart after installation:
 bench restart
 ```
 
-### Install on an Existing Bench
+### Install on a Bench That Already Has `ss_coil`
 
-```bash
-cd /home/frappe/frappe-bench
-bench get-app https://github.com/ERPNEXT-PAKISTAN/SS-Coil.git --branch main
-bench --site your-site-name install-app ss_coil
-bench --site your-site-name migrate
-bench --site your-site-name clear-cache
-bench build --app ss_coil
+Do **not** run `bench get-app` again. That causes this error:
+
+```text
+OSError: [Errno 39] Directory not empty: '.../apps/SS-Coil' -> '.../apps/ss_coil'
 ```
+
+Use the [Update on an Already Installed Server](#update-on-an-already-installed-server) steps below instead.
 
 ---
 
 ## Update on an Already Installed Server
 
-If `ss_coil` is already installed and you want to pull the latest app code:
+Use this when `ss_coil` is already installed and you only want the latest code.
 
-```bash
-cd /home/frappe/frappe-bench/apps/ss_coil
-git pull origin main
-```
-
-Then return to bench and run:
+### Standard update
 
 ```bash
 cd /home/frappe/frappe-bench
+
+# Remove failed clone folder if a previous get-app attempt left it behind
+rm -rf apps/SS-Coil
+
+# Pull latest app code
+cd apps/ss_coil
+git fetch origin
+git checkout main
+git pull origin main
+
+# Apply updates on site
+cd /home/frappe/frappe-bench
 bench --site your-site-name migrate
-bench --site your-site-name clear-cache
 bench build --app ss_coil
+bench --site your-site-name clear-cache
 ```
 
-If needed:
+Replace `your-site-name` with your site, for example `ss.frappe.my`.
+
+### One-line update
+
+```bash
+cd /home/frappe/frappe-bench && rm -rf apps/SS-Coil && cd apps/ss_coil && git fetch origin && git checkout main && git pull origin main && cd /home/frappe/frappe-bench && bench --site your-site-name migrate && bench build --app ss_coil && bench --site your-site-name clear-cache
+```
+
+### Verify latest code
+
+```bash
+cd /home/frappe/frappe-bench/apps/ss_coil
+git log -1 --oneline
+```
+
+You should see the latest commit from `main`, for example:
+
+```text
+782a025 Add tag-origin fixtures and auto-setup on install/migrate.
+```
+
+### If tag fields are still missing after update
+
+Run the setup command once, then clear cache:
+
+```bash
+bench --site your-site-name execute ss_coil.api.setup_tag_origin_fields
+bench --site your-site-name clear-cache
+```
+
+This ensures fields such as these exist:
+
+- Item: `Create Tag on Receipt`
+- Purchase Receipt / Stock Entry: `Create Tag Numbers`
+- Purchase Receipt Item / Stock Entry Detail: `Create Tag No`
+- Sales Order Item: raw material tag linking fields
+
+Then hard-refresh the browser (`Ctrl+Shift+R`).
+
+### If `apps/ss_coil` is not a git repository
+
+Only then reinstall the app folder:
+
+```bash
+cd /home/frappe/frappe-bench
+bench --site your-site-name uninstall-app ss_coil
+rm -rf apps/ss_coil apps/SS-Coil
+bench get-app https://github.com/ERPNEXT-PAKISTAN/SS-Coil.git --branch main
+bench --site your-site-name install-app ss_coil
+bench --site your-site-name migrate
+bench build --app ss_coil
+bench --site your-site-name clear-cache
+```
+
+If needed after update:
 
 ```bash
 bench restart
 ```
 
-### One-Line Update Flow
+---
+
+## Cloud Server Example
+
+For site `ss.frappe.my`:
 
 ```bash
-cd /home/frappe/frappe-bench/apps/ss_coil && git pull origin main && cd /home/frappe/frappe-bench && bench --site your-site-name migrate && bench --site your-site-name clear-cache && bench build --app ss_coil
+cd /home/frappe/frappe-bench
+rm -rf apps/SS-Coil
+cd apps/ss_coil
+git fetch origin
+git checkout main
+git pull origin main
+cd /home/frappe/frappe-bench
+bench --site ss.frappe.my migrate
+bench build --app ss_coil
+bench --site ss.frappe.my clear-cache
+bench --site ss.frappe.my execute ss_coil.api.setup_tag_origin_fields
+bench --site ss.frappe.my clear-cache
 ```
 
 ---
@@ -282,7 +361,7 @@ This is useful when one input coil is converted into one or more production outp
 
 ## Recommended Deployment Flow
 
-For another server:
+### New server
 
 1. Install app
 2. Run migration
@@ -290,15 +369,31 @@ For another server:
 4. Clear cache
 5. Open `SS Coil Space` workspace
 
-Commands:
-
 ```bash
 cd /home/frappe/frappe-bench
 bench get-app https://github.com/ERPNEXT-PAKISTAN/SS-Coil.git --branch main
 bench --site your-site-name install-app ss_coil
 bench --site your-site-name migrate
-bench --site your-site-name clear-cache
 bench build --app ss_coil
+bench --site your-site-name clear-cache
+```
+
+### Existing server
+
+1. Pull latest code from `apps/ss_coil`
+2. Run migration
+3. Build assets
+4. Clear cache
+5. Run tag setup if needed
+
+```bash
+cd /home/frappe/frappe-bench/apps/ss_coil && git pull origin main
+cd /home/frappe/frappe-bench
+bench --site your-site-name migrate
+bench build --app ss_coil
+bench --site your-site-name clear-cache
+bench --site your-site-name execute ss_coil.api.setup_tag_origin_fields
+bench --site your-site-name clear-cache
 ```
 
 ---
@@ -329,6 +424,7 @@ ss_coil/
 ## Development Notes
 
 - This app keeps operational customizations in code and fixtures
+- Tag-origin custom fields are exported in fixtures and also applied by `after_install` / `after_migrate`
 - Sales Order, Stock Entry, Purchase documents, Delivery Note, and Sales Invoice integrations are included
 - Workspace and desktop launcher setup are part of the app
 - Tag tracking and parent-child production trace are part of the app

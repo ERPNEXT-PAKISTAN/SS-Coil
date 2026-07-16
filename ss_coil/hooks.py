@@ -45,7 +45,7 @@ add_to_apps_screen = [
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css"
+app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=8"
 # app_include_js = "/assets/ss_coil/js/ss_coil.js"
 
 # include js, css files in header of web template

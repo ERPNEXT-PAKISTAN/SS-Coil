@@ -119,38 +119,21 @@ function open_stock_entry_data_entry_dialog(frm) {
 	});
 }
 
-const STOCK_ENTRY_DATA_ENTRY_PARENT_GROUPS = [
-	{
-		label: "Document",
-		fields: [
-			"company",
-			"stock_entry_type",
-			"purpose",
-			"custom_job_purpose",
-			"posting_date",
-			"posting_time",
-			"custom_sales_order",
-			"custom_mr_number",
-		],
-	},
-	{
-		label: "Customer & Warehouse",
-		fields: [
-			"custom_lot",
-			"custom_create_tag_numbers",
-			"custom_customer",
-			"custom_for_customer",
-			"custom_vehicle_no",
-			"custom_driver_name",
-			"custom_invoice__igp_no",
-			"from_warehouse",
-			"to_warehouse",
-		],
-	},
+const STOCK_ENTRY_DATA_ENTRY_PARENT_FIELDS = [
+	"company",
+	"stock_entry_type",
+	"purpose",
+	"custom_job_purpose",
+	"posting_date",
+	"custom_sales_order",
+	"custom_mr_number",
+	"custom_customer",
+	"custom_for_customer",
+	"custom_create_tag_numbers",
 ];
 
 const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
-	{ label: "Item", fields: ["item_code", "item_name", "qty", "uom"] },
+	{ label: "Item", fields: ["item_code", "qty"] },
 	{
 		label: "Identification",
 		fields: ["custom_tag_no", "custom_ref_no", "custom_mill", "custom_location"],
@@ -161,7 +144,7 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	},
 	{
 		label: "References",
-		fields: ["custom_js_number", "custom_hdgc_no", "custom_po_no", "custom_condition"],
+		fields: ["custom_js_number", "custom_hdgc_no", "custom_condition"],
 	},
 	{
 		label: "Specification",
@@ -185,7 +168,7 @@ function show_stock_entry_data_entry_dialog(frm, meta) {
 		frm,
 		meta,
 		items: get_stock_entry_data_entry_initial_items(frm),
-		item_cards: [],
+		item_rows: [],
 	};
 
 	const dialog = new frappe.ui.Dialog({
@@ -195,7 +178,10 @@ function show_stock_entry_data_entry_dialog(frm, meta) {
 				fieldtype: "HTML",
 				fieldname: "parent_container",
 				options: `<div class="ss-coil-de-parent-block">
-					<div class="ss-coil-de-block-title">${__("Stock Entry Details")}</div>
+					<div class="ss-coil-de-block-title">
+						<span class="ss-coil-de-block-icon">${frappe.utils.icon("file", "sm")}</span>
+						<span>${__("Stock Entry Details")}</span>
+					</div>
 					<div class="ss-coil-de-parent-fields"></div>
 				</div>`,
 			},
@@ -204,10 +190,21 @@ function show_stock_entry_data_entry_dialog(frm, meta) {
 				fieldname: "items_container",
 				options: `<div class="ss-coil-de-items-block">
 					<div class="ss-coil-de-block-title">
-						<span>${__("Item Rows")}</span>
-						<button type="button" class="btn btn-sm btn-secondary ss-coil-de-add-row">${__("Add Row")}</button>
+						<span class="ss-coil-de-block-title-text">
+							<span class="ss-coil-de-block-icon">${frappe.utils.icon("stock", "sm")}</span>
+							<span>${__("Item Rows")}</span>
+							<span class="ss-coil-de-row-count badge">0</span>
+						</span>
+						<button type="button" class="btn btn-sm btn-primary ss-coil-de-add-row">
+							${frappe.utils.icon("add", "xs")} ${__("Add Row")}
+						</button>
 					</div>
-					<div class="ss-coil-de-item-list"></div>
+					<div class="ss-coil-de-table-wrap">
+						<table class="ss-coil-de-table">
+							<thead></thead>
+							<tbody></tbody>
+						</table>
+					</div>
 				</div>`,
 			},
 		],
@@ -218,8 +215,8 @@ function show_stock_entry_data_entry_dialog(frm, meta) {
 	});
 
 	state.parent_fg = new frappe.ui.FieldGroup({
-		fields: build_stock_entry_data_entry_grouped_fields(
-			STOCK_ENTRY_DATA_ENTRY_PARENT_GROUPS,
+		fields: build_stock_entry_data_entry_flat_fields(
+			STOCK_ENTRY_DATA_ENTRY_PARENT_FIELDS,
 			parent_field_map
 		),
 		body: null,
@@ -234,17 +231,28 @@ function show_stock_entry_data_entry_dialog(frm, meta) {
 	state.parent_fg.make();
 	state.parent_fg.set_values(get_stock_entry_data_entry_parent_values(frm, meta));
 	apply_stock_entry_data_entry_grid_layout($parent_body);
+	Object.values(state.parent_fg.fields_dict || {}).forEach(relocate_stock_entry_data_entry_dropdown);
 
-	const $list = dialog.$wrapper.find(".ss-coil-de-item-list");
-	render_stock_entry_data_entry_item_cards(state, $list);
+	state.child_columns = build_stock_entry_data_entry_child_columns(state.meta.child_fields || []);
+	const $table = dialog.$wrapper.find(".ss-coil-de-table");
+	render_stock_entry_data_entry_table_head(state, $table.find("thead"));
+	render_stock_entry_data_entry_item_rows(state, $table.find("tbody"));
+	update_stock_entry_data_entry_row_count(dialog, state);
 
 	dialog.$wrapper.find(".ss-coil-de-add-row").on("click", () => {
 		const item = make_stock_entry_data_entry_item_row();
 		state.items.push(item);
-		append_stock_entry_data_entry_item_card(state, $list, item, state.items.length - 1);
+		append_stock_entry_data_entry_item_row(state, $table.find("tbody"), item, state.items.length - 1);
+		update_stock_entry_data_entry_row_count(dialog, state);
+		const $wrap = dialog.$wrapper.find(".ss-coil-de-table-wrap");
+		$wrap.scrollTop($wrap[0].scrollHeight);
 	});
 
 	state.dialog = dialog;
+}
+
+function update_stock_entry_data_entry_row_count(dialog, state) {
+	dialog.$wrapper.find(".ss-coil-de-row-count").text(state.items.length);
 }
 
 function build_stock_entry_data_entry_grouped_fields(groups, field_map) {
@@ -264,46 +272,95 @@ function build_stock_entry_data_entry_grouped_fields(groups, field_map) {
 	return fields;
 }
 
-function build_stock_entry_data_entry_child_grouped_fields(child_field_defs) {
+function build_stock_entry_data_entry_flat_fields(fieldnames, field_map) {
+	const fields = [
+		{ fieldtype: "Section Break", fieldname: "section_stock_entry_details" },
+	];
+	fieldnames.forEach((fieldname) => {
+		if (field_map[fieldname]) {
+			fields.push(map_stock_entry_data_entry_field(field_map[fieldname]));
+		}
+	});
+	return fields;
+}
+
+function relocate_stock_entry_data_entry_dropdown(control) {
+	if (!control || !control.$input) return;
+
+	const reposition = () => {
+		const awesomplete = control.awesomplete;
+		if (!awesomplete || !awesomplete.ul) return;
+		const ul = awesomplete.ul;
+		const rect = control.$input.get(0).getBoundingClientRect();
+		ul.style.position = "fixed";
+		ul.style.zIndex = 99999;
+		ul.style.left = `${rect.left}px`;
+		ul.style.top = `${rect.bottom + 2}px`;
+		ul.style.width = `${rect.width}px`;
+		ul.style.minWidth = `${Math.max(rect.width, 220)}px`;
+	};
+
+	control.$input.on("awesomplete-open input click focus", reposition);
+}
+
+function build_stock_entry_data_entry_child_columns(child_field_defs) {
 	const field_map = {};
 	child_field_defs.forEach((df) => {
 		field_map[df.fieldname] = df;
 	});
-	return build_stock_entry_data_entry_grouped_fields(
-		STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS,
-		field_map
-	);
+	const groups = [];
+	STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS.forEach((group) => {
+		const fields = group.fields.filter((fieldname) => field_map[fieldname]).map((fieldname) => field_map[fieldname]);
+		if (fields.length) {
+			groups.push({ label: group.label, fields });
+		}
+	});
+	return groups;
 }
 
 function apply_stock_entry_data_entry_grid_layout($wrapper) {
-	$wrapper.find(".section-body").addClass("ss-coil-de-grid-4");
+	$wrapper.find(".form-column > form").addClass("ss-coil-de-grid-6");
 }
 
 function apply_stock_entry_data_entry_dialog_layout(dialog) {
 	dialog.$wrapper.addClass("ss-coil-data-entry-dialog");
-	const $modal_dialog = $(dialog.wrapper);
-	$modal_dialog
-		.addClass("ss-coil-data-entry-modal")
-		.removeClass("modal-sm modal-lg modal-xl modal-dialog-centered");
-	$modal_dialog.css({
-		maxWidth: "96vw",
-		width: "96vw",
-		height: "96vh",
-		maxHeight: "96vh",
-		margin: "2vh auto",
-	});
-	dialog.$wrapper.css("padding", "0");
-	dialog.$wrapper.find(".modal-content").css({
-		height: "96vh",
-		maxHeight: "96vh",
-		display: "flex",
-		flexDirection: "column",
-	});
-	dialog.$wrapper.find(".modal-body").css({
-		flex: "1",
-		overflowY: "auto",
-		maxHeight: "none",
-	});
+
+	const set_important = (el, styles) => {
+		if (!el) return;
+		Object.keys(styles).forEach((prop) => {
+			el.style.setProperty(prop, styles[prop], "important");
+		});
+	};
+
+	const apply = () => {
+		const modal_dialog_el = dialog.$wrapper.find(".modal-dialog").get(0);
+		set_important(modal_dialog_el, {
+			"max-width": "96vw",
+			width: "96vw",
+			height: "96vh",
+			"max-height": "96vh",
+			margin: "2vh auto",
+		});
+		if (modal_dialog_el) {
+			modal_dialog_el.classList.add("ss-coil-data-entry-modal");
+			modal_dialog_el.classList.remove("modal-sm", "modal-lg", "modal-xl", "modal-dialog-centered");
+		}
+		set_important(dialog.$wrapper.get(0), { padding: "0" });
+		set_important(dialog.$wrapper.find(".modal-content").get(0), {
+			height: "96vh",
+			"max-height": "96vh",
+			display: "flex",
+			"flex-direction": "column",
+		});
+		set_important(dialog.$wrapper.find(".modal-body").get(0), {
+			flex: "1",
+			"overflow-y": "auto",
+			"max-height": "none",
+		});
+	};
+
+	apply();
+	dialog.$wrapper.on("shown.bs.modal", apply);
 }
 
 function save_stock_entry_data_entry_from_dialog(state, dialog) {
@@ -311,12 +368,12 @@ function save_stock_entry_data_entry_from_dialog(state, dialog) {
 	if (!parent_data) return;
 
 	const items = [];
-	for (const card of state.item_cards) {
-		const row_values = card.field_group.get_values();
-		if (!row_values) return;
-		Object.assign(card.item, row_values);
-		update_stock_entry_data_entry_row_dimension(card.item);
-		items.push({ ...card.item });
+	for (const row of state.item_rows) {
+		Object.keys(row.controls).forEach((fieldname) => {
+			row.item[fieldname] = row.controls[fieldname].get_value();
+		});
+		update_stock_entry_data_entry_row_dimension(row.item);
+		items.push({ ...row.item });
 	}
 
 	const payload = {
@@ -352,12 +409,19 @@ function map_stock_entry_data_entry_field(df) {
 }
 
 function apply_stock_entry_data_entry_parent_to_items(parent_data, items) {
-	return (items || []).map((row) => ({
-		...row,
-		custom_for_customer: parent_data.custom_for_customer || "",
-		s_warehouse: parent_data.from_warehouse || "",
-		t_warehouse: parent_data.to_warehouse || "",
-	}));
+	return (items || []).map((row) => {
+		const updated = { ...row };
+		if (parent_data.custom_for_customer !== undefined) {
+			updated.custom_for_customer = parent_data.custom_for_customer || "";
+		}
+		if (parent_data.from_warehouse !== undefined) {
+			updated.s_warehouse = parent_data.from_warehouse || "";
+		}
+		if (parent_data.to_warehouse !== undefined) {
+			updated.t_warehouse = parent_data.to_warehouse || "";
+		}
+		return updated;
+	});
 }
 
 function make_stock_entry_data_entry_item_row(existing) {
@@ -392,81 +456,114 @@ function get_stock_entry_data_entry_parent_values(frm, meta) {
 	return values;
 }
 
-function render_stock_entry_data_entry_item_cards(state, $list) {
-	$list.empty();
-	state.item_cards = [];
+function render_stock_entry_data_entry_table_head(state, $thead) {
+	const groups = state.child_columns;
+	const $group_row = $('<tr class="ss-coil-de-group-row"></tr>');
+	const $field_row = $('<tr class="ss-coil-de-field-row"></tr>');
+
+	$group_row.append('<th class="ss-coil-de-col-index ss-coil-de-sticky"></th>');
+	$field_row.append('<th class="ss-coil-de-col-index ss-coil-de-sticky">#</th>');
+
+	groups.forEach((group) => {
+		$group_row.append(
+			`<th class="ss-coil-de-group-head" colspan="${group.fields.length}">${__(group.label)}</th>`
+		);
+		group.fields.forEach((df) => {
+			$field_row.append(
+				`<th data-fieldname="${df.fieldname}">${__(df.label)}${df.reqd ? '<span class="ss-coil-de-reqd">*</span>' : ""}</th>`
+			);
+		});
+	});
+
+	$group_row.append('<th class="ss-coil-de-col-action ss-coil-de-sticky-right"></th>');
+	$field_row.append('<th class="ss-coil-de-col-action ss-coil-de-sticky-right"></th>');
+
+	$thead.empty().append($group_row).append($field_row);
+}
+
+function render_stock_entry_data_entry_item_rows(state, $tbody) {
+	$tbody.empty();
+	state.item_rows = [];
 	if (!state.items.length) {
 		state.items.push(make_stock_entry_data_entry_item_row());
 	}
 	state.items.forEach((item, idx) => {
-		append_stock_entry_data_entry_item_card(state, $list, item, idx);
+		append_stock_entry_data_entry_item_row(state, $tbody, item, idx);
 	});
 }
 
-function append_stock_entry_data_entry_item_card(state, $list, item, idx) {
-	const $card = $(`
-		<div class="ss-coil-de-item-card" data-row-name="${item.name}">
-			<div class="ss-coil-de-item-head">
-				<span class="ss-coil-de-row-label">${__("Row {0}", [idx + 1])}${item.item_code ? ` — ${frappe.utils.escape_html(item.item_code)}` : ""}</span>
-				<button type="button" class="btn btn-xs btn-default ss-coil-de-remove-row">${__("Remove")}</button>
-			</div>
-			<div class="ss-coil-de-item-body"></div>
-		</div>
-	`).appendTo($list);
+function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
+	const $tr = $(`<tr class="ss-coil-de-item-row" data-row-name="${item.name}"></tr>`).appendTo($tbody);
+	$tr.append(`<td class="ss-coil-de-col-index ss-coil-de-sticky">${idx + 1}</td>`);
 
-	const field_group = new frappe.ui.FieldGroup({
-		fields: build_stock_entry_data_entry_child_grouped_fields(state.meta.child_fields || []),
-		body: $card.find(".ss-coil-de-item-body").get(0),
-		no_submit_on_enter: true,
+	const controls = {};
+	const dimension_fields = ["custom_thickness", "custom_width", "custom_length"];
+
+	state.child_columns.forEach((group) => {
+		group.fields.forEach((df) => {
+			const $td = $(`<td data-fieldname="${df.fieldname}"></td>`).appendTo($tr);
+			const control = frappe.ui.form.make_control({
+				df: {
+					fieldtype: df.fieldtype,
+					fieldname: df.fieldname,
+					label: df.label,
+					options: df.options,
+					reqd: df.reqd,
+					read_only: df.fieldname === "custom_dimension" ? 1 : df.read_only,
+					depends_on: df.depends_on,
+					onchange: () => {
+						item[df.fieldname] = control.get_value();
+						if (dimension_fields.includes(df.fieldname)) {
+							update_row_dimension_control();
+						}
+					},
+				},
+				parent: $td.get(0),
+				only_input: true,
+				render_input: true,
+			});
+			control.refresh();
+			control.set_value(item[df.fieldname]);
+			relocate_stock_entry_data_entry_dropdown(control);
+			controls[df.fieldname] = control;
+		});
 	});
-	field_group.make();
-	field_group.set_values(item);
-	apply_stock_entry_data_entry_grid_layout($card.find(".ss-coil-de-item-body"));
-	bind_stock_entry_data_entry_card_dimension(field_group, item);
 
-	$card.find(".ss-coil-de-remove-row").on("click", () => {
+	function update_row_dimension_control() {
+		dimension_fields.forEach((fieldname) => {
+			if (controls[fieldname]) {
+				item[fieldname] = controls[fieldname].get_value();
+			}
+		});
+		update_stock_entry_data_entry_row_dimension(item);
+		if (controls.custom_dimension) {
+			controls.custom_dimension.set_value(item.custom_dimension);
+		}
+	}
+
+	const $remove_td = $('<td class="ss-coil-de-col-action ss-coil-de-sticky-right"></td>').appendTo($tr);
+	const $remove_btn = $(
+		`<button type="button" class="btn-reset ss-coil-de-remove-row" title="${__("Remove Row")}">${frappe.utils.icon("close", "sm")}</button>`
+	).appendTo($remove_td);
+
+	$remove_btn.on("click", () => {
 		if (state.items.length <= 1) {
 			frappe.msgprint(__("At least one item row is required."));
 			return;
 		}
 		state.items = state.items.filter((row) => row.name !== item.name);
-		state.item_cards = state.item_cards.filter((card) => card.item.name !== item.name);
-		$card.remove();
-		renumber_stock_entry_data_entry_item_cards($list);
+		state.item_rows = state.item_rows.filter((row) => row.item.name !== item.name);
+		$tr.remove();
+		renumber_stock_entry_data_entry_item_rows($tbody);
+		update_stock_entry_data_entry_row_count(state.dialog, state);
 	});
 
-	state.item_cards.push({ item, field_group, $card });
+	state.item_rows.push({ item, controls, $tr });
 }
 
-function renumber_stock_entry_data_entry_item_cards($list) {
-	$list.find(".ss-coil-de-item-card").each((idx, el) => {
-		const $label = $(el).find(".ss-coil-de-row-label");
-		const text = $label.text();
-		const item_code = text.includes("—") ? text.split("—")[1].trim() : "";
-		$label.text(`${__("Row {0}", [idx + 1])}${item_code ? ` — ${item_code}` : ""}`);
-	});
-}
-
-function bind_stock_entry_data_entry_card_dimension(field_group, item) {
-	const dimension_fields = ["custom_thickness", "custom_width", "custom_length"];
-	const update_dimension = () => {
-		dimension_fields.forEach((fieldname) => {
-			const control = field_group.fields_dict[fieldname];
-			if (control) {
-				item[fieldname] = control.get_value();
-			}
-		});
-		update_stock_entry_data_entry_row_dimension(item);
-		const dimension_control = field_group.fields_dict.custom_dimension;
-		if (dimension_control) {
-			dimension_control.set_value(item.custom_dimension);
-		}
-	};
-
-	dimension_fields.forEach((fieldname) => {
-		const control = field_group.fields_dict[fieldname];
-		if (!control || !control.$input) return;
-		control.$input.on("change.ss_coil_de_dimension", update_dimension);
+function renumber_stock_entry_data_entry_item_rows($tbody) {
+	$tbody.find(".ss-coil-de-item-row").each((idx, el) => {
+		$(el).find(".ss-coil-de-col-index").text(idx + 1);
 	});
 }
 

@@ -45,7 +45,7 @@ add_to_apps_screen = [
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/ss_coil/css/ss_coil.css"
+app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css"
 # app_include_js = "/assets/ss_coil/js/ss_coil.js"
 
 # include js, css files in header of web template
@@ -103,7 +103,11 @@ doc_events = {
 		"on_submit": "ss_coil.api.sync_ss_coil_process_tracking",
 		"on_cancel": "ss_coil.api.sync_ss_coil_process_tracking",
 	},
-	"Stock Entry": {"before_validate": "ss_coil.api.prepare_stock_entry_links", "before_save": "ss_coil.api.prepare_stock_entry_links"},
+	"Stock Entry": {
+		"before_validate": "ss_coil.api.prepare_stock_entry_links",
+		"before_save": "ss_coil.api.prepare_stock_entry_links",
+		"before_print": "ss_coil.api.prepare_stock_entry_sticker_print",
+	},
 	"Delivery Note": {"before_validate": "ss_coil.api.assign_delivery_note_item_tags"},
 	"Sales Invoice": {"before_validate": "ss_coil.api.assign_sales_invoice_item_tags"},
 	"Expense Claim": {"before_validate": "ss_coil.api.populate_custom_sales_order", "before_save": "ss_coil.api.populate_custom_sales_order"},
@@ -145,11 +149,13 @@ doc_events = {
 # Jinja
 # ----------
 
-# add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "ss_coil.utils.jinja_methods",
-# 	"filters": "ss_coil.utils.jinja_filters"
-# }
+jinja = {
+	"methods": [
+		"ss_coil.jinja_methods",
+	],
+}
+
+pdf_body_html = "ss_coil.print_utils.pdf_body_html"
 
 # Installation
 # ------------

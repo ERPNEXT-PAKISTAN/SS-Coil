@@ -1,0 +1,202 @@
+<style>
+	.print-format {
+		orientation: Landscape;
+		page-size: A4;
+		margin-top: 8mm;
+		margin-bottom: 8mm;
+		margin-left: 8mm;
+		margin-right: 8mm;
+		font-family: Inter, Arial, sans-serif;
+		font-size: 9px;
+		color: #0f172a;
+	}
+	.coil-print {
+		width: 100%;
+	}
+	.coil-print .title {
+		font-size: 18px;
+		font-weight: 700;
+		margin-bottom: 4px;
+	}
+	.coil-print .subtitle {
+		font-size: 10px;
+		color: #475569;
+		margin-bottom: 10px;
+	}
+	.coil-print .grid {
+		width: 100%;
+		border-collapse: collapse;
+		margin-bottom: 10px;
+	}
+	.coil-print .grid td {
+		border: 1px solid #cbd5e1;
+		padding: 5px 6px;
+		vertical-align: top;
+		width: 25%;
+	}
+	.coil-print .grid .label {
+		font-size: 8px;
+		text-transform: uppercase;
+		color: #64748b;
+		letter-spacing: 0.04em;
+	}
+	.coil-print .grid .value {
+		font-size: 9px;
+		font-weight: 600;
+		margin-top: 2px;
+	}
+	.coil-print .items {
+		width: 100%;
+		border-collapse: collapse;
+		table-layout: auto;
+	}
+	.coil-print .items th,
+	.coil-print .items td {
+		border: 1px solid #cbd5e1;
+		padding: 3px 4px;
+		font-size: 6px;
+		line-height: 1.2;
+		white-space: nowrap;
+		vertical-align: top;
+	}
+	.coil-print .items th {
+		background: #eef4fb;
+		font-weight: 700;
+	}
+	.coil-print .section-title {
+		font-size: 11px;
+		font-weight: 700;
+		margin: 10px 0 5px;
+	}
+</style>
+
+<div class="coil-print">
+<div class="title">{{ doc.doctype }}: {{ doc.name }}</div>
+<div class="subtitle">
+	Customer: {{ doc.customer_name or doc.customer or "-" }} |
+	Date: {{ frappe.format(doc.transaction_date, {"fieldtype": "Date"}) }} |
+	Status: {{ doc.status or "-" }}
+</div>
+
+<table class="grid">
+	<tr>
+		<td><div class="label">Company</div><div class="value">{{ doc.company or "-" }}</div></td>
+		<td><div class="label">Delivery Date</div><div class="value">{{ frappe.format(doc.delivery_date, {"fieldtype": "Date"}) if doc.delivery_date else "-" }}</div></td>
+		<td><div class="label">PO No</div><div class="value">{{ doc.po_no or "-" }}</div></td>
+		<td><div class="label">Project</div><div class="value">{{ doc.project or "-" }}</div></td>
+	</tr>
+	<tr>
+		<td><div class="label">Currency</div><div class="value">{{ doc.currency or "-" }}</div></td>
+		<td><div class="label">Grand Total</div><div class="value">{{ doc.grand_total or "-" }}</div></td>
+		<td><div class="label">Contact</div><div class="value">{{ doc.contact_display or doc.contact_person or "-" }}</div></td>
+		<td><div class="label">Remarks</div><div class="value">{{ doc.notes or "-" }}</div></td>
+	</tr>
+</table>
+
+<div class="section-title">Items</div>
+<table class="items">
+	<thead>
+		<tr>
+			<th>#</th>
+			<th>Item Code</th>
+			<th>Item Name</th>
+			<th>Qty</th>
+			<th>UOM</th>
+			<th>Delivery Date</th>
+			<th>Tag No</th>
+			<th>Mill</th>
+			<th>Location</th>
+			<th>Ref No</th>
+			<th>Thickness</th>
+			<th>Width</th>
+			<th>Length</th>
+			<th>Length C</th>
+			<th>Dimension</th>
+			<th>JS No</th>
+			<th>PO No</th>
+			<th>Condition</th>
+			<th>Commodity</th>
+			<th>Specification</th>
+			<th>Est WT</th>
+			<th>Qty Coil</th>
+			<th>Remarks</th>
+			<th>Comments</th>
+			<th>Stock Source</th>
+			<th>Raw Material Item</th>
+			<th>Raw Material Tag</th>
+			<th>Raw Material Batch</th>
+			<th>Child Tag</th>
+			<th>Packing Type</th>
+			<th>Packing Wt/Size</th>
+			<th>No of Pack</th>
+			<th>Packing Remarks</th>
+			<th>Packing Comments</th>
+			<th>Machine</th>
+			<th>Calc Ratio</th>
+			<th>Calc Ratio 2</th>
+			<th>Actual Ratio</th>
+			<th>Remaining Width</th>
+			<th>Rate</th>
+			<th>Amount</th>
+			<th>Warehouse</th>
+		</tr>
+	</thead>
+	<tbody>
+		{% for row in doc.items %}
+		<tr>
+			<td>{{ loop.index }}</td>
+			<td>{{ row.item_code or "-" }}</td>
+			<td>{{ row.item_name or "-" }}</td>
+			<td>{{ row.qty or "-" }}</td>
+			<td>{{ row.uom or row.stock_uom or "-" }}</td>
+			<td>{{ frappe.format(row.delivery_date, {"fieldtype": "Date"}) if row.delivery_date else "-" }}</td>
+			<td>{{ row.custom_tag_no or "-" }}</td>
+			<td>{{ row.custom_mill or "-" }}</td>
+			<td>{{ row.custom_location or "-" }}</td>
+			<td>{{ row.custom_ref_no or "-" }}</td>
+			<td>{{ row.custom_thickness or "-" }}</td>
+			<td>{{ row.custom_width or "-" }}</td>
+			<td>{{ row.custom_length or "-" }}</td>
+			<td>{{ row.custom_length_c or "-" }}</td>
+			<td>{{ row.custom_dimension or "-" }}</td>
+			<td>{{ row.custom_js_number or "-" }}</td>
+			<td>{{ row.custom_po_no or "-" }}</td>
+			<td>{{ row.custom_condition or "-" }}</td>
+			<td>{{ row.custom_commodity or "-" }}</td>
+			<td>{{ row.custom_specification or "-" }}</td>
+			<td>{{ row.custom_estimated_wt or "-" }}</td>
+			<td>{{ row.custom_qty_of_coil or "-" }}</td>
+			<td>{{ row.custom_remarks or "-" }}</td>
+			<td>{{ row.custom_comments or "-" }}</td>
+			<td>{{ row.custom_stock_source_type or "-" }}</td>
+			<td>{{ row.custom_raw_material_item or "-" }}</td>
+			<td>{{ row.custom_raw_material_tag_no or "-" }}</td>
+			<td>{{ row.custom_raw_material_batch_no or "-" }}</td>
+			<td>{{ row.custom_child_tag_no or "-" }}</td>
+			<td>{{ row.custom_packing_type or "-" }}</td>
+			<td>{{ row.custom_packing_weightsize or "-" }}</td>
+			<td>{{ row.custom_no_of_pack or "-" }}</td>
+			<td>{{ row.custom_packing_remarks or "-" }}</td>
+			<td>{{ row.custom_packing_comments or "-" }}</td>
+			<td>{{ row.custom_machine or "-" }}</td>
+			<td>{{ row.custom_calc_ratio or "-" }}</td>
+			<td>{{ row.custom_calc_ratio_2 or "-" }}</td>
+			<td>{{ row.custom_actual_ratio or "-" }}</td>
+			<td>{{ row.custom_remaining_width or "-" }}</td>
+			<td>{{ row.rate or "-" }}</td>
+			<td>{{ row.amount or "-" }}</td>
+			<td>{{ row.warehouse or "-" }}</td>
+		</tr>
+		{% endfor %}
+	</tbody>
+</table>
+
+<table class="grid">
+	<tr>
+		<td><div class="label">Total Qty</div><div class="value">{{ doc.total_qty or "-" }}</div></td>
+		<td><div class="label">Net Total</div><div class="value">{{ doc.net_total or "-" }}</div></td>
+		<td><div class="label">Taxes</div><div class="value">{{ doc.total_taxes_and_charges or "-" }}</div></td>
+		<td><div class="label">Grand Total</div><div class="value">{{ doc.grand_total or "-" }}</div></td>
+	</tr>
+</table>
+</div>

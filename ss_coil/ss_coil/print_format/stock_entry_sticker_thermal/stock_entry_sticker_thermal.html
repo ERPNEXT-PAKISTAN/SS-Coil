@@ -1,0 +1,116 @@
+<style>
+	.print-format {
+		orientation: Portrait;
+		page-size: 80mm auto;
+		margin-top: 2mm;
+		margin-bottom: 2mm;
+		margin-left: 2mm;
+		margin-right: 2mm;
+		font-family: Inter, Arial, sans-serif;
+		color: #0f172a;
+	}
+	.sticker-thermal-sheet {
+		width: 100%;
+	}
+	.sticker-thermal-item {
+		width: 100%;
+		page-break-after: always;
+		margin-bottom: 2mm;
+	}
+	.sticker-card {
+		border: 1px solid #334155;
+		border-radius: 4px;
+		padding: 4px 5px;
+		height: auto;
+		box-sizing: border-box;
+		background: #fff;
+	}
+	.sticker-inner {
+		width: 100%;
+		border-collapse: collapse;
+	}
+	.sticker-inner td {
+		border: none;
+		padding: 0;
+		vertical-align: middle;
+	}
+	.sticker-fields {
+		width: 58%;
+		font-size: 9.5px;
+		line-height: 1.2;
+		padding-right: 3px;
+	}
+	.sticker-qr {
+		width: 42%;
+		text-align: right;
+		vertical-align: middle;
+	}
+	.sticker-qr .ss-coil-qr,
+	.sticker-qr .ss-coil-qr-fallback,
+	.sticker-qr img,
+	.sticker-qr svg {
+		width: 72px;
+		height: 72px;
+	}
+	.sticker-line,
+	.sticker-footer-line {
+		margin: 0;
+		padding: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sticker-label {
+		color: #64748b;
+		font-weight: 500;
+	}
+	.sticker-value {
+		font-weight: 700;
+		color: #0f172a;
+	}
+	.sticker-footer {
+		margin-top: 3px;
+		padding-top: 2px;
+		border-top: 1px solid #cbd5e1;
+		font-size: 8.5px;
+		line-height: 1.15;
+	}
+</style>
+
+{% if sticker_print_html %}
+{{ sticker_print_html | safe }}
+{% else %}
+{% set site_url = frappe.utils.get_url() %}
+<div class="sticker-thermal-sheet">
+{% for row in doc.items %}
+{% if not filter_sticker_items or row.name in selected_item_names %}
+<div class="sticker-thermal-item">
+	<div class="sticker-card">
+		<table class="sticker-inner" cellspacing="0" cellpadding="0">
+			<tr>
+				<td class="sticker-fields">
+					<div class="sticker-line"><span class="sticker-label">Date:</span> <span class="sticker-value">{{ frappe.format(doc.posting_date, {"fieldtype": "Date"}) if doc.posting_date else "-" }}</span></div>
+					<div class="sticker-line"><span class="sticker-label">MR No:</span> <span class="sticker-value">{{ doc.custom_mr_number or "-" }}</span></div>
+					<div class="sticker-line"><span class="sticker-label">Tag No:</span> <span class="sticker-value">{{ row.custom_tag_no or "-" }}</span></div>
+					<div class="sticker-line"><span class="sticker-label">Specification:</span> <span class="sticker-value">{{ row.custom_specification or "-" }}</span></div>
+					<div class="sticker-line"><span class="sticker-label">Mill:</span> <span class="sticker-value">{{ row.custom_mill or "-" }}</span></div>
+					<div class="sticker-line"><span class="sticker-label">Ref No:</span> <span class="sticker-value">{{ row.custom_ref_no or "-" }}</span></div>
+					<div class="sticker-line"><span class="sticker-label">Weight:</span> <span class="sticker-value">{{ frappe.format(row.qty, {"fieldtype": "Float"}) if row.qty not in (None, "") else "-" }}</span></div>
+				</td>
+				<td class="sticker-qr">
+					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR">
+				</td>
+			</tr>
+		</table>
+		<div class="sticker-footer">
+			<div class="sticker-footer-line"><span class="sticker-label">Company:</span> <span class="sticker-value">{{ doc.company or "-" }}</span></div>
+			<div class="sticker-footer-line"><span class="sticker-label">Entry No:</span> <span class="sticker-value">{{ doc.name or "-" }}</span></div>
+			<div class="sticker-footer-line"><span class="sticker-label">Customer:</span> <span class="sticker-value">{{ doc.custom_customer or "-" }}</span></div>
+			<div class="sticker-footer-line"><span class="sticker-label">For Customer:</span> <span class="sticker-value">{{ doc.custom_for_customer or "-" }}</span></div>
+		</div>
+	</div>
+</div>
+{% endif %}
+{% endfor %}
+</div>
+{% endif %}

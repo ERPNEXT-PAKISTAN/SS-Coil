@@ -1,0 +1,37 @@
+import frappe
+from frappe.utils.pdf import pdf_body_html as fw_pdf_body_html
+
+from ss_coil.api import _get_sticker_print_options, build_stock_entry_sticker_sheet_html
+
+STICKER_PRINT_FORMATS = ("Stock Entry Sticker", "Stock Entry Sticker Thermal")
+
+
+def pdf_body_html(jenv, template, print_format, args):
+	_inject_sticker_print_html(print_format, args)
+
+	try:
+		from print_designer.print_designer.pdf import pdf_body_html as pd_pdf_body_html
+
+		return pd_pdf_body_html(print_format=print_format, jenv=jenv, args=args, template=template)
+	except ImportError:
+		return fw_pdf_body_html(template, args)
+
+
+def _inject_sticker_print_html(print_format, args):
+	if not print_format or print_format.name not in STICKER_PRINT_FORMATS:
+		return
+
+	doc = args.get("doc")
+	if not doc or doc.doctype != "Stock Entry":
+		return
+
+	settings = frappe.parse_json(frappe.form_dict.get("settings") or "{}")
+	item_names, layout, has_filter = _get_sticker_print_options(print_format.name, settings)
+	html = build_stock_entry_sticker_sheet_html(
+		doc, item_names=item_names, layout=layout, filter_items=has_filter
+	)
+	args["sticker_print_html"] = html or ""
+	args["selected_item_names"] = item_names or []
+	args["filter_sticker_items"] = has_filter
+	if html:
+		doc.custom_sticker_print_html = html

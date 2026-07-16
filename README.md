@@ -103,6 +103,8 @@ This app currently includes:
 
 - Print Format:
   - `Tag Trace`
+  - `Stock Entry Coil` (landscape, all coil custom fields)
+  - `Sales Order Coil` (landscape, all coil custom fields)
 
 ---
 
@@ -252,6 +254,7 @@ Run the setup command once, then clear cache:
 
 ```bash
 bench --site your-site-name execute ss_coil.api.setup_tag_origin_fields
+bench --site your-site-name execute ss_coil.form_layout.sync_coil_form_layouts
 bench --site your-site-name clear-cache
 ```
 
@@ -261,8 +264,16 @@ This ensures fields such as these exist:
 - Purchase Receipt / Stock Entry: `Create Tag Numbers`
 - Purchase Receipt Item / Stock Entry Detail: `Create Tag No`
 - Sales Order Item: raw material tag linking fields
+- Stock Entry: `Job Purpose` as Select (`Tolling` / `Own`) with the same field/column layout as the source site
 
 Then hard-refresh the browser (`Ctrl+Shift+R`).
+
+### Print formats
+
+After update, these print formats are available from the document Print menu:
+
+- **Stock Entry Coil** — landscape print with all Stock Entry header and item custom fields
+- **Sales Order Coil** — landscape print with all Sales Order item custom fields
 
 ### If `apps/ss_coil` is not a git repository
 

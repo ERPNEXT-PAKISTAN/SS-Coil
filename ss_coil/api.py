@@ -14,6 +14,11 @@ try:
 except ImportError:  # pragma: no cover - optional runtime dependency
 	pyqrcode = None
 
+from ss_coil.stock_entry_data_entry import (
+	get_stock_entry_data_entry_meta,
+	save_stock_entry_data_entry,
+)
+
 
 def _format_number(value):
 	if value is None:
@@ -1532,14 +1537,16 @@ def _build_qr_payload(row, ss_coil_doc):
 	return "\n".join(f"{key}: {value}" for key, value in payload.items() if value)
 
 
-def _build_qr_html(payload_text):
+def _build_qr_html(payload_text, plain=False, scale=3):
 	if not payload_text:
 		return ""
 	if pyqrcode:
 		qr = pyqrcode.create(payload_text, error="M")
 		buffer = BytesIO()
-		qr.svg(buffer, scale=3)
+		qr.svg(buffer, scale=scale)
 		svg = _strip_svg_preamble(buffer.getvalue().decode())
+		if plain:
+			return f'<div class="ss-coil-qr" style="padding:0;background:#fff;border:none;display:inline-block;">{svg}</div>'
 		return f'<div class="ss-coil-qr" style="padding:8px; background:#fff; border:1px solid #dbe4f0; border-radius:10px; display:inline-block;">{svg}</div>'
 	return (
 		'<div class="ss-coil-qr-fallback" style="padding:12px; border:1px dashed #8aa2c1; '
@@ -1574,6 +1581,181 @@ def _build_barcode_html(value):
 @frappe.whitelist()
 def get_coil_output_qr_html(payload_text):
 	return _build_qr_html(payload_text)
+
+
+def build_stock_entry_sticker_payload(doc, row):
+	"""Build QR/text payload for a Stock Entry item sticker."""
+	date_value = frappe.format(doc.get("posting_date"), {"fieldtype": "Date"}) if doc.get("posting_date") else "-"
+	qty_value = row.get("qty")
+	if qty_value not in (None, ""):
+		qty_value = frappe.format(qty_value, {"fieldtype": "Float"})
+	else:
+		qty_value = "-"
+	return {
+		"Date": date_value,
+		"MR No": doc.get("custom_mr_number") or "-",
+		"Tag No": row.get("custom_tag_no") or "-",
+		"Specification": row.get("custom_specification") or "-",
+		"Mill": row.get("custom_mill") or "-",
+		"Ref No": row.get("custom_ref_no") or "-",
+		"Weight": qty_value,
+		"Company": doc.get("company") or "-",
+		"Entry No": doc.get("name") or "-",
+		"Customer": doc.get("custom_customer") or "-",
+		"For Customer": doc.get("custom_for_customer") or "-",
+	}
+
+
+def _build_sticker_footer_html(doc):
+	footer = {
+		"Company": doc.get("company") or "-",
+		"Entry No": doc.get("name") or "-",
+		"Customer": doc.get("custom_customer") or "-",
+		"For Customer": doc.get("custom_for_customer") or "-",
+	}
+	lines_html = "".join(
+		f'<div class="sticker-footer-line"><span class="sticker-label">{html.escape(label)}:</span> '
+		f'<span class="sticker-value">{html.escape(str(value))}</span></div>'
+		for label, value in footer.items()
+	)
+	return f'<div class="sticker-footer">{lines_html}</div>'
+
+
+def _get_sticker_items(doc, item_names=None, filter_items=False):
+	if hasattr(doc, "items"):
+		items = doc.items or []
+	else:
+		items = doc.get("items") or []
+	if not filter_items:
+		return items
+	if isinstance(item_names, str):
+		item_names = frappe.parse_json(item_names)
+	if not item_names:
+		return []
+	name_set = set(item_names)
+	return [row for row in items if row.name in name_set]
+
+
+def _get_sticker_print_options(print_format=None, print_settings=None):
+	print_settings = print_settings or {}
+	has_filter = "item_names" in print_settings
+	item_names = print_settings.get("item_names")
+	if isinstance(item_names, str):
+		item_names = frappe.parse_json(item_names)
+	layout = print_settings.get("layout")
+	if not layout:
+		layout = "thermal" if print_format and "Thermal" in print_format else "a4"
+	return item_names, layout, has_filter
+
+
+@frappe.whitelist()
+def build_stock_entry_sticker_html(doc, row):
+	"""Return sticker HTML block with QR code and field text for one item row."""
+	if isinstance(doc, str):
+		doc = frappe.parse_json(doc)
+	if isinstance(row, str):
+		row = frappe.parse_json(row)
+	if not isinstance(doc, dict):
+		doc = doc.as_dict()
+	if not isinstance(row, dict):
+		row = row.as_dict()
+
+	fields = build_stock_entry_sticker_payload(doc, row)
+	payload_text = "\n".join(f"{label}: {value}" for label, value in fields.items())
+	qr_html = _build_qr_html(payload_text, plain=True, scale=4)
+	main_fields = {k: v for k, v in fields.items() if k not in ("Company", "Entry No", "Customer", "For Customer")}
+	lines_html = "".join(
+		f'<div class="sticker-line"><span class="sticker-label">{html.escape(label)}:</span> '
+		f'<span class="sticker-value">{html.escape(str(value))}</span></div>'
+		for label, value in main_fields.items()
+	)
+	footer_html = _build_sticker_footer_html(doc)
+	return f"""
+	<div class="sticker-card">
+		<table class="sticker-inner" cellspacing="0" cellpadding="0">
+			<tr>
+				<td class="sticker-fields">{lines_html}</td>
+				<td class="sticker-qr">{qr_html}</td>
+			</tr>
+		</table>
+		{footer_html}
+	</div>
+	"""
+
+
+def build_stock_entry_sticker_sheet_html(doc, item_names=None, layout="a4", filter_items=False):
+	"""Build sticker sheet HTML for selected item rows."""
+	rows = _get_sticker_items(doc, item_names=item_names, filter_items=filter_items)
+	stickers = [
+		build_stock_entry_sticker_html(doc, row.as_dict() if hasattr(row, "as_dict") else row) for row in rows
+	]
+	if not stickers:
+		return ""
+
+	if layout == "thermal":
+		return '<div class="sticker-thermal-sheet">' + "".join(
+			f'<div class="sticker-thermal-item">{sticker_html}</div>' for sticker_html in stickers
+		) + "</div>"
+
+	parts = ['<table class="sticker-sheet" cellspacing="0" cellpadding="0">']
+	for idx, sticker_html in enumerate(stickers):
+		if idx % 2 == 0:
+			parts.append("<tr>")
+		parts.append(f"<td>{sticker_html}</td>")
+		if idx % 2 == 1:
+			parts.append("</tr>")
+		elif idx == len(stickers) - 1:
+			parts.append("<td></td></tr>")
+	parts.append("</table>")
+	return "".join(parts)
+
+
+def prepare_stock_entry_sticker_print(doc, method=None, print_settings=None):
+	"""Build sticker sheet HTML on the Stock Entry before printing."""
+	print_format = (getattr(frappe, "form_dict", None) or {}).get("format")
+	if print_format not in ("Stock Entry Sticker", "Stock Entry Sticker Thermal"):
+		return
+
+	item_names, layout, has_filter = _get_sticker_print_options(print_format, print_settings)
+	html = build_stock_entry_sticker_sheet_html(
+		doc, item_names=item_names, layout=layout, filter_items=has_filter
+	)
+	doc.custom_sticker_print_html = html or ""
+
+
+@frappe.whitelist()
+def get_stock_entry_sticker_qr_image(stock_entry, item_name):
+	"""Return QR SVG image for one Stock Entry item sticker."""
+	doc = frappe.get_doc("Stock Entry", stock_entry)
+	row = next((item for item in doc.items if item.name == item_name), None)
+	if not row:
+		frappe.throw(_("Stock Entry item row not found"))
+
+	fields = build_stock_entry_sticker_payload(doc, row.as_dict())
+	payload_text = "\n".join(f"{label}: {value}" for label, value in fields.items())
+	if not pyqrcode:
+		frappe.local.response.filecontent = payload_text.encode()
+		frappe.local.response.type = "download"
+		frappe.local.response.filename = f"sticker-{item_name}.txt"
+		return
+
+	qr = pyqrcode.create(payload_text, error="M")
+	buffer = BytesIO()
+	qr.svg(buffer, scale=4)
+	svg = buffer.getvalue()
+	frappe.local.response.filecontent = svg
+	frappe.local.response.type = "download"
+	frappe.local.response.filename = f"sticker-{item_name}.svg"
+	frappe.local.response["content_type"] = "image/svg+xml"
+
+
+@frappe.whitelist()
+def get_stock_entry_sticker_html(stock_entry, item_name):
+	doc = frappe.get_doc("Stock Entry", stock_entry)
+	row = frappe._dict(next((item.as_dict() for item in doc.items if item.name == item_name), {}))
+	if not row:
+		return ""
+	return build_stock_entry_sticker_html(doc, row)
 
 
 def _build_output_tag_cards_html(ss_coil_doc):
@@ -2618,7 +2800,18 @@ def setup_tag_origin_fields():
 				"fieldtype": "Check",
 				"insert_after": "custom_sales_order",
 				"description": "Enable tag number creation for Material Receipt rows only.",
-			}
+			},
+			{
+				"fieldname": "custom_sticker_print_html",
+				"label": "Sticker Print HTML",
+				"fieldtype": "Long Text",
+				"insert_after": "custom_create_tag_numbers",
+				"hidden": 1,
+				"read_only": 1,
+				"no_copy": 1,
+				"print_hide": 1,
+				"report_hide": 1,
+			},
 		],
 		"Purchase Receipt Item": [
 			{

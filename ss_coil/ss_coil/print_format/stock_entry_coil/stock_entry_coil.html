@@ -1,0 +1,198 @@
+<style>
+	.print-format {
+		orientation: Landscape;
+		page-size: A4;
+		margin-top: 6mm;
+		margin-bottom: 6mm;
+		margin-left: 6mm;
+		margin-right: 6mm;
+		font-family: Inter, Arial, sans-serif;
+		font-size: 9px;
+		color: #0f172a;
+	}
+	.coil-print {
+		width: 100%;
+	}
+	.coil-print table {
+		border-collapse: collapse;
+		border-spacing: 0;
+	}
+	.coil-print td,
+	.coil-print th {
+		border: none;
+		padding: 0;
+		margin: 0;
+	}
+	.coil-print .company-heading {
+		font-size: 16px;
+		font-weight: 700;
+		line-height: 1;
+		text-align: center;
+		padding: 0 0 3px;
+		margin: 0;
+	}
+	.coil-print .title-row td {
+		vertical-align: bottom;
+		padding: 0;
+	}
+	.coil-print .voucher-no {
+		font-size: 11px;
+		font-weight: 600;
+		line-height: 1;
+	}
+	.coil-print .doc-title-right {
+		font-size: 13px;
+		font-weight: 700;
+		text-align: right;
+		line-height: 1;
+	}
+	.coil-print .info-table {
+		width: 100%;
+		table-layout: fixed;
+		margin: 2px 0 5px;
+	}
+	.coil-print .info-table td {
+		width: 25%;
+		padding: 0;
+		margin: 0;
+		border: none;
+		vertical-align: top;
+		line-height: 1;
+		font-size: 8px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.coil-print .info-table .coil-lbl {
+		font-weight: 400;
+		color: #475569;
+		background: none !important;
+		border: none !important;
+		border-radius: 0 !important;
+		padding: 0 !important;
+		display: inline !important;
+	}
+	.coil-print .info-table .coil-val {
+		font-weight: 600;
+		color: #0f172a;
+	}
+	.coil-print .items {
+		width: 100%;
+		border-collapse: collapse;
+		table-layout: auto;
+	}
+	.coil-print .items th,
+	.coil-print .items td {
+		border: 1px solid #cbd5e1;
+		padding: 1px 3px;
+		font-size: 6.5px;
+		line-height: 1.05;
+		white-space: nowrap;
+		vertical-align: top;
+	}
+	.coil-print .items th {
+		background: #eef4fb;
+		font-weight: 700;
+	}
+	.coil-print .section-title {
+		font-size: 9px;
+		font-weight: 700;
+		line-height: 1;
+		margin: 3px 0 1px;
+		padding: 0;
+	}
+	.coil-print .signatures td {
+		width: 25%;
+		padding-top: 28px;
+		text-align: center;
+		vertical-align: bottom;
+		border: none;
+	}
+	.coil-print .signatures .sign-line {
+		border-top: 1px solid #334155;
+		padding-top: 4px;
+		font-size: 8px;
+		font-weight: 600;
+		line-height: 1;
+	}
+</style>
+
+<div class="coil-print">
+<div class="company-heading">{{ doc.company or "-" }}</div>
+<table class="title-row" width="100%">
+	<tr>
+		<td class="voucher-no" width="50%">{{ doc.name }}</td>
+		<td class="doc-title-right" width="50%">Delivery Advise</td>
+	</tr>
+</table>
+
+<table class="info-table" cellspacing="0" cellpadding="0">
+	<tr>
+		<td><span class="coil-lbl">Sales Order:</span> <span class="coil-val">{{ doc.custom_sales_order or "-" }}</span></td>
+		<td><span class="coil-lbl">For Customer:</span> <span class="coil-val">{{ doc.custom_for_customer or "-" }}</span></td>
+		<td><span class="coil-lbl">MR Number:</span> <span class="coil-val">{{ doc.custom_mr_number or "-" }}</span></td>
+		<td><span class="coil-lbl">Vehicle No:</span> <span class="coil-val">{{ doc.custom_vehicle_no or "-" }}</span></td>
+	</tr>
+	<tr>
+		<td><span class="coil-lbl">Lot:</span> <span class="coil-val">{{ doc.custom_lot or "-" }}</span></td>
+		<td><span class="coil-lbl">Customer:</span> <span class="coil-val">{{ doc.custom_customer or "-" }}</span></td>
+		<td><span class="coil-lbl">Driver Name:</span> <span class="coil-val">{{ doc.custom_driver_name or "-" }}</span></td>
+		<td><span class="coil-lbl">Invoice / IGP No:</span> <span class="coil-val">{{ doc.custom_invoice__igp_no or "-" }}</span></td>
+	</tr>
+</table>
+
+<div class="section-title">Items</div>
+<table class="items">
+	<thead>
+		<tr>
+			<th>#</th>
+			<th>Ref No</th>
+			<th>Thickness</th>
+			<th>Width</th>
+			<th>Length</th>
+			<th>Dimension</th>
+			<th>JS No</th>
+			<th>HDGC No</th>
+			<th>PO No</th>
+			<th>Condition</th>
+			<th>For Customer</th>
+			<th>Commodity</th>
+			<th>Specification</th>
+			<th>Est WT</th>
+			<th>Qty</th>
+			<th>Tag No</th>
+		</tr>
+	</thead>
+	<tbody>
+		{% for row in doc.items %}
+		<tr>
+			<td>{{ loop.index }}</td>
+			<td>{{ row.custom_ref_no or "-" }}</td>
+			<td>{{ row.custom_thickness or "-" }}</td>
+			<td>{{ row.custom_width or "-" }}</td>
+			<td>{{ row.custom_length or "-" }}</td>
+			<td>{{ row.custom_dimension or "-" }}</td>
+			<td>{{ row.custom_js_number or "-" }}</td>
+			<td>{{ row.custom_hdgc_no or "-" }}</td>
+			<td>{{ row.custom_po_no or "-" }}</td>
+			<td>{{ row.custom_condition or "-" }}</td>
+			<td>{{ row.custom_for_customer or "-" }}</td>
+			<td>{{ row.custom_commodity or "-" }}</td>
+			<td>{{ row.custom_specification or "-" }}</td>
+			<td>{{ row.custom_estimated_wt or "-" }}</td>
+			<td>{{ row.qty or "-" }}</td>
+			<td>{{ row.custom_tag_no or "-" }}</td>
+		</tr>
+		{% endfor %}
+	</tbody>
+</table>
+
+<table class="signatures" width="100%">
+	<tr>
+		<td><div class="sign-line">Issue By</div></td>
+		<td><div class="sign-line">Checked By</div></td>
+		<td><div class="sign-line">Approved By</div></td>
+		<td><div class="sign-line">Received By</div></td>
+	</tr>
+</table>
+</div>

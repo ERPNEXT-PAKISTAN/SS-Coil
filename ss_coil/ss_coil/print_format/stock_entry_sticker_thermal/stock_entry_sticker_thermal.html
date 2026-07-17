@@ -66,6 +66,17 @@
 		margin: 0 0 2px;
 		color: #0f172a;
 	}
+	.sticker-combo-line {
+		width: 100%;
+		box-sizing: border-box;
+		text-align: center;
+		font-size: 14px;
+		font-weight: 800;
+		color: #0f172a;
+		margin-top: 3px;
+		padding-top: 3px;
+		border-top: 1px dashed #e2e8f0;
+	}
 	.sticker-triple-box {
 		border: 1px solid #e2e8f0;
 		border-radius: 4px;
@@ -174,17 +185,19 @@
 {% for row in doc.items %}
 {% if not filter_sticker_items or row.name in selected_item_names %}
 <div class="sticker-thermal-item">
+	{% set sticker_fields = build_stock_entry_sticker_payload(doc, row) %}
 	<div class="sticker-card">
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
 			<tr>
 				<td class="sticker-fields">
-					{{ build_stock_entry_sticker_body_html(build_stock_entry_sticker_payload(doc, row)) | safe }}
+					{{ build_stock_entry_sticker_body_html(sticker_fields) | safe }}
 				</td>
 				<td class="sticker-qr">
 					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR">
 				</td>
 			</tr>
 		</table>
+		{{ build_stock_entry_sticker_combo_html(sticker_fields) | safe }}
 		{{ build_stock_entry_sticker_footer_html(doc) | safe }}
 	</div>
 </div>

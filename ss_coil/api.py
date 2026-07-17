@@ -1612,20 +1612,16 @@ def get_stock_entry_sticker_logo_url(company):
 
 
 def build_stock_entry_sticker_qr_payload(doc, row):
-	"""Short identifier text for the sticker QR code.
+	"""Full data payload encoded into the sticker QR code.
 
-	The sticker already prints every field legibly next to the code, so the QR
-	only needs to carry the key identifiers - a full field dump makes for a
-	very dense, hard-to-scan code at sticker print size.
+	Includes every field shown on the sticker plus the Sales Order (Stock
+	Entry) and the Company's Domain, which aren't printed on the sticker
+	itself.
 	"""
-	return "\n".join(
-		f"{label}: {value}"
-		for label, value in (
-			("Tag No", row.get("custom_tag_no") or "-"),
-			("Entry No", doc.get("name") or "-"),
-			("Ref No", row.get("custom_ref_no") or "-"),
-		)
-	)
+	fields = dict(build_stock_entry_sticker_payload(doc, row))
+	fields["Sales Order"] = doc.get("custom_sales_order") or "-"
+	fields["Domain"] = frappe.get_cached_value("Company", doc.get("company"), "domain") or "-" if doc.get("company") else "-"
+	return "\n".join(f"{label}: {value}" for label, value in fields.items())
 
 
 def build_stock_entry_sticker_payload(doc, row):
@@ -1712,6 +1708,12 @@ def build_stock_entry_sticker_body_html(fields):
 	)
 
 
+def build_stock_entry_sticker_combo_html(fields):
+	"""Full-width, centered 'Mill x Qty x Thickness x Width' line below the two-column layout."""
+	combo_value = " x ".join(str(fields[key]) for key in ("Mill", "Qty", "Thickness", "Width"))
+	return f'<div class="sticker-combo-line">{html.escape(combo_value)}</div>'
+
+
 def build_stock_entry_sticker_footer_html(doc):
 	logo_url = get_stock_entry_sticker_logo_url(doc.get("company"))
 	logo_html = (
@@ -1776,6 +1778,7 @@ def build_stock_entry_sticker_html(doc, row):
 	fields = build_stock_entry_sticker_payload(doc, row)
 	qr_html = _build_qr_html(build_stock_entry_sticker_qr_payload(doc, row), plain=True, scale=4)
 	lines_html = build_stock_entry_sticker_body_html(fields)
+	combo_html = build_stock_entry_sticker_combo_html(fields)
 	footer_html = build_stock_entry_sticker_footer_html(doc)
 	return f"""
 	<div class="sticker-card">
@@ -1785,6 +1788,7 @@ def build_stock_entry_sticker_html(doc, row):
 				<td class="sticker-qr">{qr_html}</td>
 			</tr>
 		</table>
+		{combo_html}
 		{footer_html}
 	</div>
 	"""

@@ -196,6 +196,102 @@ deliberately compact-vs-full based on product requirements at the time; check
 this function if the QR code stops scanning (over-stuffing it with data makes
 the code too dense to scan reliably at sticker print size).
 
+## Create Sales Order from Stock Entry
+
+A "Create Sales Order" button on the Stock Entry form (`stock_entry.js` >
+`add_stock_entry_create_sales_order_button`) builds a new, unsaved Sales
+Order pre-filled from the Stock Entry via
+`create_sales_order_from_stock_entry(source_name)` in `api.py`, using the
+standard `frappe.model.open_mapped_doc` pattern (same mechanism ERPNext's own
+"Make Sales Invoice"-style buttons use) — the user reviews/edits and saves it
+themselves, nothing is inserted server-side.
+
+Field transfer is **generic, not a hand-written mapping list**:
+`_copyable_fieldnames(source_doctype, target_doctype)` copies any field that
+exists with the *same fieldname* on both doctypes (skipping layout/system
+fields), for both the parent (Stock Entry → Sales Order) and the child rows
+(Stock Entry Detail → Sales Order Item). This is why so many `custom_*` coil
+fields (tag no, thickness/width/length, mill, spec, ...) transfer without any
+explicit per-field code — they happen to share fieldnames between the two
+doctypes. `customer`/`transaction_date`/`company` get explicit fallbacks
+since Stock Entry's equivalent fields use different names
+(`custom_customer`, `posting_date`).
+
+**Gotcha**: if a future field gets added to Sales Order (or Sales Order Item)
+with the *same fieldname* as an unrelated Stock Entry field but a different
+meaning, it will silently start being copied. Check `_copyable_fieldnames`'s
+skip lists if that ever causes an unwanted transfer.
+
+### The link back (many-to-many, tracked at item level)
+
+One Stock Entry can spawn several Sales Orders over repeated button clicks,
+and one Sales Order's items can come from different source Stock Entries -
+so this is **not** a single Link field on either side (that was considered
+and rejected: it would also collide with `Stock Entry.custom_sales_order`,
+which already means something else — see "Batch auto-creation" section's
+neighbor, `_infer_custom_sales_order`, which auto-fills it from a linked SS
+Coil's `order_no`).
+
+Fields (`setup_stock_entry_sales_order_link_fields`):
+- `Sales Order Item.custom_source_stock_entry` (Link) +
+  `custom_source_stock_entry_detail` (Data, the source child row name) — set
+  once, per row, at creation time in `create_sales_order_from_stock_entry`.
+  Exact, since each item states its own source.
+- `Sales Order.custom_source_stock_entries` (Small Text, read-only) — a
+  de-duplicated list of every distinct source Stock Entry among the items.
+- `Stock Entry.custom_linked_sales_orders` (Small Text, read-only,
+  append-only) — every Sales Order ever created from this Stock Entry.
+
+`sync_stock_entry_sales_order_links` (hooked on Sales Order `before_save`)
+recomputes the Sales Order summary and appends to the Stock Entry side on
+*every* save, not just at creation — so it stays correct if items are added,
+removed, or re-sourced later. It writes to the Stock Entry side via
+`frappe.db.set_value(..., update_modified=False)` (a direct update, not
+`doc.save()`) since the Stock Entry is a separate, already-saved document at
+that point — no need to run its full validate/save cycle just to append one
+value.
+
+**Manual sync buttons** (for cases where the auto-sync on save doesn't cover
+it — e.g. a Sales Order Item's source link was cleared, or data drifted):
+- Stock Entry → "Sync Sales Orders" button → `sync_stock_entry_links_from_source`
+  — rebuilds `custom_linked_sales_orders` **from scratch** by querying every
+  Sales Order Item that currently points at this Stock Entry (unlike the
+  append-only save hook, this also drops stale names).
+- Sales Order → "Sync Stock Entry Links" button → `sync_sales_order_stock_entry_links`
+  — re-runs the same recompute the save hook does, useful to trigger it
+  without making an unrelated edit just to force a save.
+
+**Reverse creation**: Sales Order also gets a "Create Stock Entry" button
+(`create_stock_entry_from_sales_order`), mirroring
+`create_sales_order_from_stock_entry` with source/target swapped — same
+generic same-fieldname copy approach. It does **not** populate the
+`custom_source_stock_entry`/`custom_linked_sales_orders` fields above, since
+those specifically model "a Sales Order was created from this Stock Entry" —
+the reverse case (a Stock Entry created from a Sales Order) is a different
+relationship and isn't tracked by those fields. If you need that tracked too,
+say so explicitly — it wasn't asked for and would need its own field pair to
+stay unambiguous.
+
+## SO → Manufacture Items (BOM-based, unrelated to the tag/coil system)
+
+`ss_coil/public/js/sales_order_manufacture.js` — migrated from a DB-stored
+Client Script ("SO Manufacture") into the app codebase so it's
+version-controlled like everything else here. **Behavior is unchanged from
+the original script; only its location moved.** If it needs edits, edit this
+file (then `bench build` + reload the workers), not a Client Script record.
+The old Client Script record still exists but is disabled (`enabled = 0`) to
+prevent double-execution — safe to delete outright once you've confirmed the
+app-based version works for you.
+
+This is a genuinely separate feature from the coil/tag system above: it lets
+a Sales Order explode its items' default BOMs, check raw material stock, and
+create+submit one `Stock Entry Type: Manufacture` per finished item — plain
+ERPNext manufacturing, nothing tag/batch related. It reads/writes
+`Stock Entry.custom_sales_order` (the field explicitly *not* reused by the
+create/sync system above, since it already has this different meaning here).
+Registered in `hooks.py`'s `doctype_js["Sales Order"]` as a second file
+alongside `sales_order.js` (Frappe supports a list of files per doctype).
+
 ## SS Coil processing (cutting workflow)
 
 `SS Coil` doctype represents one processing operation (slitting, leveling,
@@ -235,4 +331,5 @@ meant to run per-document.
 | `ss_coil/hooks.py` | All wiring: doc_events, doctype_js, fixtures, print hooks. Read this first to see what's connected to what. |
 | `ss_coil/public/js/stock_entry.js` | Stock Entry form JS: Data Entry dialog, sticker print dialog, dimension auto-calc, tag buttons. |
 | `ss_coil/public/js/sales_order.js`, `delivery_note.js`, `sales_invoice.js`, `purchase_receipt.js`, `purchase_invoice.js` | Per-doctype form JS, mostly thin (dimension sync, tag display). |
+| `ss_coil/public/js/sales_order_manufacture.js` | "Manufacture Items" button/dialog (BOM-based), migrated from the "SO Manufacture" Client Script. Unrelated to the tag/coil system - see its own ARCHITECTURE.md section. |
 | `ss_coil/ss_coil/print_format/*/` | Print formats (Stock Entry Coil, Stock Entry Sticker, Stock Entry Sticker Thermal). |

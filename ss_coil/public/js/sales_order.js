@@ -2,6 +2,7 @@ frappe.ui.form.on("Sales Order", {
 	refresh(frm) {
 		bind_live_dimension_events(frm);
 		add_sales_order_tag_buttons(frm);
+		add_sales_order_create_stock_entry_button(frm);
 		render_sales_order_dashboard(frm);
 		render_packing_detail(frm);
 		render_cutting_scheme_report(frm);
@@ -12,6 +13,43 @@ frappe.ui.form.on("Sales Order", {
 		});
 	},
 });
+
+function add_sales_order_create_stock_entry_button(frm) {
+	if (frm.is_new() || !(frm.doc.items || []).length) return;
+
+	frm.add_custom_button(
+		__("Create Stock Entry"),
+		function () {
+			frappe.model.open_mapped_doc({
+				method: "ss_coil.api.create_stock_entry_from_sales_order",
+				frm: frm,
+			});
+		},
+		__("Create")
+	);
+
+	if (frm.fields_dict.custom_source_stock_entries) {
+		frm.add_custom_button(
+			__("Sync Stock Entry Links"),
+			function () {
+				frappe.call({
+					method: "ss_coil.api.sync_sales_order_stock_entry_links",
+					args: { sales_order: frm.doc.name },
+					freeze: true,
+					freeze_message: __("Syncing..."),
+					callback(r) {
+						// Already persisted server-side; reflect locally without
+						// marking the form dirty.
+						frm.doc.custom_source_stock_entries = (r.message || {}).custom_source_stock_entries || "";
+						frm.refresh_field("custom_source_stock_entries");
+						frappe.show_alert({ message: __("Stock Entry links synced"), indicator: "green" });
+					},
+				});
+			},
+			__("Sync")
+		);
+	}
+}
 
 function add_sales_order_tag_buttons(frm) {
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) return;

@@ -2722,6 +2722,224 @@ def resolve_sales_order_item_duplicate_tag(sales_order_item, replacement_tag=Non
 	}
 
 
+STOCK_ENTRY_TO_SALES_ORDER_SKIP_FIELDNAMES = {
+	"name",
+	"owner",
+	"creation",
+	"modified",
+	"modified_by",
+	"docstatus",
+	"idx",
+	"naming_series",
+	"amended_from",
+	"doctype",
+	"parent",
+	"parentfield",
+	"parenttype",
+}
+STOCK_ENTRY_TO_SALES_ORDER_SKIP_FIELDTYPES = {
+	"Section Break",
+	"Column Break",
+	"Tab Break",
+	"HTML",
+	"Button",
+	"Table",
+	"Table MultiSelect",
+	"Fold",
+	"Heading",
+	"Image",
+	"Attach",
+	"Attach Image",
+	"Signature",
+}
+
+
+def _copyable_fieldnames(source_doctype, target_doctype):
+	"""Fieldnames that exist on both doctypes with a plain, copyable type.
+
+	Used to transfer "same field, same meaning" data (mostly our own custom_*
+	fields) as-is between two doctypes without hand-maintaining a mapping
+	list that drifts out of sync as fields get added/renamed.
+	"""
+	target_fields = {df.fieldname: df for df in frappe.get_meta(target_doctype).fields}
+	fieldnames = []
+	for df in frappe.get_meta(source_doctype).fields:
+		if df.fieldname in STOCK_ENTRY_TO_SALES_ORDER_SKIP_FIELDNAMES:
+			continue
+		if df.fieldtype in STOCK_ENTRY_TO_SALES_ORDER_SKIP_FIELDTYPES:
+			continue
+		target_df = target_fields.get(df.fieldname)
+		if not target_df or target_df.fieldtype in STOCK_ENTRY_TO_SALES_ORDER_SKIP_FIELDTYPES:
+			continue
+		fieldnames.append(df.fieldname)
+	return fieldnames
+
+
+@frappe.whitelist()
+def create_sales_order_from_stock_entry(source_name):
+	"""Build a new (unsaved) Sales Order pre-filled from a Stock Entry.
+
+	Copies every field that exists with the same fieldname on both doctypes
+	(parent-to-parent and Stock Entry Detail-to-Sales Order Item), so custom
+	coil fields (tag no, thickness/width/length, mill, spec, ...) carry over
+	as-is without a hand-maintained mapping list. Returns the doc for the
+	client to open via frappe.model.open_mapped_doc - nothing is inserted
+	here, the user reviews/edits and saves it themselves.
+	"""
+	source = frappe.get_doc("Stock Entry", source_name)
+
+	sales_order = frappe.new_doc("Sales Order")
+
+	parent_fields = _copyable_fieldnames("Stock Entry", "Sales Order")
+	for fieldname in parent_fields:
+		value = source.get(fieldname)
+		if value not in (None, ""):
+			sales_order.set(fieldname, value)
+
+	if not sales_order.get("customer"):
+		sales_order.customer = source.get("custom_customer") or source.get("custom_for_customer")
+	if not sales_order.get("transaction_date"):
+		sales_order.transaction_date = source.get("posting_date") or nowdate()
+	if not sales_order.get("company"):
+		sales_order.company = source.get("company")
+
+	item_fields = _copyable_fieldnames("Stock Entry Detail", "Sales Order Item")
+	for row in source.items:
+		so_row = sales_order.append("items", {})
+		for fieldname in item_fields:
+			value = row.get(fieldname)
+			if value not in (None, ""):
+				so_row.set(fieldname, value)
+		if not so_row.get("delivery_date"):
+			so_row.delivery_date = sales_order.transaction_date
+		if _has_field("Sales Order Item", "custom_source_stock_entry"):
+			so_row.custom_source_stock_entry = source.name
+		if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
+			so_row.custom_source_stock_entry_detail = row.name
+
+	if _has_field("Sales Order", "custom_source_stock_entries"):
+		sales_order.custom_source_stock_entries = source.name
+
+	return sales_order
+
+
+@frappe.whitelist()
+def create_stock_entry_from_sales_order(source_name):
+	"""Reverse of create_sales_order_from_stock_entry: build a new (unsaved)
+	Stock Entry pre-filled from a Sales Order. Same generic same-fieldname
+	copy approach, mirrored direction.
+	"""
+	source = frappe.get_doc("Sales Order", source_name)
+
+	stock_entry = frappe.new_doc("Stock Entry")
+
+	parent_fields = _copyable_fieldnames("Sales Order", "Stock Entry")
+	for fieldname in parent_fields:
+		value = source.get(fieldname)
+		if value not in (None, ""):
+			stock_entry.set(fieldname, value)
+
+	if not stock_entry.get("custom_customer"):
+		stock_entry.custom_customer = source.get("customer")
+	if not stock_entry.get("posting_date"):
+		stock_entry.posting_date = source.get("transaction_date") or nowdate()
+	if not stock_entry.get("company"):
+		stock_entry.company = source.get("company")
+
+	item_fields = _copyable_fieldnames("Sales Order Item", "Stock Entry Detail")
+	for row in source.items:
+		se_row = stock_entry.append("items", {})
+		for fieldname in item_fields:
+			value = row.get(fieldname)
+			if value not in (None, ""):
+				se_row.set(fieldname, value)
+
+	return stock_entry
+
+
+@frappe.whitelist()
+def sync_sales_order_stock_entry_links(sales_order):
+	"""Manual "Sync" button on Sales Order: recompute
+	custom_source_stock_entries from the current items and push any missed
+	updates to the linked Stock Entries' custom_linked_sales_orders.
+	"""
+	doc = frappe.get_doc("Sales Order", sales_order)
+	sync_stock_entry_sales_order_links(doc)
+	if _has_field("Sales Order", "custom_source_stock_entries"):
+		frappe.db.set_value(
+			"Sales Order",
+			sales_order,
+			"custom_source_stock_entries",
+			doc.custom_source_stock_entries or "",
+			update_modified=False,
+		)
+	frappe.db.commit()
+	return {"custom_source_stock_entries": doc.get("custom_source_stock_entries") or ""}
+
+
+@frappe.whitelist()
+def sync_stock_entry_links_from_source(stock_entry):
+	"""Manual "Sync" button on Stock Entry: rebuild
+	custom_linked_sales_orders from scratch by looking up every Sales Order
+	Item that currently references this Stock Entry. Unlike the append-only
+	before_save hook, this also drops names that no longer apply (e.g. if a
+	Sales Order's items were edited to point elsewhere since).
+	"""
+	if not _has_field("Sales Order Item", "custom_source_stock_entry") or not _has_field(
+		"Stock Entry", "custom_linked_sales_orders"
+	):
+		return {"custom_linked_sales_orders": ""}
+
+	sales_orders = frappe.get_all(
+		"Sales Order Item",
+		filters={"custom_source_stock_entry": stock_entry},
+		fields=["parent"],
+		distinct=True,
+		order_by="parent asc",
+	)
+	value = ", ".join(row.parent for row in sales_orders)
+	frappe.db.set_value("Stock Entry", stock_entry, "custom_linked_sales_orders", value, update_modified=False)
+	frappe.db.commit()
+	return {"custom_linked_sales_orders": value}
+
+
+def sync_stock_entry_sales_order_links(doc, method=None):
+	"""Keep the Stock Entry <-> Sales Order link fields (see
+	setup_stock_entry_sales_order_link_fields) accurate on every Sales Order
+	save - not just at creation time, since items can be added/edited/removed
+	later.
+	"""
+	if not _has_field("Sales Order Item", "custom_source_stock_entry"):
+		return
+
+	stock_entry_names = list(
+		dict.fromkeys(
+			row.custom_source_stock_entry for row in (doc.items or []) if row.get("custom_source_stock_entry")
+		)
+	)
+
+	if _has_field("Sales Order", "custom_source_stock_entries"):
+		doc.custom_source_stock_entries = ", ".join(stock_entry_names)
+
+	if not stock_entry_names or not _has_field("Stock Entry", "custom_linked_sales_orders"):
+		return
+
+	for stock_entry_name in stock_entry_names:
+		if not frappe.db.exists("Stock Entry", stock_entry_name):
+			continue
+		existing = frappe.db.get_value("Stock Entry", stock_entry_name, "custom_linked_sales_orders") or ""
+		linked = [value.strip() for value in existing.split(",") if value.strip()]
+		if doc.name not in linked:
+			linked.append(doc.name)
+			frappe.db.set_value(
+				"Stock Entry",
+				stock_entry_name,
+				"custom_linked_sales_orders",
+				", ".join(linked),
+				update_modified=False,
+			)
+
+
 def prepare_stock_entry_links(doc, method=None):
 	populate_custom_sales_order(doc, method=method)
 	apply_inward_tag_row_defaults(doc)
@@ -3008,9 +3226,78 @@ def setup_tag_origin_fields():
 	_setup_purchase_receipt_coil_fields()
 	_migrate_legacy_stock_source_values()
 	_sync_workspace_query_report_links()
+	setup_stock_entry_sales_order_link_fields()
 
 	frappe.clear_cache()
 	return {"status": "ok"}
+
+
+def setup_stock_entry_sales_order_link_fields():
+	"""Fields for the "Create Sales Order from Stock Entry" link (see
+	create_sales_order_from_stock_entry and ARCHITECTURE.md > "Create Sales
+	Order from Stock Entry").
+
+	Deliberately separate from Stock Entry.custom_sales_order, which already
+	has a different meaning elsewhere in this app (see
+	_infer_custom_sales_order) - reusing it here would silently conflict.
+
+	The relationship is many-to-many (one Stock Entry can spawn several
+	Sales Orders over repeated button clicks; one Sales Order's items can
+	come from different source Stock Entries), so:
+	- Sales Order Item gets an exact, per-row Link back to its source Stock
+	  Entry (+ the specific source row name for full traceability).
+	- Sales Order gets a read-only summary listing every distinct source
+	  Stock Entry among its items (recomputed on every save, so it stays
+	  correct even if items are edited later).
+	- Stock Entry gets a read-only, append-only summary listing every Sales
+	  Order ever created from it (never overwritten, only appended to).
+	"""
+	custom_fields = {
+		"Sales Order Item": [
+			{
+				"fieldname": "custom_source_stock_entry",
+				"label": "Source Stock Entry",
+				"fieldtype": "Link",
+				"options": "Stock Entry",
+				"insert_after": "item_code",
+				"read_only": 1,
+				"no_copy": 1,
+				"print_hide": 1,
+			},
+			{
+				"fieldname": "custom_source_stock_entry_detail",
+				"label": "Source Stock Entry Row",
+				"fieldtype": "Data",
+				"insert_after": "custom_source_stock_entry",
+				"read_only": 1,
+				"hidden": 1,
+				"no_copy": 1,
+			},
+		],
+		"Sales Order": [
+			{
+				"fieldname": "custom_source_stock_entries",
+				"label": "Source Stock Entries",
+				"fieldtype": "Small Text",
+				"insert_after": "customer",
+				"read_only": 1,
+				"no_copy": 1,
+				"description": "Auto-filled: every Stock Entry this Sales Order's items were created from.",
+			},
+		],
+		"Stock Entry": [
+			{
+				"fieldname": "custom_linked_sales_orders",
+				"label": "Linked Sales Orders (Created)",
+				"fieldtype": "Small Text",
+				"insert_after": "custom_sales_order",
+				"read_only": 1,
+				"no_copy": 1,
+				"description": "Auto-filled: every Sales Order created from this Stock Entry via the Create Sales Order button.",
+			},
+		],
+	}
+	create_custom_fields(custom_fields, update=True)
 
 
 def _migrate_legacy_stock_source_values():

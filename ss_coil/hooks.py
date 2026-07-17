@@ -69,7 +69,7 @@ app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=8"
 
 # include js in doctype views
 doctype_js = {
-	"Sales Order": "public/js/sales_order.js",
+	"Sales Order": ["public/js/sales_order.js", "public/js/sales_order_manufacture.js"],
 	"Stock Entry": "public/js/stock_entry.js",
 	"Delivery Note": "public/js/delivery_note.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
@@ -90,6 +90,7 @@ doc_events = {
 		"before_save": [
 			"ss_coil.api.sync_sales_order_item_dimensions",
 			"ss_coil.api.assign_sales_order_item_tags",
+			"ss_coil.api.sync_stock_entry_sales_order_links",
 		],
 		"after_insert": "ss_coil.api.sync_sales_order_item_tag_registry",
 		"on_update": "ss_coil.api.sync_sales_order_item_tag_registry",

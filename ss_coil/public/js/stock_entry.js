@@ -10,6 +10,7 @@ frappe.ui.form.on("Stock Entry", {
 	refresh(frm) {
 		add_stock_entry_data_entry_button(frm);
 		add_stock_entry_sticker_print_button(frm);
+		add_stock_entry_create_sales_order_button(frm);
 		add_stock_entry_tag_buttons(frm);
 		bind_live_stock_entry_dimension_events(frm);
 		toggle_stock_entry_tag_fields(frm);
@@ -115,6 +116,43 @@ function add_stock_entry_data_entry_button(frm) {
 	frm.add_custom_button(__("Data Entry"), function () {
 		open_stock_entry_data_entry_dialog(frm);
 	});
+}
+
+function add_stock_entry_create_sales_order_button(frm) {
+	if (frm.is_new() || !(frm.doc.items || []).length) return;
+
+	frm.add_custom_button(
+		__("Create Sales Order"),
+		function () {
+			frappe.model.open_mapped_doc({
+				method: "ss_coil.api.create_sales_order_from_stock_entry",
+				frm: frm,
+			});
+		},
+		__("Create")
+	);
+
+	if (frm.fields_dict.custom_linked_sales_orders) {
+		frm.add_custom_button(
+			__("Sync Sales Orders"),
+			function () {
+				frappe.call({
+					method: "ss_coil.api.sync_stock_entry_links_from_source",
+					args: { stock_entry: frm.doc.name },
+					freeze: true,
+					freeze_message: __("Syncing..."),
+					callback(r) {
+						// Already persisted server-side via frappe.db.set_value; just
+						// reflect it locally without marking the form dirty.
+						frm.doc.custom_linked_sales_orders = (r.message || {}).custom_linked_sales_orders || "";
+						frm.refresh_field("custom_linked_sales_orders");
+						frappe.show_alert({ message: __("Sales Order links synced"), indicator: "green" });
+					},
+				});
+			},
+			__("Sync")
+		);
+	}
 }
 
 function open_stock_entry_data_entry_dialog(frm) {

@@ -292,6 +292,25 @@ create/sync system above, since it already has this different meaning here).
 Registered in `hooks.py`'s `doctype_js["Sales Order"]` as a second file
 alongside `sales_order.js` (Frappe supports a list of files per doctype).
 
+## Other former Client Scripts
+
+While auditing DB-stored Client Scripts for this app's doctypes, three more
+turned up (2026-07):
+- **"SS Coil Sales Order Dimension Auto"** and **"SS Coil Stock Entry
+  Dimension Auto"** — both recomputed `custom_dimension` from
+  thickness/width/length on the item child tables. Deleted: this app's own
+  `sales_order.js`/`stock_entry.js` already do the same job (the Sales Order
+  one was actually a live conflict — it used `custom_length` while the app
+  uses `custom_length_c`, a different field, so both were fighting over
+  `custom_dimension` on every keystroke).
+- **"Production Plan-Client"** — defaults "Create Work Orders After Submit"
+  to checked on new Production Plans. Unrelated to the coil/tag system
+  (standard ERPNext doctype), but migrated into
+  `ss_coil/public/js/production_plan.js` (wired via `hooks.py`
+  `doctype_js["Production Plan"]`) for the same version-control reasons as
+  the SO Manufacture migration above. The original Client Script record is
+  disabled, not deleted.
+
 ## SS Coil processing (cutting workflow)
 
 `SS Coil` doctype represents one processing operation (slitting, leveling,

@@ -76,6 +76,7 @@ doctype_js = {
 	"Purchase Receipt": "public/js/purchase_receipt.js",
 	"Purchase Invoice": "public/js/purchase_invoice.js",
 	"Tag Registry": "ss_coil/doctype/tag_registry/tag_registry.js",
+	"Production Plan": "public/js/production_plan.js",
 }
 
 doctype_list_js = {

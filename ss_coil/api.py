@@ -598,6 +598,27 @@ def _strip_svg_preamble(svg):
 	return svg.strip()
 
 
+def _ensure_svg_viewbox(svg):
+	"""Add a viewBox matching the SVG's own width/height if it lacks one.
+
+	pyqrcode emits fixed width/height with no viewBox, so CSS-resizing the
+	element shrinks the viewport without scaling the drawing - the code gets
+	clipped instead of scaled down. A viewBox fixes that.
+	"""
+	if not svg or "viewBox" in svg:
+		return svg
+	svg_tag_match = re.search(r"<svg\b[^>]*>", svg)
+	if not svg_tag_match:
+		return svg
+	svg_tag = svg_tag_match.group(0)
+	width_match = re.search(r'\bwidth="(\d+(?:\.\d+)?)"', svg_tag)
+	height_match = re.search(r'\bheight="(\d+(?:\.\d+)?)"', svg_tag)
+	if not width_match or not height_match:
+		return svg
+	width, height = width_match.group(1), height_match.group(1)
+	return svg.replace("<svg ", f'<svg viewBox="0 0 {width} {height}" ', 1)
+
+
 def _is_managed_tag(tag_no, settings=None):
 	settings = settings or _tag_settings()
 	parsed = _parse_tag_number(tag_no)
@@ -1544,7 +1565,7 @@ def _build_qr_html(payload_text, plain=False, scale=3):
 		qr = pyqrcode.create(payload_text, error="M")
 		buffer = BytesIO()
 		qr.svg(buffer, scale=scale)
-		svg = _strip_svg_preamble(buffer.getvalue().decode())
+		svg = _ensure_svg_viewbox(_strip_svg_preamble(buffer.getvalue().decode()))
 		if plain:
 			return f'<div class="ss-coil-qr" style="padding:0;background:#fff;border:none;display:inline-block;">{svg}</div>'
 		return f'<div class="ss-coil-qr" style="padding:8px; background:#fff; border:1px solid #dbe4f0; border-radius:10px; display:inline-block;">{svg}</div>'
@@ -1583,42 +1604,134 @@ def get_coil_output_qr_html(payload_text):
 	return _build_qr_html(payload_text)
 
 
+def get_stock_entry_sticker_logo_url(company):
+	logo = frappe.get_cached_value("Company", company, "company_logo") if company else None
+	if logo:
+		return frappe.utils.get_url(logo) if logo.startswith("/") else logo
+	return "/assets/ss_coil/images/ss-coil-logo.svg"
+
+
+def build_stock_entry_sticker_qr_payload(doc, row):
+	"""Short identifier text for the sticker QR code.
+
+	The sticker already prints every field legibly next to the code, so the QR
+	only needs to carry the key identifiers - a full field dump makes for a
+	very dense, hard-to-scan code at sticker print size.
+	"""
+	return "\n".join(
+		f"{label}: {value}"
+		for label, value in (
+			("Tag No", row.get("custom_tag_no") or "-"),
+			("Entry No", doc.get("name") or "-"),
+			("Ref No", row.get("custom_ref_no") or "-"),
+		)
+	)
+
+
 def build_stock_entry_sticker_payload(doc, row):
 	"""Build QR/text payload for a Stock Entry item sticker."""
 	date_value = frappe.format(doc.get("posting_date"), {"fieldtype": "Date"}) if doc.get("posting_date") else "-"
-	qty_value = row.get("qty")
-	if qty_value not in (None, ""):
-		qty_value = frappe.format(qty_value, {"fieldtype": "Float"})
-	else:
-		qty_value = "-"
+
+	def _fmt_float(value):
+		return frappe.format(value, {"fieldtype": "Float"}) if value not in (None, "") else "-"
+
 	return {
-		"Date": date_value,
-		"MR No": doc.get("custom_mr_number") or "-",
 		"Tag No": row.get("custom_tag_no") or "-",
+		"Customer": doc.get("custom_customer") or "-",
+		"Item Name": row.get("item_name") or row.get("item_code") or "-",
 		"Specification": row.get("custom_specification") or "-",
+		"Qty": _fmt_float(row.get("qty")),
+		"No of Coils": _fmt_float(row.get("custom_qty_of_coil")),
+		"Thickness": row.get("custom_thickness") or "-",
+		"Width": row.get("custom_width") or "-",
+		"Length": row.get("custom_length") or "-",
 		"Mill": row.get("custom_mill") or "-",
 		"Ref No": row.get("custom_ref_no") or "-",
-		"Weight": qty_value,
-		"Company": doc.get("company") or "-",
+		"Date": date_value,
 		"Entry No": doc.get("name") or "-",
-		"Customer": doc.get("custom_customer") or "-",
-		"For Customer": doc.get("custom_for_customer") or "-",
+		"Company Name": doc.get("company") or "-",
 	}
 
 
-def _build_sticker_footer_html(doc):
-	footer = {
-		"Company": doc.get("company") or "-",
-		"Entry No": doc.get("name") or "-",
-		"Customer": doc.get("custom_customer") or "-",
-		"For Customer": doc.get("custom_for_customer") or "-",
-	}
-	lines_html = "".join(
-		f'<div class="sticker-footer-line"><span class="sticker-label">{html.escape(label)}:</span> '
+def _sticker_field_line(label, value, cls=""):
+	css_class = f"sticker-line {cls}".strip()
+	return (
+		f'<div class="{css_class}"><span class="sticker-label">{html.escape(label)}:</span> '
 		f'<span class="sticker-value">{html.escape(str(value))}</span></div>'
-		for label, value in footer.items()
 	)
-	return f'<div class="sticker-footer">{lines_html}</div>'
+
+
+def _sticker_triple_row(items, divider=False):
+	# Fixed-pixel inline-block cells instead of a nested percentage table:
+	# a percentage-width table-layout:fixed table nested inside another
+	# table's cell can't reliably resolve its containing-block width in
+	# print/PDF rendering engines, so percentage columns were silently
+	# collapsing back to a much narrower width than declared.
+	col_classes = ("sticker-triple-col-wide", "sticker-triple-col-narrow", "sticker-triple-col-narrow")
+	cells = "".join(
+		f'<div class="sticker-triple-cell {col_classes[i]}">'
+		f'<div class="sticker-triple-label">{html.escape(label)}</div>'
+		f'<div class="sticker-triple-value">{html.escape(str(value))}</div>'
+		"</div>"
+		for i, (label, value) in enumerate(items)
+	)
+	row_class = "sticker-triple sticker-triple-divider" if divider else "sticker-triple"
+	return f'<div class="{row_class}">{cells}</div>'
+
+
+def build_stock_entry_sticker_body_html(fields):
+	"""Build the ordered/grouped field markup for the sticker's left column."""
+	triple_box = (
+		'<div class="sticker-triple-box">'
+		+ _sticker_triple_row(
+			[
+				("Spec", fields["Specification"]),
+				("Qty", fields["Qty"]),
+				("Coils", fields["No of Coils"]),
+			]
+		)
+		+ _sticker_triple_row(
+			[
+				("Thick", fields["Thickness"]),
+				("Width", fields["Width"]),
+				("Length", fields["Length"]),
+			],
+			divider=True,
+		)
+		+ "</div>"
+	)
+	return "".join(
+		[
+			f'<div class="sticker-tagno">{html.escape(str(fields["Tag No"]))}</div>',
+			_sticker_field_line("Customer", fields["Customer"]),
+			_sticker_field_line("Item Name", fields["Item Name"]),
+			triple_box,
+			_sticker_field_line("Mill", fields["Mill"]),
+			_sticker_field_line("Ref No", fields["Ref No"]),
+		]
+	)
+
+
+def build_stock_entry_sticker_footer_html(doc):
+	logo_url = get_stock_entry_sticker_logo_url(doc.get("company"))
+	logo_html = (
+		f'<div class="sticker-logo-box"><img src="{html.escape(logo_url)}" alt="Logo" class="sticker-logo"></div>'
+		if logo_url
+		else ""
+	)
+	entry_no = doc.get("name") or "-"
+	date_value = (
+		frappe.format(doc.get("posting_date"), {"fieldtype": "Date"}) if doc.get("posting_date") else "-"
+	)
+	company_name = doc.get("company") or "-"
+	lines_html = (
+		f'<div class="sticker-footer-line"><span class="sticker-label">Entry No:</span> '
+		f'<span class="sticker-value">{html.escape(str(entry_no))}</span></div>'
+		f'<div class="sticker-footer-line"><span class="sticker-label">Date:</span> '
+		f'<span class="sticker-value">{html.escape(str(date_value))}</span></div>'
+		f'<div class="sticker-footer-line sticker-company-name">{html.escape(str(company_name))}</div>'
+	)
+	return f'<div class="sticker-footer">{logo_html}<div class="sticker-footer-text">{lines_html}</div></div>'
 
 
 def _get_sticker_items(doc, item_names=None, filter_items=False):
@@ -1661,15 +1774,9 @@ def build_stock_entry_sticker_html(doc, row):
 		row = row.as_dict()
 
 	fields = build_stock_entry_sticker_payload(doc, row)
-	payload_text = "\n".join(f"{label}: {value}" for label, value in fields.items())
-	qr_html = _build_qr_html(payload_text, plain=True, scale=4)
-	main_fields = {k: v for k, v in fields.items() if k not in ("Company", "Entry No", "Customer", "For Customer")}
-	lines_html = "".join(
-		f'<div class="sticker-line"><span class="sticker-label">{html.escape(label)}:</span> '
-		f'<span class="sticker-value">{html.escape(str(value))}</span></div>'
-		for label, value in main_fields.items()
-	)
-	footer_html = _build_sticker_footer_html(doc)
+	qr_html = _build_qr_html(build_stock_entry_sticker_qr_payload(doc, row), plain=True, scale=4)
+	lines_html = build_stock_entry_sticker_body_html(fields)
+	footer_html = build_stock_entry_sticker_footer_html(doc)
 	return f"""
 	<div class="sticker-card">
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
@@ -1698,14 +1805,8 @@ def build_stock_entry_sticker_sheet_html(doc, item_names=None, layout="a4", filt
 		) + "</div>"
 
 	parts = ['<table class="sticker-sheet" cellspacing="0" cellpadding="0">']
-	for idx, sticker_html in enumerate(stickers):
-		if idx % 2 == 0:
-			parts.append("<tr>")
-		parts.append(f"<td>{sticker_html}</td>")
-		if idx % 2 == 1:
-			parts.append("</tr>")
-		elif idx == len(stickers) - 1:
-			parts.append("<td></td></tr>")
+	for sticker_html in stickers:
+		parts.append(f"<tr><td>{sticker_html}</td></tr>")
 	parts.append("</table>")
 	return "".join(parts)
 
@@ -1731,8 +1832,7 @@ def get_stock_entry_sticker_qr_image(stock_entry, item_name):
 	if not row:
 		frappe.throw(_("Stock Entry item row not found"))
 
-	fields = build_stock_entry_sticker_payload(doc, row.as_dict())
-	payload_text = "\n".join(f"{label}: {value}" for label, value in fields.items())
+	payload_text = build_stock_entry_sticker_qr_payload(doc, row.as_dict())
 	if not pyqrcode:
 		frappe.local.response.filecontent = payload_text.encode()
 		frappe.local.response.type = "download"

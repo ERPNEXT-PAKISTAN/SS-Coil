@@ -15,19 +15,19 @@
 		table-layout: fixed;
 	}
 	.sticker-sheet td {
-		width: 50%;
-		padding: 2mm;
+		width: 100%;
+		padding: 3mm;
 		vertical-align: top;
 		border: none;
 	}
 	.sticker-card {
 		border: 1px solid #334155;
-		border-radius: 6px;
-		padding: 5px 7px;
+		border-radius: 9px;
+		padding: 8px 11px;
 		height: auto;
 		box-sizing: border-box;
 		background: #fff;
-		margin-bottom: 2mm;
+		margin-bottom: 3mm;
 	}
 	.sticker-inner {
 		width: 100%;
@@ -40,9 +40,9 @@
 	}
 	.sticker-fields {
 		width: 58%;
-		font-size: 10.5px;
-		line-height: 1.2;
-		padding-right: 4px;
+		font-size: 15.5px;
+		line-height: 1.3;
+		padding-right: 6px;
 	}
 	.sticker-qr {
 		width: 42%;
@@ -53,16 +53,81 @@
 	.sticker-qr .ss-coil-qr-fallback,
 	.sticker-qr img,
 	.sticker-qr svg {
-		width: 96px;
-		height: 96px;
+		width: 144px;
+		height: 144px;
 	}
-	.sticker-line,
-	.sticker-footer-line {
-		margin: 0;
+	.sticker-line {
+		margin: 0 0 2px;
 		padding: 0;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.sticker-tagno {
+		font-size: 22px;
+		font-weight: 800;
+		line-height: 1.2;
+		margin: 0 0 3px;
+		color: #0f172a;
+	}
+	.sticker-triple-box {
+		border: 1px solid #e2e8f0;
+		border-radius: 6px;
+		padding: 5px 6px 2px;
+		margin: 2px 0;
+	}
+	.sticker-triple {
+		white-space: nowrap;
+		margin: 0;
+	}
+	.sticker-triple-divider {
+		border-top: 1px solid #e2e8f0;
+		padding-top: 3px;
+		margin-top: 3px;
+	}
+	.sticker-triple-cell {
+		display: inline-block;
+		vertical-align: top;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding: 0 4px 3px 0;
+		box-sizing: border-box;
+	}
+	.sticker-triple-col-wide {
+		width: 200px;
+	}
+	.sticker-triple-col-narrow {
+		width: 68px;
+	}
+	.sticker-triple-label {
+		font-size: 11px;
+		font-weight: 500;
+		color: #64748b;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sticker-triple-value {
+		font-size: 15px;
+		font-weight: 700;
+		color: #0f172a;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sticker-footer-line {
+		margin: 0;
+		padding: 0;
+		white-space: normal;
+		overflow: visible;
+		overflow-wrap: break-word;
+	}
+	.sticker-company-name {
+		font-size: 18px;
+		font-weight: 800;
+		color: #0f172a;
+		margin-top: 2px;
 	}
 	.sticker-label {
 		color: #64748b;
@@ -73,11 +138,35 @@
 		color: #0f172a;
 	}
 	.sticker-footer {
-		margin-top: 4px;
-		padding-top: 3px;
+		margin-top: 6px;
+		padding-top: 5px;
 		border-top: 1px solid #cbd5e1;
-		font-size: 9.5px;
-		line-height: 1.2;
+		font-size: 13px;
+		line-height: 1.3;
+		text-align: left;
+	}
+	.sticker-footer:after {
+		content: "";
+		display: table;
+		clear: both;
+	}
+	.sticker-logo-box {
+		float: right;
+		margin-left: 10px;
+		padding: 5px;
+		border: 1px solid #cbd5e1;
+		border-radius: 6px;
+		background: #fff;
+	}
+	.sticker-logo {
+		display: block;
+		height: 50px;
+		width: auto;
+		max-width: 100px;
+		object-fit: contain;
+	}
+	.sticker-footer-text {
+		text-align: left;
 	}
 </style>
 
@@ -85,52 +174,33 @@
 {{ sticker_print_html | safe }}
 {% else %}
 {% set site_url = frappe.utils.get_url() %}
-{% set ns = namespace(col=0, opened=false) %}
+{% set ns = namespace(opened=false) %}
 {% for row in doc.items %}
 {% if not filter_sticker_items or row.name in selected_item_names %}
 {% if not ns.opened %}
 <table class="sticker-sheet" cellspacing="0" cellpadding="0">
 {% set ns.opened = true %}
 {% endif %}
-{% if ns.col % 2 == 0 %}
 <tr>
-{% endif %}
 <td>
 	<div class="sticker-card">
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
 			<tr>
 				<td class="sticker-fields">
-					<div class="sticker-line"><span class="sticker-label">Date:</span> <span class="sticker-value">{{ frappe.format(doc.posting_date, {"fieldtype": "Date"}) if doc.posting_date else "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">MR No:</span> <span class="sticker-value">{{ doc.custom_mr_number or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Tag No:</span> <span class="sticker-value">{{ row.custom_tag_no or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Specification:</span> <span class="sticker-value">{{ row.custom_specification or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Mill:</span> <span class="sticker-value">{{ row.custom_mill or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Ref No:</span> <span class="sticker-value">{{ row.custom_ref_no or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Weight:</span> <span class="sticker-value">{{ frappe.format(row.qty, {"fieldtype": "Float"}) if row.qty not in (None, "") else "-" }}</span></div>
+					{{ build_stock_entry_sticker_body_html(build_stock_entry_sticker_payload(doc, row)) | safe }}
 				</td>
 				<td class="sticker-qr">
 					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR">
 				</td>
 			</tr>
 		</table>
-		<div class="sticker-footer">
-			<div class="sticker-footer-line"><span class="sticker-label">Company:</span> <span class="sticker-value">{{ doc.company or "-" }}</span></div>
-			<div class="sticker-footer-line"><span class="sticker-label">Entry No:</span> <span class="sticker-value">{{ doc.name or "-" }}</span></div>
-			<div class="sticker-footer-line"><span class="sticker-label">Customer:</span> <span class="sticker-value">{{ doc.custom_customer or "-" }}</span></div>
-			<div class="sticker-footer-line"><span class="sticker-label">For Customer:</span> <span class="sticker-value">{{ doc.custom_for_customer or "-" }}</span></div>
-		</div>
+		{{ build_stock_entry_sticker_footer_html(doc) | safe }}
 	</div>
 </td>
-{% set ns.col = ns.col + 1 %}
-{% if ns.col % 2 == 0 %}
 </tr>
-{% endif %}
 {% endif %}
 {% endfor %}
 {% if ns.opened %}
-{% if ns.col % 2 == 1 %}
-<td></td></tr>
-{% endif %}
 </table>
 {% endif %}
 {% endif %}

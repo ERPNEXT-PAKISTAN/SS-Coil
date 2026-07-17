@@ -722,7 +722,9 @@ function show_stock_entry_sticker_print_dialog(frm) {
 						"&no_letterhead=1" +
 						"&trigger_print=1" +
 						"&settings=" +
-						encodeURIComponent(settings)
+						encodeURIComponent(settings) +
+						"&_=" +
+						Date.now()
 				);
 
 			const print_window = window.open(url);

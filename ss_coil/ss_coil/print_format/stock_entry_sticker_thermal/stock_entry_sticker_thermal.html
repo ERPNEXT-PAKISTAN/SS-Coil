@@ -52,13 +52,78 @@
 		width: 72px;
 		height: 72px;
 	}
-	.sticker-line,
-	.sticker-footer-line {
-		margin: 0;
+	.sticker-line {
+		margin: 0 0 1px;
 		padding: 0;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.sticker-tagno {
+		font-size: 14px;
+		font-weight: 800;
+		line-height: 1.2;
+		margin: 0 0 2px;
+		color: #0f172a;
+	}
+	.sticker-triple-box {
+		border: 1px solid #e2e8f0;
+		border-radius: 4px;
+		padding: 3px 4px 1px;
+		margin: 1px 0;
+	}
+	.sticker-triple {
+		white-space: nowrap;
+		margin: 0;
+	}
+	.sticker-triple-divider {
+		border-top: 1px solid #e2e8f0;
+		padding-top: 2px;
+		margin-top: 2px;
+	}
+	.sticker-triple-cell {
+		display: inline-block;
+		vertical-align: top;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding: 0 3px 2px 0;
+		box-sizing: border-box;
+	}
+	.sticker-triple-col-wide {
+		width: 88px;
+	}
+	.sticker-triple-col-narrow {
+		width: 28px;
+	}
+	.sticker-triple-label {
+		font-size: 6.5px;
+		font-weight: 500;
+		color: #64748b;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sticker-triple-value {
+		font-size: 9px;
+		font-weight: 700;
+		color: #0f172a;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sticker-footer-line {
+		margin: 0;
+		padding: 0;
+		white-space: normal;
+		overflow: visible;
+		overflow-wrap: break-word;
+	}
+	.sticker-company-name {
+		font-size: 10.5px;
+		font-weight: 800;
+		color: #0f172a;
+		margin-top: 1px;
 	}
 	.sticker-label {
 		color: #64748b;
@@ -74,6 +139,30 @@
 		border-top: 1px solid #cbd5e1;
 		font-size: 8.5px;
 		line-height: 1.15;
+		text-align: left;
+	}
+	.sticker-footer:after {
+		content: "";
+		display: table;
+		clear: both;
+	}
+	.sticker-logo-box {
+		float: right;
+		margin-left: 6px;
+		padding: 3px;
+		border: 1px solid #cbd5e1;
+		border-radius: 4px;
+		background: #fff;
+	}
+	.sticker-logo {
+		display: block;
+		height: 26px;
+		width: auto;
+		max-width: 52px;
+		object-fit: contain;
+	}
+	.sticker-footer-text {
+		text-align: left;
 	}
 </style>
 
@@ -89,25 +178,14 @@
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
 			<tr>
 				<td class="sticker-fields">
-					<div class="sticker-line"><span class="sticker-label">Date:</span> <span class="sticker-value">{{ frappe.format(doc.posting_date, {"fieldtype": "Date"}) if doc.posting_date else "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">MR No:</span> <span class="sticker-value">{{ doc.custom_mr_number or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Tag No:</span> <span class="sticker-value">{{ row.custom_tag_no or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Specification:</span> <span class="sticker-value">{{ row.custom_specification or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Mill:</span> <span class="sticker-value">{{ row.custom_mill or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Ref No:</span> <span class="sticker-value">{{ row.custom_ref_no or "-" }}</span></div>
-					<div class="sticker-line"><span class="sticker-label">Weight:</span> <span class="sticker-value">{{ frappe.format(row.qty, {"fieldtype": "Float"}) if row.qty not in (None, "") else "-" }}</span></div>
+					{{ build_stock_entry_sticker_body_html(build_stock_entry_sticker_payload(doc, row)) | safe }}
 				</td>
 				<td class="sticker-qr">
 					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR">
 				</td>
 			</tr>
 		</table>
-		<div class="sticker-footer">
-			<div class="sticker-footer-line"><span class="sticker-label">Company:</span> <span class="sticker-value">{{ doc.company or "-" }}</span></div>
-			<div class="sticker-footer-line"><span class="sticker-label">Entry No:</span> <span class="sticker-value">{{ doc.name or "-" }}</span></div>
-			<div class="sticker-footer-line"><span class="sticker-label">Customer:</span> <span class="sticker-value">{{ doc.custom_customer or "-" }}</span></div>
-			<div class="sticker-footer-line"><span class="sticker-label">For Customer:</span> <span class="sticker-value">{{ doc.custom_for_customer or "-" }}</span></div>
-		</div>
+		{{ build_stock_entry_sticker_footer_html(doc) | safe }}
 	</div>
 </div>
 {% endif %}

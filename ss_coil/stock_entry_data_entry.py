@@ -1,3 +1,13 @@
+"""Backend for the Stock Entry "Data Entry" dialog (see
+ss_coil/public/js/stock_entry.js for the frontend, and ARCHITECTURE.md for
+the full flow).
+
+get_stock_entry_data_entry_meta() tells the dialog which fields to render,
+pulled live from DocType meta so labels/options never drift out of sync with
+the DocType. save_stock_entry_data_entry() writes the dialog's values back
+onto the real Stock Entry doc.
+"""
+
 import frappe
 
 PARENT_SECTIONS = [

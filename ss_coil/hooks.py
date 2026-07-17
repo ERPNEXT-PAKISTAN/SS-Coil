@@ -1,3 +1,8 @@
+# This file wires up everything: which doc_events call which api.py
+# functions, which JS/CSS loads on which doctype, print hooks, fixtures.
+# Read this top-to-bottom to see what's connected before changing api.py -
+# see ARCHITECTURE.md at the app root for the "why" behind each flow.
+
 app_name = "ss_coil"
 app_title = "SS Coil"
 app_publisher = "Taimoor"

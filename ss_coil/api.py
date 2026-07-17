@@ -1,3 +1,12 @@
+"""SS Coil backend: tag lifecycle, batch creation, sticker/QR printing, SS
+Coil cutting workflow, Sales Order raw-material planning, and one-time
+Custom Field setup.
+
+This file is large (grouped by feature, not alphabetical) - see
+ARCHITECTURE.md at the app root for the full flow explanation and a map of
+which function group does what before making changes here.
+"""
+
 import html
 import json
 import re
@@ -208,8 +217,10 @@ def _link_origin_tag_to_sales_order_items(tag_no, item_code, sales_order, batch_
 		return
 
 	values = {"custom_raw_material_tag_no": tag_no}
-	if _has_field("Sales Order Item", "custom_raw_material_batch_no"):
-		values["custom_raw_material_batch_no"] = batch_no or tag_no
+	if batch_no and _has_field("Sales Order Item", "custom_raw_material_batch_no"):
+		# custom_raw_material_batch_no is a Link to Batch - only set it when we
+		# have a real Batch id, never fall back to the tag number.
+		values["custom_raw_material_batch_no"] = batch_no
 	stock_source = _stock_source_for_origin(source_doctype)
 	if stock_source and _has_field("Sales Order Item", "custom_stock_source_type"):
 		values["custom_stock_source_type"] = stock_source
@@ -296,6 +307,15 @@ def _resolve_carried_tag(row, doc=None):
 
 
 def _ensure_batch_for_tag_row(row, tag_no):
+	"""Auto-create a Batch using the Tag No as its Batch ID.
+
+	Only runs when Item.has_batch_no AND Item.custom_use_tag_as_batch_no are
+	both enabled (the latter defaults to 1 to preserve existing behavior).
+	Uncheck custom_use_tag_as_batch_no on an item to let ERPNext's own batch
+	settings (Automatically Create New Batch + Batch Number Series, or manual
+	Batch No entry) handle batching for that item instead - see
+	ARCHITECTURE.md > "Batch auto-creation".
+	"""
 	if not tag_no or not getattr(row, "item_code", None):
 		return
 	if not _has_field(row.doctype, "batch_no"):
@@ -305,6 +325,10 @@ def _ensure_batch_for_tag_row(row, tag_no):
 	has_batch = frappe.get_cached_value("Item", row.item_code, "has_batch_no")
 	if not has_batch:
 		return
+	if _has_field("Item", "custom_use_tag_as_batch_no"):
+		use_tag_as_batch = frappe.get_cached_value("Item", row.item_code, "custom_use_tag_as_batch_no")
+		if not use_tag_as_batch:
+			return
 	if not frappe.db.exists("Batch", tag_no):
 		frappe.get_doc(
 			{
@@ -335,7 +359,11 @@ def _create_origin_tag(doc, row, source_doctype, sales_order=None, stock_entry=N
 			row.custom_tag_no = tag_no
 
 	_ensure_batch_for_tag_row(row, tag_no)
-	batch_no = getattr(row, "batch_no", None) or tag_no
+	# Only use a real Batch record's id here - _ensure_batch_for_tag_row only
+	# creates one when the item has batch tracking enabled. Falling back to
+	# tag_no would set Tag Registry.batch_no (a Link to Batch) to a value
+	# that doesn't exist as a Batch, which fails link validation on save.
+	batch_no = getattr(row, "batch_no", None)
 	sales_order = sales_order or getattr(doc, "custom_sales_order", None)
 	_register_tag(
 		tag_no,
@@ -740,6 +768,11 @@ def _register_tag(
 		doc.batch_no = batch_no
 	doc.status = status or "Active"
 	doc.flags.ignore_permissions = True
+	# The source/current doc (Stock Entry, SS Coil, etc.) is often still mid
+	# insert when this runs (before_validate/before_save), so it may not be
+	# committed to the DB yet even though its name is already assigned -
+	# link validation against it would fail otherwise.
+	doc.flags.ignore_links = True
 	if registry:
 		doc.save(ignore_permissions=True)
 	else:
@@ -2822,6 +2855,20 @@ def setup_tag_origin_fields():
 				"insert_after": "custom_ss_coil_item_type",
 				"default": "0",
 				"description": "When checked, inward rows for this item auto-enable tag creation on Purchase Receipt and Material Receipt Stock Entry.",
+			},
+			{
+				"fieldname": "custom_use_tag_as_batch_no",
+				"label": "Use Tag No as Batch No",
+				"fieldtype": "Check",
+				"insert_after": "custom_create_tag_on_receipt",
+				"default": "1",
+				"depends_on": "eval:doc.has_batch_no",
+				"description": (
+					"When checked (default), the auto-created Batch ID always equals the row's "
+					"Tag No. Uncheck to let ERPNext's own batch settings (Automatically Create New "
+					"Batch + Batch Number Series, or manual Batch No entry) control batching for "
+					"this item instead."
+				),
 			},
 			{
 				"fieldname": "custom_default_raw_material_item",

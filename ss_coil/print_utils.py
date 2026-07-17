@@ -1,3 +1,10 @@
+"""Hooked into Frappe's PDF generation (`pdf_body_html` in hooks.py) to
+pre-render the Stock Entry sticker sheet server-side and inject it as
+`sticker_print_html`, so the PDF path and the browser print-preview path
+(which falls back to an inline Jinja loop in the print format templates)
+render identically. See ARCHITECTURE.md > "Sticker / QR printing".
+"""
+
 import frappe
 from frappe.utils.pdf import pdf_body_html as fw_pdf_body_html
 

@@ -1,0 +1,238 @@
+# SS Coil — Architecture & Flow
+
+This file exists so a developer (human or AI assistant like Codex/Cursor/Claude)
+can understand this app's moving parts without reading all of `api.py` (4000+
+lines) top to bottom. Start here, then jump to the referenced
+functions/line-ranges.
+
+## Keeping this file current (read this if you're an AI agent editing this repo)
+
+**This file is not auto-generated — nothing rebuilds it for you.** It stays
+accurate only because whoever changes the code also updates the relevant
+section here, in the *same* change. Follow this rule:
+
+> If your change alters a **flow** described below (not just styling/wording),
+> update the matching section of this file before you finish the task —
+> same commit, no separate follow-up.
+
+Concretely, update this file when you:
+- Add/remove/rename a doc_event hook in `hooks.py` → update the wiring table
+  under "Doc-event wiring".
+- Change what triggers a Tag Registry entry, batch creation, or how tag
+  lineage is computed → update "Tag Registry" / "Batch auto-creation".
+- Add/remove a field the Data Entry dialog shows, or change how it
+  loads/saves rows → update "Stock Entry Data Entry dialog".
+- Change sticker/print fields, or add a new print format → update
+  "Sticker / QR printing", and check all three pieces listed there stay in
+  sync (payload function, HTML builder, print format template).
+- Add a new doctype, a new cross-doctype sync, or a new setup/migration
+  function → add it to the relevant section or the "File map" table.
+- Discover and fix a non-obvious bug (a silent-failure gotcha, an ordering
+  dependency, a caching trap) → add a short "Gotcha" note near the relevant
+  section, the way the `ignore_links` and `__islocal` notes below are
+  written. These notes are the highest-value content in this file — they
+  save the next person (or agent) from re-discovering the same bug the hard
+  way.
+
+Do **not** update this file for pure refactors, formatting, or anything that
+doesn't change behavior/flow — keep the noise-to-signal ratio low so it stays
+worth reading.
+
+## What this app does
+
+SS Coil adds steel-coil-specific tracking on top of ERPNext Stock/Selling:
+buying/receiving raw coils, cutting/processing them into outputs, and
+delivering to customers — while keeping a full paper-trail ("tag lineage")
+from the raw material through every intermediate cut down to what's shipped.
+
+## The core concept: Tag Registry (traceability backbone)
+
+Every physical unit of material (a coil, a cut piece, a slit strip...) gets a
+**Tag No** (e.g. `SSCC-0455-000`). The `Tag Registry` doctype is the single
+source of truth for "where did this tag come from, and where did it go":
+
+- `tag_no` — the physical tag/sticker number.
+- `parent_tag_no` / `root_tag_no` / `lineage_path` — when a tag is cut/split
+  into children, the children point back to the parent, and `lineage_path` is
+  a human-readable breadcrumb (`SSCC-0455-000 > SSCC-0455-001`).
+- `source_doctype` / `source_docname` / `source_child_doctype` /
+  `source_child_name` — where the tag was **first created** (e.g. a Stock
+  Entry Detail row on a Material Receipt).
+- `current_doctype` / `current_docname` / ... — where the tag **currently
+  lives** (updated as it moves through Sales Order → Stock Entry → SS Coil
+  processing → Delivery Note).
+- `batch_no` — see "Batch auto-creation" below.
+
+Key functions in `api.py` (all prefixed so they're greppable):
+- `_register_tag(...)` — the low-level upsert into Tag Registry. Called by
+  everything else below.
+- `_create_origin_tag(doc, row, source_doctype, ...)` — called when a tag is
+  first created (e.g. on a Material Receipt row). Generates a new Tag No if
+  the row doesn't have one (`_next_tag_number()`), creates its Tag Registry
+  entry, and optionally creates a matching Batch (see below).
+- `_update_tag_location(...)` — called as a tag moves through later documents
+  (Delivery Note, Sales Invoice, SS Coil processing) to update
+  `current_doctype`/`current_docname` without touching the origin fields.
+- `_get_or_create_tag(...)`, `_next_sub_tag(...)` — child/sub-tag generation
+  when a parent tag is split (e.g. SS Coil cutting produces multiple output
+  tags from one input tag).
+- `get_tag_trace(tag_no)` (whitelisted) — walks the full lineage tree for the
+  UI (used by the Tag Registry detail views / dashboards).
+
+### Doc-event wiring (who calls what, and when)
+
+Registered in `hooks.py` under `doc_events`. The important ones for tag flow:
+
+| Doctype | Event | Function | What it does |
+|---|---|---|---|
+| Stock Entry | `before_validate`, `before_save` | `prepare_stock_entry_links` → `assign_stock_entry_detail_tags` | Creates/updates origin tags for Material Receipt rows |
+| Sales Order | `before_validate`, `before_save` | `assign_sales_order_item_tags`, `sync_sales_order_item_dimensions` | Assigns/validates tags on SO items |
+| Purchase Receipt / Purchase Invoice | `before_validate` | `assign_purchase_receipt_item_tags` / `assign_purchase_invoice_item_tags` | Same idea for purchase-side raw material intake |
+| Delivery Note | `before_validate` | `assign_delivery_note_item_tags` | Updates tag location to "shipped" |
+| SS Coil | `before_validate`, `before_save`, `on_submit`, `on_cancel` | `sync_ss_coil_process_tracking` | Drives the cutting/processing workflow and creates output tags |
+
+**Important gotcha (see `_register_tag`)**: these hooks mostly run at
+`before_validate`/`before_save` time — i.e. *before* the parent document
+(Stock Entry, SS Coil, ...) is actually committed to the database, even
+though its `name` has already been assigned. If `_register_tag` tries to
+`insert()` a Tag Registry row that links back to that not-yet-committed
+parent, Frappe's link validation will fail with `LinkValidationError:
+Could not find <Doctype>: <name>`. That's why `_register_tag` sets
+`doc.flags.ignore_links = True` before inserting/saving — the reference is
+logically valid, just not committed yet in the same transaction.
+
+## Batch auto-creation (Tag No **is** the Batch ID, by default)
+
+`_ensure_batch_for_tag_row(row, tag_no)` (called from `_create_origin_tag`):
+
+```
+if Item.has_batch_no is enabled
+   AND Item.custom_use_tag_as_batch_no is enabled (default: on)
+   AND row.batch_no is empty:
+    create a Batch doc with batch_id = tag_no (if one doesn't already exist)
+    row.batch_no = tag_no
+```
+
+The default design: Batch ID always equals the Tag No, so scanning/reading
+the printed tag *is* the batch identifier — no separate lookup needed.
+Consequences and per-item override:
+
+- **Item.has_batch_no must be enabled** for a given Item, or no Batch gets
+  created at all (the row just has no `batch_no`, which is fine — see next
+  point).
+- **`Item.custom_use_tag_as_batch_no`** (Check, default `1`) is the per-item
+  opt-out. Set it to `0` on an item to skip this function entirely for that
+  item, freeing up ERPNext's own batch handling to take over:
+  - **Automatic ERPNext-series batching**: also enable
+    `Item.create_new_batch` and set `Item.batch_number_series` (e.g.
+    `BATCH-.YYYY.-`). With `custom_use_tag_as_batch_no` off, this hook no
+    longer pre-fills `row.batch_no`, so ERPNext's own core validation is free
+    to auto-generate the next batch from the series when the Stock Entry is
+    saved.
+  - **Manual batching**: leave `create_new_batch` off. The row's `batch_no`
+    must then be picked/created by hand (in the Data Entry dialog or the
+    standard grid) before saving — this hook always backs off if
+    `row.batch_no` is already set, regardless of the flag above.
+  - While `custom_use_tag_as_batch_no` stays at its default (`1`), enabling
+    `Item.create_new_batch` is dead config: this hook runs first (before
+    ERPNext's own batch-creation logic) and already fills `row.batch_no`, so
+    the series-based auto-batch never gets a chance to fire.
+- Never fall back to using `tag_no` as a fake `batch_no` value when no real
+  Batch was created (this was a real bug — see git history "Could not find
+  Batch No" fix). Only set `batch_no` on Tag Registry /
+  `custom_raw_material_batch_no` when a real Batch record exists.
+
+## Stock Entry "Data Entry" dialog (bulk item entry UI)
+
+A custom full-screen dialog (not the standard Frappe grid) for quickly
+entering many Stock Entry item rows at once — built because the standard
+child-table grid is too cramped for coil data entry (many custom fields per
+row: thickness/width/length, mill, spec, tags, etc).
+
+- **Backend**: `ss_coil/stock_entry_data_entry.py`
+  - `get_stock_entry_data_entry_meta()` — returns the parent field
+    definitions (grouped) and child field definitions the dialog should
+    render, pulled live from DocType meta (so field labels/options stay in
+    sync with the DocType without duplicating them in JS).
+  - `save_stock_entry_data_entry(stock_entry, data)` — applies the dialog's
+    parent + item values back onto the real Stock Entry doc and saves it.
+- **Frontend**: `ss_coil/public/js/stock_entry.js`
+  - `add_stock_entry_data_entry_button` → `open_stock_entry_data_entry_dialog`
+    → `show_stock_entry_data_entry_dialog` is the entry point.
+  - Parent fields render as a 6-column grid (`STOCK_ENTRY_DATA_ENTRY_PARENT_FIELDS`).
+  - Item rows render as a spreadsheet-style `<table>` (not Frappe's grid),
+    grouped into columns via `STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS`.
+  - **Gotcha**: rows added via "+ Add Row" get a client-side placeholder
+    `name` (`frappe.utils.get_random(10)`, with `__islocal: 1`). On save,
+    that fake name must be stripped before sending to the server — otherwise
+    the server-side save function (which matches rows by `name` to decide
+    "update existing" vs "append new") mistakes it for an existing row,
+    finds no match, and silently drops it. See `save_stock_entry_data_entry_from_dialog`.
+
+## Sticker / QR printing
+
+Three related pieces work together — **when changing sticker fields/layout,
+all three need updating or they drift out of sync** (this happened before):
+
+1. `build_stock_entry_sticker_payload(doc, row)` (api.py) — the single
+   source of truth for what fields a sticker shows and in what order.
+2. `build_stock_entry_sticker_body_html` / `_combo_html` / `_footer_html`
+   (api.py) — turn that payload into HTML. Exposed to Jinja via
+   `jinja_methods.py` so...
+3. ...the print format templates
+   (`ss_coil/ss_coil/print_format/stock_entry_sticker*/*.html`) can call
+   them directly instead of re-implementing the same field list in Jinja.
+   Each print format has a **fallback** inline Jinja loop used only when
+   `sticker_print_html` isn't pre-populated (see `print_utils.py`).
+
+`print_utils.py` hooks into `pdf_body_html` to pre-render the full sticker
+sheet server-side (`build_stock_entry_sticker_sheet_html`) and inject it as
+`sticker_print_html`, so both the PDF and the browser print-preview path
+render identically.
+
+**QR payload** (`build_stock_entry_sticker_qr_payload`) is a separate,
+shorter/full data set from what's shown on the sticker body — kept
+deliberately compact-vs-full based on product requirements at the time; check
+this function if the QR code stops scanning (over-stuffing it with data makes
+the code too dense to scan reliably at sticker print size).
+
+## SS Coil processing (cutting workflow)
+
+`SS Coil` doctype represents one processing operation (slitting, leveling,
+cutting, etc). `sync_ss_coil_process_tracking` and `create_next_ss_coil_entry`
+drive a chain: each SS Coil's output tags (`Coil Output` child rows) can
+become the *input* tags of the next SS Coil in the chain, via
+`_build_child_tag`/`_next_sub_tag`, until the material reaches final delivery
+form.
+
+## Sales Order raw-material planning
+
+Separate from the tag/batch system: `get_available_raw_material_tags`,
+`assign_raw_material_tag_to_sales_order_item`,
+`get_sales_order_items_pending_raw_material_tags`, and the
+`so_production_plan` functions (`get_so_production_plan`,
+`save_so_production_plan`) implement a planning UI where a Sales Order Item
+gets matched against available raw-material tags in stock before production
+starts.
+
+## One-time setup/migration functions
+
+Functions named `setup_*` or `_migrate_*`/`_update_*_field_order` (e.g.
+`setup_tag_origin_fields`, `setup_tag_tracking_fields`,
+`setup_sales_order_cutting_scheme_fields`) create Custom Fields / Property
+Setters idempotently. They're called from `install.py`'s `after_install`/
+`after_migrate` hooks, **not** on every request — safe to re-run, but not
+meant to run per-document.
+
+## File map
+
+| File | Role |
+|---|---|
+| `ss_coil/api.py` | Everything: tag lifecycle, batch creation, sticker/QR printing, SS Coil processing, Sales Order planning, one-time setup functions. Grep by the section names above. |
+| `ss_coil/stock_entry_data_entry.py` | Backend for the custom Data Entry dialog. |
+| `ss_coil/print_utils.py` | `pdf_body_html` hook — injects pre-rendered sticker HTML for print/PDF. |
+| `ss_coil/jinja_methods.py` | Whitelists Python functions for direct use in print format Jinja templates. |
+| `ss_coil/hooks.py` | All wiring: doc_events, doctype_js, fixtures, print hooks. Read this first to see what's connected to what. |
+| `ss_coil/public/js/stock_entry.js` | Stock Entry form JS: Data Entry dialog, sticker print dialog, dimension auto-calc, tag buttons. |
+| `ss_coil/public/js/sales_order.js`, `delivery_note.js`, `sales_invoice.js`, `purchase_receipt.js`, `purchase_invoice.js` | Per-doctype form JS, mostly thin (dimension sync, tag display). |
+| `ss_coil/ss_coil/print_format/*/` | Print formats (Stock Entry Coil, Stock Entry Sticker, Stock Entry Sticker Thermal). |

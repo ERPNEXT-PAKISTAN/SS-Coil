@@ -1,3 +1,11 @@
+// Stock Entry form JS: the custom "Data Entry" bulk-item dialog, sticker
+// print dialog, coil dimension auto-calc, and tag registry buttons.
+// See ARCHITECTURE.md ("Data Entry dialog" / "Sticker printing" sections)
+// at the app root before changing the dialog logic below - two easy-to-miss
+// gotchas are documented there: the __islocal fake-name issue on save, and
+// the parent/child field lists needing to stay in sync with
+// stock_entry_data_entry.py's meta endpoint.
+
 frappe.ui.form.on("Stock Entry", {
 	refresh(frm) {
 		add_stock_entry_data_entry_button(frm);
@@ -373,7 +381,16 @@ function save_stock_entry_data_entry_from_dialog(state, dialog) {
 			row.item[fieldname] = row.controls[fieldname].get_value();
 		});
 		update_stock_entry_data_entry_row_dimension(row.item);
-		items.push({ ...row.item });
+		const item_payload = { ...row.item };
+		if (item_payload.__islocal) {
+			// Rows added via "+ Add Row" carry a client-side placeholder name
+			// (frappe.utils.get_random) that never matches a real doc row.
+			// Sending it as-is makes the server think this is an update to an
+			// existing row, find no match, and silently skip it. Drop the
+			// fake name so the server correctly treats it as a new row.
+			delete item_payload.name;
+		}
+		items.push(item_payload);
 	}
 
 	const payload = {

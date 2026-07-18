@@ -97,18 +97,29 @@ doc_events = {
 		"on_update": "ss_coil.api.sync_sales_order_item_tag_registry",
 	},
 	"SS Coil": {
+		# prepare_ss_coil_output_tags/sync_ss_coil_process_tracking used to be
+		# wired on before_validate AND before_save AND after_insert AND
+		# on_update AND on_submit/on_cancel - up to 6 calls per single save,
+		# 4 of them exact duplicates (before_validate always fires
+		# immediately before before_save in the same request) and 2 dead
+		# (SS Coil isn't submittable, so on_submit/on_cancel never fire).
+		#
+		# before_validate: mutates the doc's own fields (job_output rows,
+		# tag assignment) before the DB write - only needs to run once.
+		#
+		# on_update: sync_ss_coil_process_tracking also rolls up this SS
+		# Coil's status onto its Sales Order Item via a query that only
+		# finds already-committed documents (frappe.get_all("SS Coil", ...)
+		# in _update_sales_order_item_process_status) - that rollup would be
+		# stale-by-one-save if it only ran pre-commit, so it genuinely needs
+		# a second, post-commit run. on_update alone covers both insert and
+		# update (Frappe fires on_update on both), so after_insert is
+		# redundant on top of it.
 		"before_validate": [
 			"ss_coil.api.prepare_ss_coil_output_tags",
 			"ss_coil.api.sync_ss_coil_process_tracking",
 		],
-		"before_save": [
-			"ss_coil.api.prepare_ss_coil_output_tags",
-			"ss_coil.api.sync_ss_coil_process_tracking",
-		],
-		"after_insert": "ss_coil.api.sync_ss_coil_process_tracking",
 		"on_update": "ss_coil.api.sync_ss_coil_process_tracking",
-		"on_submit": "ss_coil.api.sync_ss_coil_process_tracking",
-		"on_cancel": "ss_coil.api.sync_ss_coil_process_tracking",
 	},
 	"Stock Entry": {
 		"before_validate": "ss_coil.api.prepare_stock_entry_links",

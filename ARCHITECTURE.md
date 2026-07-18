@@ -318,7 +318,32 @@ cutting, etc). `sync_ss_coil_process_tracking` and `create_next_ss_coil_entry`
 drive a chain: each SS Coil's output tags (`Coil Output` child rows) can
 become the *input* tags of the next SS Coil in the chain, via
 `_build_child_tag`/`_next_sub_tag`, until the material reaches final delivery
-form.
+form. Not submittable — its lifecycle is tracked entirely via the
+`order_status` Select field (Not Started/In Process/Partially
+Completed/Completed/Closed) driven by the Start/Partial/Complete/Close
+buttons in `ss_coil.js`, gated by a `process_control_enabled` safety
+checkbox that auto-locks itself after every transition.
+
+**Hook wiring is deliberately asymmetric** (`hooks.py` `doc_events["SS
+Coil"]`) — used to fire `prepare_ss_coil_output_tags` and
+`sync_ss_coil_process_tracking` up to 6 times per save (before_validate +
+before_save + after_insert + on_update + dead on_submit/on_cancel, since the
+doctype isn't submittable); trimmed 2026-07 to:
+- `before_validate`: both functions, once — mutates the doc's own fields
+  (job_output rows, tag assignment, next_process) before the DB write.
+- `on_update`: `sync_ss_coil_process_tracking` only, once more — its tail end
+  rolls up this SS Coil's status onto the linked Sales Order Item via
+  `_update_sales_order_item_process_status`, which queries `SS Coil` by
+  `sales_order_item` and would miss the current document entirely if it only
+  ran pre-commit (the row isn't in the DB yet at `before_validate` time). So
+  this one genuinely needs to run twice — once for its own-field mutations,
+  once post-commit for the cross-document rollup to see accurate state —
+  don't "fix" this into a single call without preserving that.
+
+The `field_order` Property Setter for this doctype also had a stray
+`stock_entry_items` entry referencing a field that doesn't exist anywhere in
+`ss_coil.json` (removed, both live and in the fixture file) — leftover from
+a deleted field.
 
 ## Sales Order raw-material planning
 

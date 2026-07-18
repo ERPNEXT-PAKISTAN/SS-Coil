@@ -347,6 +347,19 @@ a deleted field.
 
 ### Further improvements (2026-07)
 
+- **Flow banner at the top of the form.** `render_ss_coil_flow_banner`
+  (called from `refresh`, `operation`, and `order_status`) renders a
+  read-only two-row stepper right below the page header: the item's
+  configured process chain (Slitter → Leveler → Reshearing, filtered to
+  whichever are actually enabled via `so_item[0]`, reusing the existing
+  `getConfiguredProcesses`/`formatProcessLabel` helpers) with the current
+  `operation` highlighted and prior stages checked off, plus the
+  `order_status` lifecycle (Not Started → In Process → Partially Completed →
+  Completed → Closed) with the current status highlighted — visually
+  reinforcing what the Start/Partial/Complete/Close buttons and
+  `create_next_ss_coil_entry` already drive, without any new server calls.
+  Purely client-side; inserted via the same DOM-insertion technique already
+  used by `so_mfg_render_banner` in `sales_order_manufacture.js`.
 - **Delivery/invoice details missed rows fulfilled from a different tag
   lineage.** `delivery_details`/`invoice_details` in
   `get_ss_coil_detail_dashboard` only matched `Delivery Note Item`/`Sales

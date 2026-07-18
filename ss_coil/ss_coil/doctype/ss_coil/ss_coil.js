@@ -27,6 +27,7 @@ frappe.ui.form.on("SS Coil", {
 		});
 	},
 	refresh(frm) {
+		render_ss_coil_flow_banner(frm);
 		add_ss_coil_tag_buttons(frm);
 		add_process_action_buttons(frm);
 		frm.set_df_property("order_status", "read_only", 1);
@@ -44,6 +45,7 @@ frappe.ui.form.on("SS Coil", {
 	},
 	operation(frm) {
 		sync_process_preview(frm);
+		render_ss_coil_flow_banner(frm);
 	},
 	process_control_enabled(frm) {
 		style_process_control_field(frm);
@@ -225,6 +227,7 @@ frappe.ui.form.on("SS Coil", {
 			frm.set_value("elapsed_time", getElapsedTimeValue(frm));
 		}
 		update_elapsed_time_display(frm);
+		render_ss_coil_flow_banner(frm);
 		load_and_render_ss_coil_dashboards(frm);
 	},
 });
@@ -1907,6 +1910,153 @@ function sync_process_preview(frm) {
 	frm.refresh_field("input_coil");
 	frm.refresh_field("job_output");
 	render_job_output_qr_fields(frm);
+}
+
+// Two-row stepper banner at the top of the form: which processing stage
+// this document is at within its item's configured chain (Slitter/Leveler/
+// Reshearing), and where its own order_status lifecycle currently sits
+// (Not Started/In Process/Partially Completed/Completed/Closed) - mirrors
+// the same statuses the Start/Partial/Complete/Close buttons below it
+// drive, and the same process chain create_next_ss_coil_entry advances
+// through. Purely a read-only visual aid; doesn't call the server.
+const SS_COIL_STATUS_STEPS = ["Not Started", "In Process", "Partially Completed", "Completed", "Closed"];
+
+function render_ss_coil_flow_banner(frm) {
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		$(frm.wrapper).find(".ss-coil-flow-banner").remove();
+		return;
+	}
+	inject_ss_coil_flow_styles();
+
+	const configuredProcesses = getConfiguredProcesses(frm);
+	const processLabels = configuredProcesses.map((key) => formatProcessLabel(key));
+	const currentProcessLabel = formatProcessLabel(frm.doc.operation);
+	const processIndex = processLabels.findIndex(
+		(label) => label.toLowerCase() === currentProcessLabel.toLowerCase()
+	);
+
+	const processHtml = processLabels.length
+		? build_ss_coil_stepper_html(processLabels, processIndex)
+		: `<span class="ss-coil-flow-empty">${__("No process chain configured on this item")}</span>`;
+
+	const statusIndex = SS_COIL_STATUS_STEPS.indexOf(frm.doc.order_status || "Not Started");
+	const statusHtml = build_ss_coil_stepper_html(SS_COIL_STATUS_STEPS, statusIndex);
+
+	let $banner = $(frm.wrapper).find(".ss-coil-flow-banner");
+	if (!$banner.length) {
+		$banner = $('<div class="ss-coil-flow-banner"></div>');
+		const $pageHead = $(frm.wrapper).find(".page-head").first();
+		if ($pageHead.length) {
+			$banner.insertAfter($pageHead);
+		} else {
+			$(frm.wrapper).find(".form-page").first().before($banner);
+		}
+	}
+
+	$banner.html(`
+		<div class="ss-coil-flow-row">
+			<span class="ss-coil-flow-label">${__("Process")}</span>
+			${processHtml}
+		</div>
+		<div class="ss-coil-flow-row">
+			<span class="ss-coil-flow-label">${__("Status")}</span>
+			${statusHtml}
+		</div>
+	`);
+}
+
+function build_ss_coil_stepper_html(labels, currentIndex) {
+	return `<div class="ss-coil-stepper">${labels
+		.map((label, idx) => {
+			const state = idx < currentIndex ? "done" : idx === currentIndex ? "current" : "upcoming";
+			const connector =
+				idx > 0
+					? `<span class="ss-coil-stepper-connector${idx <= currentIndex ? " ss-coil-stepper-connector-done" : ""}"></span>`
+					: "";
+			const mark = state === "done" ? "&#10003; " : "";
+			return `${connector}<span class="ss-coil-stepper-step ss-coil-stepper-${state}">${mark}${frappe.utils.escape_html(
+				__(label)
+			)}</span>`;
+		})
+		.join("")}</div>`;
+}
+
+function inject_ss_coil_flow_styles() {
+	if (document.getElementById("ss-coil-flow-styles")) return;
+	const style = document.createElement("style");
+	style.id = "ss-coil-flow-styles";
+	style.textContent = `
+		.ss-coil-flow-banner {
+			margin: 0 0 12px;
+			padding: 10px 16px;
+			background: #f8fbff;
+			border: 1px solid #d8e6f7;
+			border-radius: 10px;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+		.ss-coil-flow-row {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			flex-wrap: wrap;
+		}
+		.ss-coil-flow-label {
+			font-size: 11px;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+			color: #64748b;
+			width: 60px;
+			flex-shrink: 0;
+		}
+		.ss-coil-stepper {
+			display: flex;
+			align-items: center;
+			flex-wrap: wrap;
+			row-gap: 6px;
+		}
+		.ss-coil-stepper-step {
+			font-size: 12px;
+			font-weight: 600;
+			padding: 4px 12px;
+			border-radius: 999px;
+			border: 1px solid #cbd5e1;
+			color: #64748b;
+			background: #fff;
+			white-space: nowrap;
+		}
+		.ss-coil-stepper-step.ss-coil-stepper-done {
+			background: #eafaf0;
+			border-color: #86e0ab;
+			color: #1c6b3f;
+		}
+		.ss-coil-stepper-step.ss-coil-stepper-current {
+			background: #2467d6;
+			border-color: #2467d6;
+			color: #fff;
+			box-shadow: 0 0 0 3px rgba(36, 103, 214, 0.15);
+		}
+		.ss-coil-stepper-step.ss-coil-stepper-upcoming {
+			background: #f8fafc;
+			color: #94a3b8;
+		}
+		.ss-coil-stepper-connector {
+			width: 18px;
+			height: 2px;
+			background: #cbd5e1;
+			margin: 0 2px;
+		}
+		.ss-coil-stepper-connector.ss-coil-stepper-connector-done {
+			background: #86e0ab;
+		}
+		.ss-coil-flow-empty {
+			font-size: 12px;
+			color: #94a3b8;
+		}
+	`;
+	document.head.appendChild(style);
 }
 
 function getConfiguredProcesses(frm) {

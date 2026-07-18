@@ -347,19 +347,51 @@ a deleted field.
 
 ### Further improvements (2026-07)
 
-- **Flow banner at the top of the form.** `render_ss_coil_flow_banner`
-  (called from `refresh`, `operation`, and `order_status`) renders a
-  read-only two-row stepper right below the page header: the item's
-  configured process chain (Slitter → Leveler → Reshearing, filtered to
-  whichever are actually enabled via `so_item[0]`, reusing the existing
-  `getConfiguredProcesses`/`formatProcessLabel` helpers) with the current
-  `operation` highlighted and prior stages checked off, plus the
-  `order_status` lifecycle (Not Started → In Process → Partially Completed →
-  Completed → Closed) with the current status highlighted — visually
-  reinforcing what the Start/Partial/Complete/Close buttons and
-  `create_next_ss_coil_entry` already drive, without any new server calls.
-  Purely client-side; inserted via the same DOM-insertion technique already
-  used by `so_mfg_render_banner` in `sales_order_manufacture.js`.
+- **Interactive flow banner at the top of the form**, replacing the separate
+  Start/Partial/Complete/Close buttons. `render_ss_coil_flow_banner` (called
+  from `refresh`, `operation`, `order_status`, `process_control_enabled`, and
+  again from `load_and_render_ss_coil_dashboards` once server data arrives)
+  renders, right below the page header:
+  - **Header row**: a digital-clock elapsed-time readout (`.ss-coil-flow-clock`,
+    the same dark monospace styling `renderElapsedTimeField` always had, just
+    relocated here instead of buried in the field layout - the raw
+    `elapsed_time` field is now hidden via `frm.toggle_display`) and a
+    **Process Control ON/OFF toggle pill** (`toggle_ss_coil_process_control`,
+    click to flip `process_control_enabled` and save immediately - the raw
+    checkbox field is hidden the same way).
+  - **Process row**: the item's configured process chain (Slitter → Leveler →
+    Reshearing, filtered to whichever are actually enabled via `so_item[0]`,
+    reusing `getConfiguredProcesses`/`formatProcessLabel`) with the current
+    `operation` highlighted, read-only (advancing this happens via
+    `create_next_ss_coil_entry`/the "Create Next Process" button, a distinct
+    document-creating action, not a simple status flip).
+  - **Status row**: `order_status` lifecycle steps, and **this row is
+    clickable** — clicking "In Process"/"Partially Completed"/"Completed"/
+    "Closed" runs the same transition the old buttons used to
+    (`run_ss_coil_status_action` → `save_ss_coil_process_state`, still gated
+    by `ensure_ss_coil_process_control`). "Not Started" isn't clickable -
+    there's no defined action for reverting to it.
+  - **Item Demand row**: per-item checklist chips from the server's
+    `process_checklist` (see below) — click a chip with a linked SS Coil name
+    to jump straight to that document.
+
+  `add_process_action_buttons` now only adds the "Create Next Process"
+  button; `ensure_ss_coil_process_control`/`save_ss_coil_process_state`/
+  `run_ss_coil_status_action` are top-level functions (not closures inside
+  the old button-adding function anymore) so both the stepper and that
+  button can call them.
+
+- **`process_checklist` in `get_ss_coil_detail_dashboard`** (built by
+  `_build_ss_coil_process_checklist`): answers "which of the processes this
+  customer's Sales Order Item actually asked for (`so_item.slitter`/
+  `leveler`/`reshearing`) are Completed / In Progress / Pending, across
+  *every* SS Coil document for that same `sales_order_item`" - not just this
+  one. Since `create_next_ss_coil_entry` makes each stage a child of the
+  previous one in the chain, this doubles as "how far along the full chain
+  is this item overall," derived by grouping all SS Coil docs sharing
+  `sales_order_item` by `operation` and taking the most-recently-modified
+  one per stage. Delivered as part of the same dashboard payload the two
+  dashboard tabs already fetch - no extra round trip.
 - **Delivery/invoice details missed rows fulfilled from a different tag
   lineage.** `delivery_details`/`invoice_details` in
   `get_ss_coil_detail_dashboard` only matched `Delivery Note Item`/`Sales

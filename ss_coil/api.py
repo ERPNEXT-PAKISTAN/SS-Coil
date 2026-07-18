@@ -2434,6 +2434,67 @@ def _build_tag_hierarchy(root_tag_no):
 
 
 @frappe.whitelist()
+def _build_ss_coil_process_checklist(doc, so_item):
+	"""Per-item process demand vs. actual completion: which of the processes
+	the customer's Sales Order Item asked for (so_item.slitter/leveler/
+	reshearing) are Completed/In Process/Pending, across every SS Coil
+	document for that same sales_order_item - not just this one. Each stage
+	is a child of the previous one in the chain (see
+	create_next_ss_coil_entry), so this doubles as "how far along the chain
+	is this item overall."
+	"""
+	if not so_item:
+		return []
+
+	configured = [key for key in PROCESS_FIELDS if so_item.get(key)]
+	if not configured:
+		return []
+
+	by_operation = {}
+	if doc.sales_order_item:
+		rows = frappe.get_all(
+			"SS Coil",
+			filters={"sales_order_item": doc.sales_order_item},
+			fields=["name", "operation", "order_status", "modified"],
+			order_by="modified desc",
+		)
+		for row in rows:
+			key = (row.operation or "").strip().lower()
+			# rows are already latest-modified-first; keep only the first
+			# (most recent) SS Coil seen per operation
+			if key not in by_operation:
+				by_operation[key] = row
+
+	checklist = []
+	for key in configured:
+		label = PROCESS_LABELS.get(key, key.title())
+		match = by_operation.get(label.lower())
+		if not match:
+			checklist.append(
+				{"key": key, "label": label, "status": "pending", "ss_coil": None, "order_status": None}
+			)
+			continue
+
+		is_current = match.name == doc.name
+		if match.order_status in ("Completed", "Closed"):
+			status = "completed"
+		elif is_current:
+			status = "current"
+		else:
+			status = "in_progress"
+
+		checklist.append(
+			{
+				"key": key,
+				"label": label,
+				"status": status,
+				"ss_coil": match.name,
+				"order_status": match.order_status,
+			}
+		)
+	return checklist
+
+
 def get_ss_coil_detail_dashboard(ss_coil_name):
 	if not frappe.db.exists("SS Coil", ss_coil_name):
 		frappe.throw(f"SS Coil {ss_coil_name} not found")
@@ -2614,6 +2675,7 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 		"current_process": _label_for_process(doc.operation),
 		"next_process": _first_unique([row.get("next_process") for row in output_rows]) or "",
 	}
+	process_checklist = _build_ss_coil_process_checklist(doc, so_item)
 
 	return {
 		"name": doc.name,
@@ -2626,6 +2688,7 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 		"order_status": doc.order_status,
 		"remarks": doc.remarks,
 		"status_flow": status_flow,
+		"process_checklist": process_checklist,
 		"so_item": so_item.as_dict() if so_item else {},
 		"input_rows": input_rows,
 		"output_rows": output_rows,

@@ -1495,6 +1495,25 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 	total_pieces = sum(max(0, cint(getattr(row, "strip", 0))) for row in cutting_rows)
 	target_fields = _get_coil_output_target_fields()
 
+	def resolve_parent_tag_base():
+		# Normally input_row.tag_no is the parent tag every output row's
+		# child tag is derived from. If that field is blank (e.g. cleared
+		# after the fact) but a sibling output row already has a tag, infer
+		# the same base from it instead of leaving new rows untagged.
+		parent_tag = getattr(input_row, "tag_no", None)
+		if parent_tag:
+			return parent_tag
+		for existing_row in existing_rows:
+			existing_tag = getattr(existing_row, "tag_no", None)
+			if not existing_tag:
+				continue
+			match = re.match(r"^(.*)-\d{3}$", str(existing_tag).strip())
+			if match:
+				return match.group(1)
+		return None
+
+	parent_tag_base = resolve_parent_tag_base()
+
 	def apply_values(row, existing_row=None, sequence_number=1, output_width=None, pieces_count=1):
 		estimated_qty = flt(getattr(input_row, "estimated_qty", 0)) / pieces_count if pieces_count else flt(getattr(input_row, "estimated_qty", 0))
 		estimated_wt = flt(getattr(input_row, "estimated_wt", 0)) / pieces_count if pieces_count else flt(getattr(input_row, "estimated_wt", 0))
@@ -1502,7 +1521,7 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 			if fieldname == "class":
 				row.set("class", getattr(input_row, "class", None))
 			elif fieldname == "tag_no":
-				row.tag_no = getattr(existing_row, "tag_no", None) or _build_child_tag(getattr(input_row, "tag_no", None), sequence_number)
+				row.tag_no = getattr(existing_row, "tag_no", None) or _build_child_tag(parent_tag_base, sequence_number)
 			elif fieldname == "estimated_qty":
 				row.estimated_qty = estimated_qty
 			elif fieldname == "actual_qty":
@@ -2158,7 +2177,15 @@ def create_next_ss_coil_entry(source_name):
 			break
 
 	if not next_process:
-		frappe.throw("No next process found in Job Output.")
+		# Not an error: this item's configured process chain (so_item's
+		# slitter/leveler/reshearing flags) simply ends at this document's
+		# operation - e.g. only Slitter+Leveler are required, so completing
+		# Leveler has nothing further to advance to. Both the "Create Next
+		# Process" button (only shown when getNextProcessLabelFromOutputs
+		# finds something) and the auto-trigger after "Complete" already
+		# guard against calling this with nothing to do, but return
+		# gracefully here too for any other caller.
+		return {"created_docs": [], "skipped_docs": [], "count": 0, "skipped_count": 0, "no_next_process": True}
 
 	next_operation = _resolve_operation_name(next_process)
 	created_docs = []

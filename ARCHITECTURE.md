@@ -385,6 +385,41 @@ a deleted field.
     left accent bar that turns green while actively counting) instead of
     the earlier neon-glow terminal look, which read as gamer-styling
     rather than a professional shop-floor dashboard.
+  - Renamed the "Item Demand" row label to **"Processes"**.
+  - The Status row's "Not Started" step no longer renders as checked-off
+    green once passed (a checkmarked "Not Started" read as confusing/
+    contradictory) - it now shows as a muted strikethrough "passed" state
+    instead, via a `neverDoneIndexes` option on `build_ss_coil_stepper_html`.
+
+### `create_next_ss_coil_entry` no longer hard-errors on a normal end state
+
+If an item's configured chain ends at the current stage (e.g. only
+Slitter+Leveler are required - Reshearing was never enabled on the Sales
+Order Item), completing the last stage has nothing to advance to. That's a
+normal, valid state, but the endpoint used `frappe.throw("No next process
+found in Job Output.")`, which surfaced as a hard error to the user
+immediately after successfully completing a stage - confirmed by triggering
+it against a real document. Fixed two ways:
+- Server: returns `{"created_docs": [], "skipped_docs": [], "count": 0,
+  "skipped_count": 0, "no_next_process": True}` instead of throwing.
+- Client: `run_ss_coil_status_action`'s "Completed" branch now checks
+  `getNextProcessLabelFromOutputs(frm)` before calling
+  `createNextProcessEntries` at all, so the no-op case doesn't even round-trip.
+
+### Child tag generation now survives a blank input tag
+
+`_sync_job_output_rows_from_cutting_detail` derives each output row's tag
+from `input_coil[0].tag_no` (the "parent tag"). If that field is blank
+(confirmed on a real document - the input tag had been cleared at some
+point after earlier output rows were already tagged), any output row
+*without* a pre-existing tag of its own got left permanently blank, since
+`_build_child_tag` returns `""` for a blank parent and there was no
+fallback. `resolve_parent_tag_base()` now falls back to inferring the same
+parent base from any sibling output row that still has a tag (stripping its
+trailing `-NNN` suffix via regex), so new rows keep getting properly
+numbered child tags even when the source input tag is gone. Verified fixing
+a real document: two previously-blank output row tags were correctly
+backfilled as `...-002`/`...-003` after a resave.
 
   `add_process_action_buttons` now only adds the "Create Next Process"
   button; `ensure_ss_coil_process_control`/`save_ss_coil_process_state`/

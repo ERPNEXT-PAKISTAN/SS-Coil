@@ -1348,7 +1348,13 @@ function run_ss_coil_status_action(frm, statusValue) {
 		const result = save_ss_coil_process_state(frm, "Completed");
 		if (result) {
 			result.then(() => {
-				createNextProcessEntries(frm, true);
+				// Only attempt to create the next stage if this item's
+				// configured chain actually has one - e.g. an item requiring
+				// only Slitter+Leveler has nothing after Leveler, and that's
+				// a normal end state, not something to call the server about.
+				if (getNextProcessLabelFromOutputs(frm)) {
+					createNextProcessEntries(frm, true);
+				}
 			});
 		}
 		return;
@@ -1906,6 +1912,7 @@ function render_ss_coil_flow_banner(frm, data) {
 	// action that means "go back to not started".
 	const statusHtml = build_ss_coil_stepper_html(SS_COIL_STATUS_STEPS, statusIndex, {
 		clickableFrom: 1,
+		neverDoneIndexes: [0],
 	});
 
 	const processControlOn = Boolean(frm.doc.process_control_enabled);
@@ -1956,7 +1963,7 @@ function render_ss_coil_flow_banner(frm, data) {
 			${statusHtml}
 		</div>
 		<div class="ss-coil-flow-row">
-			<span class="ss-coil-flow-label">${__("Item Demand")}</span>
+			<span class="ss-coil-flow-label">${__("Processes")}</span>
 			<div class="ss-coil-checklist">${checklistHtml}</div>
 		</div>
 	`);
@@ -1991,9 +1998,15 @@ function render_ss_coil_flow_banner(frm, data) {
 
 function build_ss_coil_stepper_html(labels, currentIndex, options = {}) {
 	const clickableFrom = options.clickableFrom === undefined ? Infinity : options.clickableFrom;
+	// Some steps don't make sense as "done" even once passed - e.g. "Not
+	// Started" isn't a milestone you "complete", it's just where you began.
+	// Showing "checkmark Not Started" in green read as confusing/wrong.
+	// Render those as a muted "passed" state instead of a checked-done one.
+	const neverDone = options.neverDoneIndexes || [];
 	return `<div class="ss-coil-stepper">${labels
 		.map((label, idx) => {
-			const state = idx < currentIndex ? "done" : idx === currentIndex ? "current" : "upcoming";
+			const rawState = idx < currentIndex ? "done" : idx === currentIndex ? "current" : "upcoming";
+			const state = rawState === "done" && neverDone.includes(idx) ? "passed" : rawState;
 			const connector =
 				idx > 0
 					? `<span class="ss-coil-stepper-connector${idx <= currentIndex ? " ss-coil-stepper-connector-done" : ""}"></span>`
@@ -2210,6 +2223,13 @@ function inject_ss_coil_flow_styles() {
 		.ss-coil-stepper-step.ss-coil-stepper-upcoming {
 			background: #f8fafc;
 			color: #94a3b8;
+		}
+		.ss-coil-stepper-step.ss-coil-stepper-passed {
+			background: #f1f5f9;
+			border-color: #cbd5e1;
+			color: #94a3b8;
+			text-decoration: line-through;
+			text-decoration-color: #cbd5e1;
 		}
 		.ss-coil-stepper-step.ss-coil-stepper-clickable {
 			cursor: pointer;

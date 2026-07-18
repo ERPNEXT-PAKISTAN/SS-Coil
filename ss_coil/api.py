@@ -2433,7 +2433,6 @@ def _build_tag_hierarchy(root_tag_no):
 	return enrich(root_node, 0)
 
 
-@frappe.whitelist()
 def _build_ss_coil_process_checklist(doc, so_item):
 	"""Per-item process demand vs. actual completion: which of the processes
 	the customer's Sales Order Item asked for (so_item.slitter/leveler/
@@ -2495,6 +2494,7 @@ def _build_ss_coil_process_checklist(doc, so_item):
 	return checklist
 
 
+@frappe.whitelist()
 def get_ss_coil_detail_dashboard(ss_coil_name):
 	if not frappe.db.exists("SS Coil", ss_coil_name):
 		frappe.throw(f"SS Coil {ss_coil_name} not found")

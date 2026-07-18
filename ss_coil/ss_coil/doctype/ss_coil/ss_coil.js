@@ -1559,13 +1559,11 @@ function formatCounterDuration(totalSeconds) {
 // clock readout lives in the flow banner instead (render_ss_coil_flow_banner)
 // so it's visible at the top of the form rather than buried further down.
 function renderElapsedTimeField(frm, value) {
+	const $card = $(frm.wrapper).find(".ss-coil-flow-clock-card");
 	const $clock = $(frm.wrapper).find(".ss-coil-flow-clock");
 	if (!$clock.length) return;
-	const isDone = ["Completed", "Closed"].includes(frm.doc.order_status);
-	$clock.css({
-		color: isDone ? "#f8fafc" : "#67e8f9",
-		"text-shadow": isDone ? "0 0 8px rgba(248,250,252,.15)" : "0 0 10px rgba(103,232,249,.4)",
-	});
+	const isRunning = ["In Process", "Partially Completed"].includes(frm.doc.order_status) && !frm.doc.completed_on;
+	$card.toggleClass("ss-coil-flow-clock-running", isRunning);
 	$clock.text(value || "0d 00h 00m 00s");
 }
 
@@ -1924,7 +1922,7 @@ function render_ss_coil_flow_banner(frm, data) {
 	const checklist = (data && data.process_checklist) || frm.__ss_coil_process_checklist || [];
 	frm.__ss_coil_process_checklist = checklist;
 	const checklistHtml = checklist.length
-		? checklist.map((item) => build_ss_coil_checklist_chip_html(item)).join("")
+		? build_ss_coil_checklist_flow_html(checklist)
 		: `<span class="ss-coil-flow-empty">${__("No customer-required processes configured on this item")}</span>`;
 
 	let $banner = $(frm.wrapper).find(".ss-coil-flow-banner");
@@ -1942,7 +1940,10 @@ function render_ss_coil_flow_banner(frm, data) {
 		<div class="ss-coil-flow-header">
 			<span class="ss-coil-flow-title">${__("Process Flow")}</span>
 			<div class="ss-coil-flow-header-right">
-				<span class="ss-coil-flow-clock">00d 00h 00m 00s</span>
+				<div class="ss-coil-flow-clock-card">
+					<span class="ss-coil-flow-clock-label">${__("Elapsed Time")}</span>
+					<span class="ss-coil-flow-clock">00d 00h 00m 00s</span>
+				</div>
 				${controlToggleHtml}
 			</div>
 		</div>
@@ -1976,7 +1977,7 @@ function render_ss_coil_flow_banner(frm, data) {
 		});
 
 	$banner
-		.find(".ss-coil-checklist-chip[data-ss-coil]")
+		.find(".ss-coil-checklist-flow-step[data-ss-coil]")
 		.off("click.ss_coil_flow")
 		.on("click.ss_coil_flow", function () {
 			const name = $(this).attr("data-ss-coil");
@@ -2011,7 +2012,14 @@ function build_ss_coil_stepper_html(labels, currentIndex, options = {}) {
 		.join("")}</div>`;
 }
 
-function build_ss_coil_checklist_chip_html(item) {
+// Connected flow view (steps + connectors, like the Process/Status rows)
+// for the item's full required-process chain, so a multi-process item
+// (e.g. Slitter -> Leveler -> Reshearing) reads as one sequence: which
+// stage is done, which is current, which is still pending, and - via the
+// connector between two steps - what came before/after. Each step links to
+// its actual SS Coil document (across the whole sales_order_item, not just
+// this one) when one exists yet.
+function build_ss_coil_checklist_flow_html(checklist) {
 	const stateClassMap = {
 		completed: "ss-coil-checklist-done",
 		current: "ss-coil-checklist-current",
@@ -2027,18 +2035,34 @@ function build_ss_coil_checklist_chip_html(item) {
 	const statusLabelMap = {
 		completed: __("Completed"),
 		current: __("Current"),
-		in_progress: __(item.order_status || "In Process"),
 		pending: __("Pending"),
 	};
-	const cls = stateClassMap[item.status] || "ss-coil-checklist-pending";
-	const mark = markMap[item.status] || "&#9675;";
-	const statusLabel = statusLabelMap[item.status] || __("Pending");
-	const clickAttr = item.ss_coil ? ` data-ss-coil="${frappe.utils.escape_html(item.ss_coil)}"` : "";
-	const refText = item.ss_coil ? ` &middot; ${frappe.utils.escape_html(item.ss_coil)}` : "";
 
-	return `<span class="ss-coil-checklist-chip ${cls}${item.ss_coil ? " ss-coil-checklist-clickable" : ""}"${clickAttr}>${mark} ${frappe.utils.escape_html(
-		item.label
-	)}: ${frappe.utils.escape_html(statusLabel)}${refText}</span>`;
+	return `<div class="ss-coil-stepper">${checklist
+		.map((item, idx) => {
+			const cls = stateClassMap[item.status] || "ss-coil-checklist-pending";
+			const mark = markMap[item.status] || "&#9675;";
+			const statusLabel =
+				item.status === "in_progress" ? __(item.order_status || "In Process") : statusLabelMap[item.status] || __("Pending");
+			const connectorDone = idx > 0 && checklist[idx - 1].status === "completed";
+			const connector =
+				idx > 0
+					? `<span class="ss-coil-stepper-connector${connectorDone ? " ss-coil-stepper-connector-done" : ""}"></span>`
+					: "";
+			const clickAttr = item.ss_coil ? ` data-ss-coil="${frappe.utils.escape_html(item.ss_coil)}"` : "";
+			const refHtml = item.ss_coil
+				? `<span class="ss-coil-checklist-flow-ref">${frappe.utils.escape_html(item.ss_coil)}</span>`
+				: "";
+
+			return `${connector}<span class="ss-coil-checklist-flow-step ${cls}${
+				item.ss_coil ? " ss-coil-checklist-clickable" : ""
+			}"${clickAttr} title="${item.ss_coil ? __("Open {0}", [item.ss_coil]) : ""}">
+				<span class="ss-coil-checklist-flow-label">${mark} ${frappe.utils.escape_html(item.label)}</span>
+				<span class="ss-coil-checklist-flow-status">${frappe.utils.escape_html(statusLabel)}</span>
+				${refHtml}
+			</span>`;
+		})
+		.join("")}</div>`;
 }
 
 function inject_ss_coil_flow_styles() {
@@ -2077,20 +2101,35 @@ function inject_ss_coil_flow_styles() {
 			align-items: center;
 			gap: 10px;
 		}
-		.ss-coil-flow-clock {
-			display: inline-block;
-			background: linear-gradient(180deg, #020617, #0f172a);
-			border: 1px solid #1e293b;
+		.ss-coil-flow-clock-card {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 2px;
+			background: #1e293b;
+			border: 1px solid #334155;
 			border-radius: 8px;
-			box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.08), 0 6px 16px rgba(15, 23, 42, 0.18);
-			color: #67e8f9;
-			font-family: "Courier New", "SFMono-Regular", Consolas, monospace;
-			font-size: 13px;
-			font-weight: 800;
-			letter-spacing: 0.1em;
-			text-align: center;
-			text-shadow: 0 0 10px rgba(103, 232, 249, 0.4);
-			padding: 6px 12px;
+			padding: 5px 16px;
+			min-width: 140px;
+			border-left: 3px solid #64748b;
+			transition: border-left-color 0.2s ease;
+		}
+		.ss-coil-flow-clock-card.ss-coil-flow-clock-running {
+			border-left-color: #34d399;
+		}
+		.ss-coil-flow-clock-label {
+			font-size: 9px;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+			color: #94a3b8;
+		}
+		.ss-coil-flow-clock {
+			font-family: "SFMono-Regular", Consolas, "Courier New", monospace;
+			font-size: 15px;
+			font-weight: 700;
+			letter-spacing: 0.05em;
+			color: #f1f5f9;
 		}
 		.ss-coil-flow-control-toggle {
 			display: inline-flex;
@@ -2189,45 +2228,58 @@ function inject_ss_coil_flow_styles() {
 		.ss-coil-stepper-connector.ss-coil-stepper-connector-done {
 			background: #86e0ab;
 		}
-		.ss-coil-checklist {
+		.ss-coil-checklist-flow-step {
 			display: flex;
-			flex-wrap: wrap;
-			gap: 6px;
-			row-gap: 6px;
-		}
-		.ss-coil-checklist-chip {
-			font-size: 11px;
-			font-weight: 600;
-			padding: 3px 10px;
-			border-radius: 999px;
+			flex-direction: column;
+			align-items: center;
+			gap: 1px;
+			padding: 5px 12px;
+			border-radius: 10px;
 			border: 1px solid #cbd5e1;
 			background: #fff;
 			color: #64748b;
+			min-width: 84px;
+			text-align: center;
+		}
+		.ss-coil-checklist-flow-label {
+			font-size: 11px;
+			font-weight: 700;
 			white-space: nowrap;
 		}
-		.ss-coil-checklist-chip.ss-coil-checklist-done {
+		.ss-coil-checklist-flow-status {
+			font-size: 9px;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.03em;
+			opacity: 0.85;
+		}
+		.ss-coil-checklist-flow-ref {
+			font-size: 9px;
+			opacity: 0.7;
+		}
+		.ss-coil-checklist-flow-step.ss-coil-checklist-done {
 			background: #eafaf0;
 			border-color: #86e0ab;
 			color: #1c6b3f;
 		}
-		.ss-coil-checklist-chip.ss-coil-checklist-current {
+		.ss-coil-checklist-flow-step.ss-coil-checklist-current {
 			background: #2467d6;
 			border-color: #2467d6;
 			color: #fff;
 		}
-		.ss-coil-checklist-chip.ss-coil-checklist-progress {
+		.ss-coil-checklist-flow-step.ss-coil-checklist-progress {
 			background: #fff7e6;
 			border-color: #f5c26a;
 			color: #8a4b08;
 		}
-		.ss-coil-checklist-chip.ss-coil-checklist-pending {
+		.ss-coil-checklist-flow-step.ss-coil-checklist-pending {
 			background: #f8fafc;
 			color: #94a3b8;
 		}
-		.ss-coil-checklist-chip.ss-coil-checklist-clickable {
+		.ss-coil-checklist-flow-step.ss-coil-checklist-clickable {
 			cursor: pointer;
 		}
-		.ss-coil-checklist-chip.ss-coil-checklist-clickable:hover {
+		.ss-coil-checklist-flow-step.ss-coil-checklist-clickable:hover {
 			box-shadow: 0 0 0 2px rgba(36, 103, 214, 0.15);
 		}
 		.ss-coil-flow-empty {

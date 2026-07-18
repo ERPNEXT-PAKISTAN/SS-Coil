@@ -371,9 +371,20 @@ a deleted field.
     (`run_ss_coil_status_action` → `save_ss_coil_process_state`, still gated
     by `ensure_ss_coil_process_control`). "Not Started" isn't clickable -
     there's no defined action for reverting to it.
-  - **Item Demand row**: per-item checklist chips from the server's
-    `process_checklist` (see below) — click a chip with a linked SS Coil name
-    to jump straight to that document.
+  - **Item Demand row**: renders the server's `process_checklist` (see
+    below) as a *connected* flow (`build_ss_coil_checklist_flow_html`),
+    reusing the same step+connector visual as the Process/Status rows -
+    for a multi-process item this reads as one sequence
+    (Slitter → Leveler → Reshearing) with each step's own state
+    (done/current/in-progress/pending) and a connector between two steps
+    lit up once the earlier one is done, so "what's previous/next" is
+    visually obvious, not just a flat list. Steps with a linked SS Coil
+    document are clickable and jump straight to it.
+  - **Elapsed-time clock**: redesigned as a small stat card (dark solid
+    background, muted "ELAPSED TIME" label above the monospace digits, a
+    left accent bar that turns green while actively counting) instead of
+    the earlier neon-glow terminal look, which read as gamer-styling
+    rather than a professional shop-floor dashboard.
 
   `add_process_action_buttons` now only adds the "Create Next Process"
   button; `ensure_ss_coil_process_control`/`save_ss_coil_process_state`/

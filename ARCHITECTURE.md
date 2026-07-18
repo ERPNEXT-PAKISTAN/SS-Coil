@@ -347,6 +347,19 @@ a deleted field.
 
 ### Further improvements (2026-07)
 
+- **Delivery/invoice details missed rows fulfilled from a different tag
+  lineage.** `delivery_details`/`invoice_details` in
+  `get_ss_coil_detail_dashboard` only matched `Delivery Note Item`/`Sales
+  Invoice Item` rows by exact `custom_tag_no in (this doc's input+output
+  tags)`. A Sales Order Item can be fulfilled by a *different* physical tag
+  than the one this particular SS Coil document produced (confirmed on a
+  real case: SS Coil `JS26-.00004.-SL`'s own tags were
+  `SSCC-0455-000/001/002/003`, but the Delivery Note/Sales Invoice that
+  fulfilled its Sales Order Item carried tag `SSCC-05541-000` - a completely
+  separate lineage, linked only via the shared `so_detail`). The Sales
+  Order's own dashboard didn't have this problem because it isn't filtering
+  by tag at all. Fixed by also matching `child.so_detail = doc.sales_order_item`
+  (`OR`'d with the existing tag match) in both queries.
 - **Dashboard fetched twice per render.** `refresh` and the `order_status`
   change handler both used to call `render_ss_coil_dashboard(frm)` *and*
   `render_ss_coil_diagrams(frm)` separately, each independently hitting

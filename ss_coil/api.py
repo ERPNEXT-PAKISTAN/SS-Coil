@@ -2514,8 +2514,19 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 			as_dict=True,
 		)
 
+	# Match by tag_no (this SS Coil's own input/output tags) OR by the linked
+	# Sales Order Item (so_detail). A delivered/invoiced row can carry a
+	# completely unrelated tag number if it fulfilled this SO line from a
+	# different stock source/lineage - tag_no alone misses that case, even
+	# though it's clearly "this document's" delivery from the Sales Order's
+	# point of view. This mirrors why the Sales Order's own dashboard shows
+	# these rows correctly while this one didn't: it isn't filtering by tag
+	# at all, just by Sales Order Item.
+	tag_filter_values = tuple(all_tags) if all_tags else ("",)
+	sales_order_item = doc.sales_order_item or ""
+
 	delivery_details = []
-	if all_tags and _has_field("Delivery Note Item", "custom_tag_no"):
+	if (all_tags or sales_order_item) and _has_field("Delivery Note Item", "custom_tag_no"):
 		delivery_details = frappe.db.sql(
 			"""
 			select
@@ -2530,14 +2541,15 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 			from `tabDelivery Note Item` child
 			inner join `tabDelivery Note` parent on parent.name = child.parent
 			where child.custom_tag_no in %(tags)s
+				or (%(sales_order_item)s != '' and child.so_detail = %(sales_order_item)s)
 			order by parent.posting_date desc, child.idx asc
 			""",
-			{"tags": tuple(all_tags)},
+			{"tags": tag_filter_values, "sales_order_item": sales_order_item},
 			as_dict=True,
 		)
 
 	invoice_details = []
-	if all_tags and _has_field("Sales Invoice Item", "custom_tag_no"):
+	if (all_tags or sales_order_item) and _has_field("Sales Invoice Item", "custom_tag_no"):
 		invoice_details = frappe.db.sql(
 			"""
 			select
@@ -2553,9 +2565,10 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 			from `tabSales Invoice Item` child
 			inner join `tabSales Invoice` parent on parent.name = child.parent
 			where child.custom_tag_no in %(tags)s
+				or (%(sales_order_item)s != '' and child.so_detail = %(sales_order_item)s)
 			order by parent.posting_date desc, child.idx asc
 			""",
-			{"tags": tuple(all_tags)},
+			{"tags": tag_filter_values, "sales_order_item": sales_order_item},
 			as_dict=True,
 		)
 

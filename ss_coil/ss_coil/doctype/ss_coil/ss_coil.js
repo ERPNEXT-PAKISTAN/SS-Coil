@@ -38,8 +38,7 @@ frappe.ui.form.on("SS Coil", {
 		rebuild_job_output_if_needed(frm);
 		update_elapsed_time_display(frm);
 		render_job_output_qr_fields(frm);
-		render_ss_coil_dashboard(frm);
-		render_ss_coil_diagrams(frm);
+		load_and_render_ss_coil_dashboards(frm);
 		sync_linked_stock_entry_field(frm);
 		apply_sales_order_item_link_title(frm);
 	},
@@ -226,20 +225,37 @@ frappe.ui.form.on("SS Coil", {
 			frm.set_value("elapsed_time", getElapsedTimeValue(frm));
 		}
 		update_elapsed_time_display(frm);
-		render_ss_coil_dashboard(frm);
-		render_ss_coil_diagrams(frm);
+		load_and_render_ss_coil_dashboards(frm);
 	},
 });
 
-function render_ss_coil_dashboard(frm) {
-	const field = frm.fields_dict.order_status_report;
-	if (!field) return;
+function ss_coil_dashboard_placeholder_html(message) {
+	return `<div style="padding:18px;border:1px dashed #c9d7ea;border-radius:12px;background:#f8fbff;color:#486581;">
+		${message}
+	</div>`;
+}
+
+// The "Order Status Report" tab and the "Diagrams" tab both render from the
+// exact same get_ss_coil_detail_dashboard payload. They used to each fetch
+// it independently (2 server round-trips per refresh/status-change), which
+// only ever wasted a call since neither field can render without the other
+// having fired the same request. Fetch once here and hand the same data to
+// both renderers.
+function load_and_render_ss_coil_dashboards(frm) {
+	const report_field = frm.fields_dict.order_status_report;
+	const diagrams_field = frm.fields_dict.daigrams_view;
+
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
-		field.$wrapper && field.$wrapper.html(
-			`<div style="padding:18px;border:1px dashed #c9d7ea;border-radius:12px;background:#f8fbff;color:#486581;">
-				Save the SS Coil document once to load its live dashboard.
-			</div>`,
-		);
+		if (report_field && report_field.$wrapper) {
+			report_field.$wrapper.html(
+				ss_coil_dashboard_placeholder_html("Save the SS Coil document once to load its live dashboard.")
+			);
+		}
+		if (diagrams_field && diagrams_field.$wrapper) {
+			diagrams_field.$wrapper.html(
+				ss_coil_dashboard_placeholder_html("Save the SS Coil document once to load its live diagrams.")
+			);
+		}
 		return;
 	}
 
@@ -248,11 +264,17 @@ function render_ss_coil_dashboard(frm) {
 		args: { ss_coil_name: frm.doc.name },
 		callback: function (r) {
 			const data = r.message || {};
-			if (!field.$wrapper) return;
-			field.$wrapper.html(buildSSCoilDashboardHtml(data));
-			bindSSCoilDashboardActions(frm, field.$wrapper, data);
+			render_ss_coil_dashboard(frm, data);
+			render_ss_coil_diagrams(frm, data);
 		},
 	});
+}
+
+function render_ss_coil_dashboard(frm, data) {
+	const field = frm.fields_dict.order_status_report;
+	if (!field || !field.$wrapper) return;
+	field.$wrapper.html(buildSSCoilDashboardHtml(data));
+	bindSSCoilDashboardActions(frm, field.$wrapper, data);
 }
 
 function set_sales_order_item_link_title(name, title) {
@@ -315,28 +337,11 @@ function sync_linked_stock_entry_field(frm, skipAutofill = false) {
 	});
 }
 
-function render_ss_coil_diagrams(frm) {
+function render_ss_coil_diagrams(frm, data) {
 	const field = frm.fields_dict.daigrams_view;
-	if (!field) return;
-	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
-		field.$wrapper && field.$wrapper.html(
-			`<div style="padding:18px;border:1px dashed #c9d7ea;border-radius:12px;background:#f8fbff;color:#486581;">
-				Save the SS Coil document once to load its live diagrams.
-			</div>`,
-		);
-		return;
-	}
-
-	frappe.call({
-		method: "ss_coil.api.get_ss_coil_detail_dashboard",
-		args: { ss_coil_name: frm.doc.name },
-		callback: function (r) {
-			const data = r.message || {};
-			if (!field.$wrapper) return;
-			field.$wrapper.html(buildSSCoilDiagramsHtml(data));
-			bindSSCoilDiagramActions(frm, field.$wrapper, data);
-		},
-	});
+	if (!field || !field.$wrapper) return;
+	field.$wrapper.html(buildSSCoilDiagramsHtml(data));
+	bindSSCoilDiagramActions(frm, field.$wrapper, data);
 }
 
 function buildSSCoilDashboardHtml(data) {
@@ -1258,6 +1263,31 @@ function add_ss_coil_tag_buttons(frm) {
 			openOutputTags(true);
 		}, __("Tags"));
 	}
+
+	frm.add_custom_button(__("Repair Tags"), function () {
+		frappe.confirm(
+			__(
+				"Re-derive and re-register this document's output tags from its parent tag lineage? Use this if a tag number looks wrong or missing from Tag Registry."
+			),
+			function () {
+				frappe.call({
+					method: "ss_coil.api.sync_ss_coil_output_tags",
+					args: { ss_coil: frm.doc.name },
+					freeze: true,
+					freeze_message: __("Repairing tags..."),
+					callback(r) {
+						const changed = (r.message || {}).count || 0;
+						if (changed) {
+							frappe.show_alert({ message: __("Tags repaired, reloading..."), indicator: "green" });
+							frm.reload_doc();
+						} else {
+							frappe.show_alert({ message: __("No tag changes were needed."), indicator: "blue" });
+						}
+					},
+				});
+			}
+		);
+	}, __("Tags"));
 }
 
 function add_process_action_buttons(frm) {

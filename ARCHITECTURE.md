@@ -345,6 +345,45 @@ The `field_order` Property Setter for this doctype also had a stray
 `ss_coil.json` (removed, both live and in the fixture file) — leftover from
 a deleted field.
 
+### Further improvements (2026-07)
+
+- **Dashboard fetched twice per render.** `refresh` and the `order_status`
+  change handler both used to call `render_ss_coil_dashboard(frm)` *and*
+  `render_ss_coil_diagrams(frm)` separately, each independently hitting
+  `get_ss_coil_detail_dashboard` (several joined queries + a recursive tag
+  walk) even though both tabs render from the identical payload. Consolidated
+  into `load_and_render_ss_coil_dashboards(frm)`, which fetches once and
+  hands the same `data` to both `render_ss_coil_dashboard(frm, data)` and
+  `render_ss_coil_diagrams(frm, data)` — one server round-trip instead of two.
+- **"Repair Tags" button added** (Tags button group) — wires the previously
+  console-only `sync_ss_coil_output_tags` to the form, scoped to just the
+  current document (`ss_coil: frm.doc.name`), with a confirm prompt and a
+  reload on success.
+- **Naming series now reflects the actual Operation.** `ss_coil.py`'s
+  `autoname()` picks a suffix from `SS_COIL_OPERATION_NAME_SUFFIXES`
+  (`Slitter→SL`, `Leveler→LV`, `Reshearing→RS`, unmapped→`SL`) instead of the
+  JSON's fixed `-SL` for every document. Implemented via `_format_autoname`
+  (not `make_autoname` directly — the latter rejects the `{YY}`/`{#####}`
+  brace syntax outside the `"format:"` prefix path, confirmed by testing).
+  The counter is keyed by the literal prefix *before* `#####` (`"JS26-"`,
+  once `{YY}` resolves) — the suffix doesn't factor into the series key, so
+  all three operations continue sharing one counter; nothing forked or reset.
+- **Permissions**: added `Stock User` (read/write/create) and `Stock Manager`
+  (+ delete) roles alongside the existing `System Manager`-only permission —
+  previously only System Managers could open this doctype at all.
+- **Lightweight edit lock after Completed/Closed.** `ss_coil.py`'s
+  `validate()` blocks further saves once `order_status` is `Completed` or
+  `Closed`, unless the user is a System Manager or has `process_control_enabled`
+  checked (reusing the existing safety-toggle semantics rather than adding a
+  new one). Deliberately **not** a full submittable/docstatus workflow — the
+  Start/Partial/Complete/Close buttons already model the lifecycle via
+  `order_status`, and going submittable would mean also reworking permissions,
+  `amended_from` handling, and the existing button flow. The check compares
+  against the value **already in the DB** (`frappe.db.get_value`, not the
+  in-memory doc), so the save that transitions a document *into*
+  Completed/Closed is never blocked by its own transition — only saves made
+  *after* it's already in that state.
+
 ## Sales Order raw-material planning
 
 Separate from the tag/batch system: `get_available_raw_material_tags`,

@@ -452,7 +452,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Order Status",
-   "options": "In Process\nNot Started\nCompleted\nPartially Completed\nClosed"
+   "options": "Not Started\nIn Process\nPartially Completed\nStopped\nCompleted\nClosed"
   },
   {
    "fieldname": "dashboard_tab",

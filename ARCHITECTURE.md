@@ -421,6 +421,45 @@ numbered child tags even when the source input tag is gone. Verified fixing
 a real document: two previously-blank output row tags were correctly
 backfilled as `...-002`/`...-003` after a resave.
 
+### Duplicate-entry guard + "Stopped"/Resume (2026-07-19)
+
+Two related gaps: (1) nothing stopped the same Sales Order Item + Operation
+from being started twice - either by hand (picking the same Sales Order
+Item again on a new SS Coil) or in principle by re-running the chain; (2) a
+process abandoned mid-way (any reason, not completed) had no state of its
+own - it either stayed "In Process" forever or someone force-closed it,
+after which the completed-lock made it awkward to pick back up.
+
+- `order_status` gained a `"Stopped"` option (between `Partially Completed`
+  and `Completed`). It is **not** in `SS_COIL_LOCKED_STATUSES`, so a stopped
+  document stays editable like any in-progress one - no unlock step needed
+  to keep working on it.
+- `SSCoil._block_duplicate_active_entry()` (new, in `ss_coil.py`, called
+  from `validate()`) throws on **insert** of a new SS Coil if another SS
+  Coil already exists for the same `sales_order_item` + `operation` +
+  `input_coil[0].tag_no` whose `order_status` isn't `Completed`/`Closed` -
+  `Stopped` counts as still-active on purpose, so the fix is to reopen and
+  Resume the existing entry, not spawn a second one. This is a manual-path
+  safety net; `create_next_ss_coil_entry`'s existing
+  `_find_existing_next_process_doc` skip (not error) already prevents the
+  chain-creation path from duplicating.
+- Flow banner (`ss_coil.js`): the Status row grows a **Stop** button
+  whenever `order_status` is `In Process`/`Partially Completed` (sets
+  `order_status = "Stopped"`, same `process_control_enabled` gate as every
+  other status action). Once `Stopped`, the stepper freezes at the
+  progress it had just before stopping (derived from `started_on`, since
+  `Stopped` isn't itself a position in the linear
+  `SS_COIL_STATUS_STEPS` array), a red "STOPPED" badge shows next to it,
+  and stepper clicks are disabled (`clickableFrom: Infinity`) until
+  **Resume** is used, which sets `order_status` back to `In Process` (or
+  `Not Started` if it was never actually started) and continues normally
+  from there.
+- Verified in `bench console` against a real document: duplicate-insert
+  attempts are blocked (either by this new check or by the existing tag
+  registry conflict, depending on which fires first), and a full
+  Stopped → Resume round trip correctly flips `order_status` both ways
+  before the document was restored to its original status.
+
   `add_process_action_buttons` now only adds the "Create Next Process"
   button; `ensure_ss_coil_process_control`/`save_ss_coil_process_state`/
   `run_ss_coil_status_action` are top-level functions (not closures inside

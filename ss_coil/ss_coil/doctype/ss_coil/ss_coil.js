@@ -1367,6 +1367,30 @@ function run_ss_coil_status_action(frm, statusValue) {
 	}
 }
 
+function run_ss_coil_stop_action(frm) {
+	// "Stopped" pauses a process that was started but isn't going to finish
+	// right now for any reason - it stays unlocked (unlike Completed/Closed)
+	// and is meant to be picked back up with Resume, not re-created from the
+	// Sales Order Item (which is blocked while an active/Stopped entry
+	// exists - see _block_duplicate_active_entry in ss_coil.py).
+	if (!ensure_ss_coil_process_control(frm, __("Stop"))) return;
+	frappe.confirm(
+		__("Stop this process? It stays unlocked and can be resumed later from here."),
+		() => {
+			frm.set_value("order_status", "Stopped");
+			frm.set_value("process_control_enabled", 0);
+			frm.save();
+		}
+	);
+}
+
+function run_ss_coil_resume_action(frm) {
+	if (!ensure_ss_coil_process_control(frm, __("Resume"))) return;
+	frm.set_value("order_status", frm.doc.started_on ? "In Process" : "Not Started");
+	frm.set_value("process_control_enabled", 0);
+	frm.save();
+}
+
 function toggle_ss_coil_process_control(frm) {
 	frm.set_value("process_control_enabled", frm.doc.process_control_enabled ? 0 : 1).then(() => frm.save());
 }
@@ -1907,13 +1931,27 @@ function render_ss_coil_flow_banner(frm, data) {
 		? build_ss_coil_stepper_html(processLabels, processIndex)
 		: `<span class="ss-coil-flow-empty">${__("No process chain configured on this item")}</span>`;
 
-	const statusIndex = SS_COIL_STATUS_STEPS.indexOf(frm.doc.order_status || "Not Started");
+	// "Stopped" is a side-branch, not a step in the linear stepper (you can
+	// stop from In Process or Partially Completed and later resume back into
+	// it) - so the stepper shows progress as of just before the stop, and a
+	// separate badge/button below communicates the stop explicitly. Clicking
+	// further ahead is disabled until Resume is used.
+	const isStopped = frm.doc.order_status === "Stopped";
+	const effectiveStatus = isStopped ? (frm.doc.started_on ? "In Process" : "Not Started") : frm.doc.order_status || "Not Started";
+	const statusIndex = SS_COIL_STATUS_STEPS.indexOf(effectiveStatus);
 	// "Not Started" (index 0) isn't a click-to-action step - there's no
 	// action that means "go back to not started".
 	const statusHtml = build_ss_coil_stepper_html(SS_COIL_STATUS_STEPS, statusIndex, {
-		clickableFrom: 1,
+		clickableFrom: isStopped ? Infinity : 1,
 		neverDoneIndexes: [0],
 	});
+	const stopResumeHtml = isStopped
+		? `<span class="ss-coil-flow-stopped-badge">${__("STOPPED")}</span><button type="button" class="ss-coil-flow-resume-btn">${__(
+				"Resume"
+		  )}</button>`
+		: ["In Process", "Partially Completed"].includes(frm.doc.order_status)
+		? `<button type="button" class="ss-coil-flow-stop-btn">${__("Stop")}</button>`
+		: "";
 
 	const processControlOn = Boolean(frm.doc.process_control_enabled);
 	const controlToggleHtml = `
@@ -1961,6 +1999,7 @@ function render_ss_coil_flow_banner(frm, data) {
 		<div class="ss-coil-flow-row">
 			<span class="ss-coil-flow-label">${__("Status")}</span>
 			${statusHtml}
+			${stopResumeHtml}
 		</div>
 		<div class="ss-coil-flow-row">
 			<span class="ss-coil-flow-label">${__("Processes")}</span>
@@ -1981,6 +2020,20 @@ function render_ss_coil_flow_banner(frm, data) {
 		.off("click.ss_coil_flow")
 		.on("click.ss_coil_flow", function () {
 			toggle_ss_coil_process_control(frm);
+		});
+
+	$banner
+		.find(".ss-coil-flow-stop-btn")
+		.off("click.ss_coil_flow")
+		.on("click.ss_coil_flow", function () {
+			run_ss_coil_stop_action(frm);
+		});
+
+	$banner
+		.find(".ss-coil-flow-resume-btn")
+		.off("click.ss_coil_flow")
+		.on("click.ss_coil_flow", function () {
+			run_ss_coil_resume_action(frm);
 		});
 
 	$banner
@@ -2177,6 +2230,42 @@ function inject_ss_coil_flow_styles() {
 			border-radius: 50%;
 			background: currentColor;
 			display: inline-block;
+		}
+		.ss-coil-flow-stop-btn, .ss-coil-flow-resume-btn {
+			margin-left: 10px;
+			padding: 5px 14px;
+			border-radius: 999px;
+			font-size: 12px;
+			font-weight: 600;
+			cursor: pointer;
+			border: 1px solid;
+		}
+		.ss-coil-flow-stop-btn {
+			background: linear-gradient(135deg, #fff7ed, #ffedd5);
+			color: #9a3412;
+			border-color: #fdba74;
+		}
+		.ss-coil-flow-stop-btn:hover {
+			box-shadow: 0 0 0 3px rgba(154, 52, 18, 0.1);
+		}
+		.ss-coil-flow-resume-btn {
+			background: linear-gradient(135deg, #eff6ff, #dbeafe);
+			color: #1e3a8a;
+			border-color: #93c5fd;
+		}
+		.ss-coil-flow-resume-btn:hover {
+			box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.1);
+		}
+		.ss-coil-flow-stopped-badge {
+			margin-left: 10px;
+			padding: 4px 10px;
+			border-radius: 999px;
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: 0.04em;
+			background: #fee2e2;
+			color: #991b1b;
+			border: 1px solid #fca5a5;
 		}
 		.ss-coil-flow-row {
 			display: flex;

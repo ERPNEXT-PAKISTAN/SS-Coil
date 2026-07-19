@@ -9,6 +9,7 @@
   "item_name",
   "dimension",
   "ref_no",
+  "mill",
   "location",
   "column_break_xhjm",
   "tag_no",
@@ -169,13 +170,18 @@
    "fieldname": "reshearing",
    "fieldtype": "Data",
    "label": "Reshearing"
+  },
+  {
+   "fieldname": "mill",
+   "fieldtype": "Data",
+   "label": "Mill"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-05 23:16:50.084287",
+ "modified": "2026-07-19 19:24:43.806069",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "Coil SO",

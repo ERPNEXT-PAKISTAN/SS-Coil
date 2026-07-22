@@ -2885,9 +2885,14 @@ def create_sales_order_from_stock_entry(source_name):
 	Copies every field that exists with the same fieldname on both doctypes
 	(parent-to-parent and Stock Entry Detail-to-Sales Order Item), so custom
 	coil fields (tag no, thickness/width/length, mill, spec, ...) carry over
-	as-is without a hand-maintained mapping list. Returns the doc for the
-	client to open via frappe.model.open_mapped_doc - nothing is inserted
-	here, the user reviews/edits and saves it themselves.
+	as-is without a hand-maintained mapping list.
+
+	If a Stock Entry Detail row has Finish Good Item set, that FG becomes the
+	Sales Order item_code and the received mother coil is linked as Raw
+	Material Item / Tag (see _apply_finish_good_to_sales_order_row).
+
+	Returns the doc for the client to open via frappe.model.open_mapped_doc -
+	nothing is inserted here; the user reviews/edits and saves it themselves.
 	"""
 	source = frappe.get_doc("Stock Entry", source_name)
 
@@ -2913,6 +2918,7 @@ def create_sales_order_from_stock_entry(source_name):
 			value = row.get(fieldname)
 			if value not in (None, ""):
 				so_row.set(fieldname, value)
+		_apply_finish_good_to_sales_order_row(so_row, row)
 		if not so_row.get("delivery_date"):
 			so_row.delivery_date = sales_order.transaction_date
 		if _has_field("Sales Order Item", "custom_source_stock_entry"):
@@ -2924,6 +2930,53 @@ def create_sales_order_from_stock_entry(source_name):
 		sales_order.custom_source_stock_entries = source.name
 
 	return sales_order
+
+
+def _apply_finish_good_to_sales_order_row(so_row, se_row):
+	"""When Stock Entry Detail has Finish Good Item, SO line is the FG and
+	the received mother coil becomes the raw-material link (item + tag).
+
+	Without Finish Good Item, behaviour stays as before: SO item_code is the
+	same received item_code from the Stock Entry row.
+	"""
+	finish_good = se_row.get("custom_finish_good_item") if _has_field(se_row.doctype, "custom_finish_good_item") else None
+	if not finish_good:
+		return
+
+	raw_item = se_row.get("item_code")
+	so_row.item_code = finish_good
+
+	item = frappe.db.get_value(
+		"Item",
+		finish_good,
+		["item_name", "stock_uom", "sales_uom"],
+		as_dict=True,
+	)
+	if item:
+		so_row.item_name = item.item_name
+		so_row.stock_uom = item.stock_uom
+		so_row.uom = item.sales_uom or item.stock_uom
+
+	if _has_field("Sales Order Item", "custom_raw_material_item") and raw_item:
+		so_row.custom_raw_material_item = raw_item
+
+	if _has_field("Sales Order Item", "custom_stock_source_type"):
+		so_row.custom_stock_source_type = STOCK_SOURCE_STOCK_ENTRY
+
+	parent_tag = se_row.get("custom_tag_no")
+	if parent_tag and _has_field("Sales Order Item", "custom_raw_material_tag_no"):
+		so_row.custom_raw_material_tag_no = parent_tag
+		# SO Item.custom_tag_no is for production child tags, not the mother coil.
+		if so_row.get("custom_tag_no") == parent_tag:
+			so_row.custom_tag_no = None
+
+	batch_no = se_row.get("batch_no") or parent_tag
+	if (
+		batch_no
+		and _has_field("Sales Order Item", "custom_raw_material_batch_no")
+		and frappe.db.exists("Batch", batch_no)
+	):
+		so_row.custom_raw_material_batch_no = batch_no
 
 
 @frappe.whitelist()
@@ -3303,7 +3356,22 @@ def setup_tag_origin_fields():
 				"insert_after": "custom_tag_no",
 				"in_list_view": 1,
 				"depends_on": "eval:parent.custom_create_tag_numbers && parent.purpose == 'Material Receipt'",
-			}
+			},
+			{
+				"fieldname": "custom_finish_good_item",
+				"label": "Finish Good Item",
+				"fieldtype": "Link",
+				"options": "Item",
+				"insert_after": "item_name",
+				"in_list_view": 1,
+				"allow_on_submit": 1,
+				"depends_on": "eval:parent.purpose == 'Material Receipt'",
+				"description": (
+					"Customer-ordered finish good (e.g. FG Slitter / FG Leveler / FG Reshearing). "
+					"When Create Sales Order runs, this becomes the Sales Order item and the "
+					"received mother coil stays linked as Raw Material Item + Tag."
+				),
+			},
 		],
 	}
 	create_custom_fields(custom_fields, update=True)

@@ -30,6 +30,7 @@ PARENT_SECTIONS = [
 
 STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"item_code",
+	"custom_finish_good_item",
 	"qty",
 	"custom_tag_no",
 	"custom_mill",

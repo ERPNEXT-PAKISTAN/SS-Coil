@@ -97,6 +97,12 @@ def _ensure_stock_entry_detail_field_order():
 		order.insert(order.index("custom_tag_no") + 1, "custom_create_tag_no")
 		changed = True
 
+	if "custom_finish_good_item" not in order:
+		anchor = "item_name" if "item_name" in order else "item_code"
+		if anchor in order:
+			order.insert(order.index(anchor) + 1, "custom_finish_good_item")
+			changed = True
+
 	process_fields = (
 		"custom_section_break_gbgwe",
 		"custom_slitter",

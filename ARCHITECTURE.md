@@ -217,6 +217,18 @@ doctypes. `customer`/`transaction_date`/`company` get explicit fallbacks
 since Stock Entry's equivalent fields use different names
 (`custom_customer`, `posting_date`).
 
+**Finish Good override** (`Stock Entry Detail.custom_finish_good_item`):
+On Material Receipt lines you receive the mother coil as `item_code`, and
+optionally set **Finish Good Item** to the FG the customer ordered
+(FG Slitter / FG Leveler / FG Reshearing, etc.). When Create Sales Order
+runs, `_apply_finish_good_to_sales_order_row` then:
+- sets Sales Order `item_code` to that Finish Good
+- sets `custom_raw_material_item` to the received mother coil
+- sets `custom_raw_material_tag_no` / batch from the SE tag
+- sets `custom_stock_source_type` to `Stock Entry`
+
+If Finish Good Item is empty, behaviour is unchanged (SO item = received item).
+
 **Gotcha**: if a future field gets added to Sales Order (or Sales Order Item)
 with the *same fieldname* as an unrelated Stock Entry field but a different
 meaning, it will silently start being copied. Check `_copyable_fieldnames`'s

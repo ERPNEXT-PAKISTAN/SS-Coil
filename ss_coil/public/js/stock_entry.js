@@ -14,11 +14,13 @@ frappe.ui.form.on("Stock Entry", {
 		add_stock_entry_tag_buttons(frm);
 		bind_live_stock_entry_dimension_events(frm);
 		toggle_stock_entry_tag_fields(frm);
+		setup_finish_good_item_query(frm);
 		(frm.doc.items || []).forEach((row) => {
 			set_stock_entry_dimension_from_values(row.doctype, row.name);
 		});
 	},
 	onload(frm) {
+		setup_finish_good_item_query(frm);
 		(frm.doc.items || []).forEach((row) => {
 			set_stock_entry_dimension_from_values(row.doctype, row.name);
 		});
@@ -38,6 +40,16 @@ frappe.ui.form.on("Stock Entry", {
 		toggle_stock_entry_tag_fields(frm);
 	},
 });
+
+function setup_finish_good_item_query(frm) {
+	frm.set_query("custom_finish_good_item", "items", () => ({
+		filters: {
+			disabled: 0,
+			is_sales_item: 1,
+			custom_ss_coil_item_type: ["in", ["Finished Good", "Semi Finished"]],
+		},
+	}));
+}
 
 frappe.ui.form.on("Stock Entry Detail", {
 	item_code(frm, cdt, cdn) {

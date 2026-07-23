@@ -29,8 +29,11 @@ frappe.ui.form.on("SS Coil", {
 	refresh(frm) {
 		frm.toggle_display("process_control_enabled", false);
 		frm.toggle_display("elapsed_time", false);
-		render_ss_coil_flow_banner(frm);
+		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
+			add_coil_detail_print_button(frm);
+		});
 		add_ss_coil_tag_buttons(frm);
+		add_ss_coil_sales_order_buttons(frm);
 		add_process_action_buttons(frm);
 		frm.set_df_property("order_status", "read_only", 1);
 		update_grand_totals(frm);
@@ -38,19 +41,17 @@ frappe.ui.form.on("SS Coil", {
 		update_remaining_width(frm);
 		update_input_coil_length(frm);
 		rebuild_job_output_if_needed(frm);
-		update_elapsed_time_display(frm);
 		render_job_output_qr_fields(frm);
-		load_and_render_ss_coil_dashboards(frm);
+		load_ss_coil_flow_and_dashboards(frm);
 		sync_linked_stock_entry_field(frm);
 		apply_sales_order_item_link_title(frm);
 	},
 	operation(frm) {
 		sync_process_preview(frm);
-		render_ss_coil_flow_banner(frm);
-		load_and_render_ss_coil_dashboards(frm);
+		load_ss_coil_flow_and_dashboards(frm);
 	},
 	process_control_enabled(frm) {
-		render_ss_coil_flow_banner(frm);
+		load_ss_coil_flow_and_dashboards(frm);
 	},
 	estimated_wt(frm) {
 		update_calc_ratio(frm);
@@ -198,7 +199,12 @@ frappe.ui.form.on("SS Coil", {
 				frm.set_value("calc_ratio_2", flt(item.custom_calc_ratio_2));
 				frm.set_value("actual_ratio", flt(item.custom_actual_ratio));
 				frm.set_value("remaining_width", flt(item.custom_remaining_width));
-				frm.set_value("order_status", item.custom_status || "");
+				// SS Coil keeps its own order_status per document. Do not copy the
+				// Sales Order Item custom_status rollup here - that reflects all
+				// coils for this line, not this document's stage.
+				if (!frm.doc.order_status) {
+					frm.set_value("order_status", "Not Started");
+				}
 
 				frm.refresh_field("so_item");
 				load_input_coil_from_sales_order_item(frm, item);
@@ -229,10 +235,79 @@ frappe.ui.form.on("SS Coil", {
 			frm.set_value("elapsed_time", getElapsedTimeValue(frm));
 		}
 		update_elapsed_time_display(frm);
-		render_ss_coil_flow_banner(frm);
-		load_and_render_ss_coil_dashboards(frm);
+		load_ss_coil_flow_and_dashboards(frm);
 	},
 });
+
+function ensure_ss_coil_status_loaded(frm) {
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		return Promise.resolve();
+	}
+	return frappe.db
+		.get_value("SS Coil", frm.doc.name, [
+			"order_status",
+			"started_on",
+			"completed_on",
+			"elapsed_time",
+			"process_control_enabled",
+		])
+		.then((r) => {
+			if (r.message) {
+				Object.assign(frm.doc, r.message);
+			}
+		});
+}
+
+function load_ss_coil_flow_and_dashboards(frm) {
+	const report_field = frm.fields_dict.order_status_report;
+	const diagrams_field = frm.fields_dict.daigrams_view;
+
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		$(frm.wrapper).find(".ss-coil-flow-banner").remove();
+		if (report_field && report_field.$wrapper) {
+			report_field.$wrapper.html(
+				ss_coil_dashboard_placeholder_html("Save the SS Coil document once to load its live dashboard.")
+			);
+		}
+		if (diagrams_field && diagrams_field.$wrapper) {
+			diagrams_field.$wrapper.html(
+				ss_coil_dashboard_placeholder_html("Save the SS Coil document once to load its live diagrams.")
+			);
+		}
+		return;
+	}
+
+	ensure_ss_coil_status_loaded(frm).then(() => {
+		frappe.call({
+			method: "ss_coil.api.get_ss_coil_detail_dashboard",
+			args: { ss_coil_name: frm.doc.name },
+			callback(r) {
+				const data = r.message || {};
+				syncOrderStatusFromDashboard(frm, data);
+				frm.refresh_field("order_status");
+				frm.refresh_field("started_on");
+				frm.refresh_field("completed_on");
+				render_ss_coil_flow_banner(frm, data);
+				render_ss_coil_dashboard(frm, data);
+				render_ss_coil_diagrams(frm, data);
+			},
+			error() {
+				render_ss_coil_flow_banner(frm);
+				frm.refresh_field("order_status");
+				if (report_field && report_field.$wrapper) {
+					report_field.$wrapper.html(
+						ss_coil_dashboard_placeholder_html(__("Could not load dashboard data."))
+					);
+				}
+				if (diagrams_field && diagrams_field.$wrapper) {
+					diagrams_field.$wrapper.html(
+						ss_coil_dashboard_placeholder_html(__("Could not load diagram data."))
+					);
+				}
+			},
+		});
+	});
+}
 
 function ss_coil_dashboard_placeholder_html(message) {
 	return `<div style="padding:18px;border:1px dashed #c9d7ea;border-radius:12px;background:#f8fbff;color:#486581;">
@@ -247,33 +322,7 @@ function ss_coil_dashboard_placeholder_html(message) {
 // having fired the same request. Fetch once here and hand the same data to
 // both renderers.
 function load_and_render_ss_coil_dashboards(frm) {
-	const report_field = frm.fields_dict.order_status_report;
-	const diagrams_field = frm.fields_dict.daigrams_view;
-
-	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
-		if (report_field && report_field.$wrapper) {
-			report_field.$wrapper.html(
-				ss_coil_dashboard_placeholder_html("Save the SS Coil document once to load its live dashboard.")
-			);
-		}
-		if (diagrams_field && diagrams_field.$wrapper) {
-			diagrams_field.$wrapper.html(
-				ss_coil_dashboard_placeholder_html("Save the SS Coil document once to load its live diagrams.")
-			);
-		}
-		return;
-	}
-
-	frappe.call({
-		method: "ss_coil.api.get_ss_coil_detail_dashboard",
-		args: { ss_coil_name: frm.doc.name },
-		callback: function (r) {
-			const data = r.message || {};
-			render_ss_coil_flow_banner(frm, data);
-			render_ss_coil_dashboard(frm, data);
-			render_ss_coil_diagrams(frm, data);
-		},
-	});
+	load_ss_coil_flow_and_dashboards(frm);
 }
 
 function render_ss_coil_dashboard(frm, data) {
@@ -1296,6 +1345,60 @@ function add_ss_coil_tag_buttons(frm) {
 	}, __("Tags"));
 }
 
+function add_ss_coil_sales_order_buttons(frm) {
+	if (!frm.doc.order_no) return;
+
+	frm.add_custom_button(
+		__("Open Sales Order"),
+		function () {
+			frappe.set_route("Form", "Sales Order", frm.doc.order_no);
+		},
+		__("Links")
+	);
+
+	frm.add_custom_button(
+		__("View SS Coil"),
+		function () {
+			const filters = { order_no: frm.doc.order_no };
+			if (frm.doc.sales_order_item) {
+				filters.sales_order_item = frm.doc.sales_order_item;
+			}
+			frappe.set_route("List", "SS Coil", filters);
+		},
+		__("Links")
+	);
+
+	if (frm.is_new && frm.is_new()) return;
+
+	frm.add_custom_button(
+		__("Create SS Coil"),
+		function () {
+			if (!frm.doc.sales_order_item) {
+				frappe.msgprint(
+					__("Select a Sales Order Item first, or use Create → Create SS Coil on the Sales Order.")
+				);
+				return;
+			}
+			frappe.call({
+				method: "ss_coil.api.create_ss_coil_from_sales_order",
+				args: {
+					source_name: frm.doc.order_no,
+					sales_order_item: frm.doc.sales_order_item,
+					operation: frm.doc.operation,
+				},
+				freeze: true,
+				freeze_message: __("Preparing SS Coil..."),
+				callback(r) {
+					if (!r.message) return;
+					frappe.model.sync(r.message);
+					frappe.set_route("Form", "SS Coil", r.message.name);
+				},
+			});
+		},
+		__("Create")
+	);
+}
+
 // The individual Start/Partial/Complete/Close buttons were replaced by
 // clickable chips in the flow-status stepper (render_ss_coil_flow_banner) -
 // these are the underlying actions, kept as standalone functions so both
@@ -1327,7 +1430,9 @@ function save_ss_coil_process_state(frm, statusValue, extra = {}) {
 	frm.set_value("elapsed_time", getElapsedTimeValue(frm, now));
 	frm.set_value("order_status", statusValue);
 	frm.set_value("process_control_enabled", 0);
-	return frm.save();
+	return frm.save().then(() =>
+		frm.reload_doc().then(() => load_ss_coil_flow_and_dashboards(frm))
+	);
 }
 
 function run_ss_coil_status_action(frm, statusValue) {
@@ -1911,7 +2016,67 @@ function sync_process_preview(frm) {
 // and control toggle call the server (via run_ss_coil_status_action /
 // toggle_ss_coil_process_control); everything else is a read-only render of
 // data already on the form or passed in from load_and_render_ss_coil_dashboards.
-const SS_COIL_STATUS_STEPS = ["Not Started", "In Process", "Partially Completed", "Completed", "Closed"];
+const SS_COIL_STATUS_STEPS = [
+	{ status: "Not Started", upcomingLabel: "Not Started", activeLabel: "Not Started" },
+	{ status: "In Process", upcomingLabel: "Start", activeLabel: "In Process" },
+	{ status: "Partially Completed", upcomingLabel: "Partial Complete", activeLabel: "Partially Completed" },
+	{ status: "Completed", upcomingLabel: "Complete", activeLabel: "Completed" },
+	{ status: "Closed", upcomingLabel: "Close", activeLabel: "Closed" },
+];
+
+function getEffectiveOrderStatus(frm, data) {
+	if (frm.doc.order_status === "Stopped") {
+		return frm.doc.started_on ? "In Process" : "Not Started";
+	}
+	const serverStatus = data?.status_flow?.order_status || data?.order_status;
+	const raw = (frm.doc.order_status || serverStatus || "").trim();
+	if (!raw || raw === "Not Started") {
+		return "Not Started";
+	}
+	if (raw === "Started") {
+		return "In Process";
+	}
+	return raw;
+}
+
+function syncOrderStatusFromDashboard(frm, data) {
+	const serverStatus = data?.status_flow?.order_status || data?.order_status;
+	if (!serverStatus || serverStatus === frm.doc.order_status) {
+		return;
+	}
+	frm.doc.order_status = serverStatus;
+	if (data?.status_flow?.started_on) {
+		frm.doc.started_on = data.status_flow.started_on;
+	}
+	if (data?.status_flow?.completed_on) {
+		frm.doc.completed_on = data.status_flow.completed_on;
+	}
+	if (data?.status_flow?.elapsed_time) {
+		frm.doc.elapsed_time = data.status_flow.elapsed_time;
+	}
+}
+
+function getStatusClickableFrom(effectiveStatus, isStopped) {
+	if (isStopped || effectiveStatus === "Closed") {
+		return Infinity;
+	}
+	if (effectiveStatus === "Completed") {
+		return 4;
+	}
+	return 1;
+}
+
+function getStatusStepIndex(status) {
+	const index = SS_COIL_STATUS_STEPS.findIndex((step) => step.status === status);
+	return index >= 0 ? index : 0;
+}
+
+function getStatusStepDisplayLabel(step, idx, currentIndex) {
+	if (idx === 0) {
+		return step.activeLabel;
+	}
+	return idx > currentIndex ? step.upcomingLabel : step.activeLabel;
+}
 
 function render_ss_coil_flow_banner(frm, data) {
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
@@ -1919,6 +2084,7 @@ function render_ss_coil_flow_banner(frm, data) {
 		return;
 	}
 	inject_ss_coil_flow_styles();
+	syncOrderStatusFromDashboard(frm, data);
 
 	const configuredProcesses = getConfiguredProcesses(frm);
 	const processLabels = configuredProcesses.map((key) => formatProcessLabel(key));
@@ -1937,12 +2103,13 @@ function render_ss_coil_flow_banner(frm, data) {
 	// separate badge/button below communicates the stop explicitly. Clicking
 	// further ahead is disabled until Resume is used.
 	const isStopped = frm.doc.order_status === "Stopped";
-	const effectiveStatus = isStopped ? (frm.doc.started_on ? "In Process" : "Not Started") : frm.doc.order_status || "Not Started";
-	const statusIndex = SS_COIL_STATUS_STEPS.indexOf(effectiveStatus);
+	const effectiveStatus = getEffectiveOrderStatus(frm, data);
+	const statusIndex = getStatusStepIndex(effectiveStatus);
+	const isFinished = ["Completed", "Closed"].includes(effectiveStatus);
 	// "Not Started" (index 0) isn't a click-to-action step - there's no
 	// action that means "go back to not started".
-	const statusHtml = build_ss_coil_stepper_html(SS_COIL_STATUS_STEPS, statusIndex, {
-		clickableFrom: isStopped ? Infinity : 1,
+	const statusHtml = build_ss_coil_status_stepper_html(statusIndex, {
+		clickableFrom: getStatusClickableFrom(effectiveStatus, isStopped),
 		neverDoneIndexes: [0],
 	});
 	const stopResumeHtml = isStopped
@@ -1951,6 +2118,9 @@ function render_ss_coil_flow_banner(frm, data) {
 		  )}</button>`
 		: ["In Process", "Partially Completed"].includes(frm.doc.order_status)
 		? `<button type="button" class="ss-coil-flow-stop-btn">${__("Stop")}</button>`
+		: "";
+	const finishedBadgeHtml = isFinished
+		? `<span class="ss-coil-flow-finished-badge">${frappe.utils.escape_html(__(effectiveStatus))}</span>`
 		: "";
 
 	const processControlOn = Boolean(frm.doc.process_control_enabled);
@@ -1999,6 +2169,7 @@ function render_ss_coil_flow_banner(frm, data) {
 		<div class="ss-coil-flow-row">
 			<span class="ss-coil-flow-label">${__("Status")}</span>
 			${statusHtml}
+			${finishedBadgeHtml}
 			${stopResumeHtml}
 		</div>
 		<div class="ss-coil-flow-row">
@@ -2047,6 +2218,34 @@ function render_ss_coil_flow_banner(frm, data) {
 		});
 
 	update_elapsed_time_display(frm);
+}
+
+function build_ss_coil_status_stepper_html(currentIndex, options = {}) {
+	const clickableFrom = options.clickableFrom === undefined ? Infinity : options.clickableFrom;
+	const neverDone = options.neverDoneIndexes || [];
+	const hideNotStarted = currentIndex > 0;
+	return `<div class="ss-coil-stepper">${SS_COIL_STATUS_STEPS.map((step, idx) => {
+		if (hideNotStarted && idx === 0) {
+			return "";
+		}
+		const label = getStatusStepDisplayLabel(step, idx, currentIndex);
+		const rawState = idx < currentIndex ? "done" : idx === currentIndex ? "current" : "upcoming";
+		const state = rawState === "done" && neverDone.includes(idx) ? "passed" : rawState;
+		const connector =
+			idx > 0 && !(hideNotStarted && idx === 1)
+				? `<span class="ss-coil-stepper-connector${idx <= currentIndex ? " ss-coil-stepper-connector-done" : ""}"></span>`
+				: "";
+		const mark = state === "done" ? "&#10003; " : "";
+		const isClickable = idx >= clickableFrom;
+		const clickAttrs = isClickable
+			? ` data-clickable="1" data-status="${frappe.utils.escape_html(step.status)}" role="button" tabindex="0" title="${__(
+					"Click to set status"
+				)}"`
+			: "";
+		return `${connector}<span class="ss-coil-stepper-step ss-coil-stepper-${state}${
+			isClickable ? " ss-coil-stepper-clickable" : ""
+		}"${clickAttrs}>${mark}${frappe.utils.escape_html(__(label))}</span>`;
+	}).join("")}</div>`;
 }
 
 function build_ss_coil_stepper_html(labels, currentIndex, options = {}) {
@@ -2109,7 +2308,9 @@ function build_ss_coil_checklist_flow_html(checklist) {
 			const cls = stateClassMap[item.status] || "ss-coil-checklist-pending";
 			const mark = markMap[item.status] || "&#9675;";
 			const statusLabel =
-				item.status === "in_progress" ? __(item.order_status || "In Process") : statusLabelMap[item.status] || __("Pending");
+				item.status === "in_progress" || (item.status === "current" && item.order_status)
+					? __(item.order_status || "In Process")
+					: statusLabelMap[item.status] || __("Pending");
 			const connectorDone = idx > 0 && checklist[idx - 1].status === "completed";
 			const connector =
 				idx > 0
@@ -2266,6 +2467,17 @@ function inject_ss_coil_flow_styles() {
 			background: #fee2e2;
 			color: #991b1b;
 			border: 1px solid #fca5a5;
+		}
+		.ss-coil-flow-finished-badge {
+			margin-left: 10px;
+			padding: 4px 10px;
+			border-radius: 999px;
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: 0.04em;
+			background: #dcfce7;
+			color: #166534;
+			border: 1px solid #86efac;
 		}
 		.ss-coil-flow-row {
 			display: flex;
@@ -2517,5 +2729,5 @@ function clear_sales_order_item_mapped_fields(frm) {
 	frm.set_value("calc_ratio_2", 0);
 	frm.set_value("actual_ratio", 0);
 	frm.set_value("remaining_width", 0);
-	frm.set_value("order_status", "");
+	frm.set_value("order_status", "Not Started");
 }

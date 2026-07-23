@@ -10,6 +10,9 @@ frappe.ui.form.on("Stock Entry", {
 	refresh(frm) {
 		add_stock_entry_data_entry_button(frm);
 		add_stock_entry_sticker_print_button(frm);
+		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
+			add_coil_detail_print_button(frm);
+		});
 		add_stock_entry_create_sales_order_button(frm);
 		add_stock_entry_tag_buttons(frm);
 		bind_live_stock_entry_dimension_events(frm);

@@ -46,6 +46,8 @@ class SSCoil(Document):
 		self.name = _format_autoname(f"format:JS{{YY}}-.{{#####}}.-{suffix}", self)
 
 	def validate(self):
+		if not self.get("order_status"):
+			self.order_status = "Not Started"
 		self._enforce_completed_lock()
 		self._block_duplicate_active_entry()
 

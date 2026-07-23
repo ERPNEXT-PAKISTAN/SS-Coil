@@ -3,19 +3,53 @@
 		size: A4 landscape;
 		margin: 6mm;
 	}
+	@media screen {
+		.print-format {
+			box-sizing: border-box;
+			width: 11.69in !important;
+			max-width: 11.69in !important;
+			min-height: 8.27in !important;
+			padding: 6mm !important;
+			margin: 30px auto !important;
+		}
+		.print-format-gutter {
+			overflow-x: auto;
+		}
+	}
+	@media print {
+		.print-format {
+			width: 100%;
+			max-width: none;
+			min-height: auto;
+			padding: 0;
+			margin: 0;
+		}
+		.coil-print {
+			min-height: calc(210mm - 12mm);
+		}
+	}
 	.print-format {
-		orientation: Landscape;
-		page-size: A4;
-		margin-top: 6mm;
-		margin-bottom: 6mm;
-		margin-left: 6mm;
-		margin-right: 6mm;
 		font-family: Inter, Arial, sans-serif;
-		font-size: 9px;
+		font-size: 11px;
 		color: #0f172a;
 	}
 	.coil-print {
+		display: flex;
+		flex-direction: column;
 		width: 100%;
+		max-width: 100%;
+		min-height: calc(8.27in - 12mm);
+		font-size: 11px;
+		line-height: 1.35;
+	}
+	.coil-print .page-body {
+		flex: 1 1 auto;
+	}
+	.coil-print .signatures-wrap {
+		margin-top: auto;
+		flex-shrink: 0;
+		width: 100%;
+		padding-top: 16px;
 	}
 	.coil-print table {
 		border-collapse: collapse;
@@ -28,11 +62,11 @@
 		margin: 0;
 	}
 	.coil-print .company-heading {
-		font-size: 16px;
+		font-size: 18px;
 		font-weight: 700;
-		line-height: 1;
+		line-height: 1.2;
 		text-align: center;
-		padding: 0 0 3px;
+		padding: 0 0 6px;
 		margin: 0;
 	}
 	.coil-print .title-row td {
@@ -40,32 +74,30 @@
 		padding: 0;
 	}
 	.coil-print .voucher-no {
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 600;
-		line-height: 1;
+		line-height: 1.2;
 	}
 	.coil-print .doc-title-right {
-		font-size: 13px;
+		font-size: 14px;
 		font-weight: 700;
 		text-align: right;
-		line-height: 1;
+		line-height: 1.2;
 	}
 	.coil-print .info-table {
 		width: 100%;
 		table-layout: fixed;
-		margin: 2px 0 5px;
+		margin: 6px 0 10px;
 	}
 	.coil-print .info-table td {
 		width: 25%;
-		padding: 0;
+		padding: 2px 4px 2px 0;
 		margin: 0;
 		border: none;
 		vertical-align: top;
-		line-height: 1;
-		font-size: 8px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		line-height: 1.35;
+		font-size: 10px;
+		white-space: normal;
 	}
 	.coil-print .info-table .coil-lbl {
 		font-weight: 400;
@@ -82,16 +114,20 @@
 	}
 	.coil-print .items {
 		width: 100%;
+		max-width: 100%;
 		border-collapse: collapse;
-		table-layout: auto;
+		table-layout: fixed;
+		font-size: 10px;
 	}
 	.coil-print .items th,
 	.coil-print .items td {
 		border: 1px solid #cbd5e1;
-		padding: 1px 3px;
-		font-size: 6.5px;
-		line-height: 1.05;
-		white-space: nowrap;
+		padding: 4px 5px;
+		font-size: 10px;
+		line-height: 1.3;
+		white-space: normal;
+		word-break: break-word;
+		overflow-wrap: anywhere;
 		vertical-align: top;
 	}
 	.coil-print .items th {
@@ -99,11 +135,14 @@
 		font-weight: 700;
 	}
 	.coil-print .section-title {
-		font-size: 9px;
+		font-size: 12px;
 		font-weight: 700;
-		line-height: 1;
-		margin: 3px 0 1px;
+		line-height: 1.2;
+		margin: 8px 0 4px;
 		padding: 0;
+	}
+	.coil-print .signatures {
+		width: 100%;
 	}
 	.coil-print .signatures td {
 		width: 25%;
@@ -114,14 +153,15 @@
 	}
 	.coil-print .signatures .sign-line {
 		border-top: 1px solid #334155;
-		padding-top: 4px;
-		font-size: 8px;
+		padding-top: 6px;
+		font-size: 10px;
 		font-weight: 600;
-		line-height: 1;
+		line-height: 1.2;
 	}
 </style>
 
 <div class="coil-print">
+<div class="page-body">
 <div class="company-heading">{{ doc.company or "-" }}</div>
 <table class="title-row" width="100%">
 	<tr>
@@ -190,7 +230,9 @@
 		{% endfor %}
 	</tbody>
 </table>
+</div>
 
+<div class="signatures-wrap">
 <table class="signatures" width="100%">
 	<tr>
 		<td><div class="sign-line">Issue By</div></td>
@@ -199,4 +241,5 @@
 		<td><div class="sign-line">Received By</div></td>
 	</tr>
 </table>
+</div>
 </div>

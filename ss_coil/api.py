@@ -2502,8 +2502,11 @@ def _build_ss_coil_process_checklist(doc, so_item):
 			continue
 
 		is_current = match.name == doc.name
+		active_statuses = ("Started", "In Process", "Partially Completed", "Stopped")
 		if match.order_status in ("Completed", "Closed"):
 			status = "completed"
+		elif is_current and match.order_status in active_statuses:
+			status = "in_progress"
 		elif is_current:
 			status = "current"
 		else:
@@ -3011,6 +3014,220 @@ def create_stock_entry_from_sales_order(source_name):
 				se_row.set(fieldname, value)
 
 	return stock_entry
+
+
+CHILD_TABLE_SKIP_FIELDTYPES = {
+	"Section Break",
+	"Column Break",
+	"Tab Break",
+	"HTML",
+	"Button",
+	"Table",
+	"Table MultiSelect",
+}
+
+
+def _child_table_fieldnames(doctype):
+	return [
+		df.fieldname
+		for df in frappe.get_meta(doctype).fields
+		if df.fieldname and df.fieldtype not in CHILD_TABLE_SKIP_FIELDTYPES
+	]
+
+
+def _coil_so_row_from_sales_order_item(so_item, order_no):
+	"""Mirror ss_coil.js sales_order_item handler: one Coil SO row from SO Item."""
+	row = {}
+	for fieldname in _child_table_fieldnames("Coil SO"):
+		if fieldname == "so_number":
+			row[fieldname] = order_no
+		elif fieldname == "length_c":
+			row[fieldname] = so_item.get("custom_length_c") or ""
+		elif fieldname == "dimension":
+			row[fieldname] = so_item.get("custom_dimension") or so_item.get("custom_dimensin") or ""
+		elif fieldname == "tag_no":
+			row[fieldname] = so_item.get("custom_child_tag_no") or so_item.get("custom_tag_no") or ""
+		else:
+			value = so_item.get(fieldname)
+			if value in (None, ""):
+				value = so_item.get(f"custom_{fieldname}")
+			if value not in (None, ""):
+				row[fieldname] = value
+	if not row.get("item_name"):
+		row["item_name"] = so_item.get("item_name") or so_item.get("item_code")
+	return row
+
+
+def _input_coil_row_from_sales_order_item(so_item):
+	"""Mirror load_input_coil_from_sales_order_item() on the SS Coil form."""
+	parent_tag = so_item.get("custom_raw_material_tag_no")
+	details = get_raw_material_inward_details(parent_tag) if parent_tag else {}
+	if not details and parent_tag:
+		details = {"tag_no": parent_tag}
+
+	if not details:
+		details = {
+			"class": so_item.get("custom_raw_material_item") or so_item.get("item_name") or so_item.get("item_code"),
+			"tag_no": "",
+			"dimension": so_item.get("custom_dimension") or "",
+			"estimated_qty": so_item.get("qty"),
+			"estimated_wt": so_item.get("custom_estimated_wt"),
+			"actual_qty": so_item.get("qty"),
+			"length": so_item.get("custom_length") or so_item.get("custom_length_c"),
+			"location": so_item.get("custom_location"),
+		}
+	else:
+		if not details.get("class"):
+			details["class"] = (
+				details.get("item_name")
+				or so_item.get("custom_raw_material_item")
+				or so_item.get("item_name")
+				or so_item.get("item_code")
+			)
+		if not details.get("tag_no") and parent_tag:
+			details["tag_no"] = parent_tag
+		for key, value in {
+			"dimension": so_item.get("custom_dimension") or "",
+			"estimated_qty": so_item.get("qty"),
+			"estimated_wt": so_item.get("custom_estimated_wt"),
+			"actual_qty": so_item.get("qty"),
+			"length": so_item.get("custom_length") or so_item.get("custom_length_c"),
+			"location": so_item.get("custom_location"),
+		}.items():
+			if details.get(key) in (None, "") and value not in (None, ""):
+				details[key] = value
+
+	for proc in PROCESS_FIELDS:
+		if not details.get(proc):
+			value = so_item.get(f"custom_{proc}")
+			if value not in (None, ""):
+				details[proc] = value
+
+	row = {}
+	for fieldname in _child_table_fieldnames("Coil Input"):
+		value = details.get(fieldname)
+		if value not in (None, ""):
+			row[fieldname] = value
+	return row
+
+
+def _cutting_scheme_rows_for_sales_order_item(sales_order_item):
+	plan_name = frappe.db.get_value("SO Production Plan", {"sales_order_item": sales_order_item}, "name")
+	if not plan_name:
+		return []
+	doc = frappe.get_doc("SO Production Plan", plan_name)
+	fieldnames = _child_table_fieldnames("Cutting Scheme")
+	rows = []
+	for source_row in doc.cutting_scheme:
+		row = {}
+		source = source_row.as_dict()
+		for fieldname in fieldnames:
+			value = source.get(fieldname)
+			if value not in (None, ""):
+				row[fieldname] = value
+		if row:
+			rows.append(row)
+	return rows
+
+
+def _resolve_ss_coil_operation(so_item, operation=None):
+	configured = _get_enabled_processes_from_row(so_item, custom=True)
+	if operation:
+		op_key = str(operation).strip().lower()
+		for field in configured:
+			if field == op_key or PROCESS_LABELS.get(field, "").lower() == op_key:
+				return _label_for_process(field)
+		frappe.throw(
+			_("Operation {0} is not configured on Sales Order Item {1}").format(
+				operation, so_item.get("item_code") or so_item.name
+			)
+		)
+	if configured:
+		return _label_for_process(configured[0])
+	return "Slitter"
+
+
+def _get_sales_order_item_row(source, sales_order_item=None):
+	if not source.items:
+		frappe.throw(_("Sales Order has no items"))
+
+	if sales_order_item:
+		for row in source.items:
+			if row.name == sales_order_item:
+				return row
+		frappe.throw(_("Sales Order Item {0} was not found on {1}").format(sales_order_item, source.name))
+
+	if len(source.items) == 1:
+		return source.items[0]
+
+	frappe.throw(_("Select a Sales Order Item"))
+
+
+@frappe.whitelist()
+def get_sales_order_ss_coil_create_options(source_name):
+	"""Rows + configured processes for the Sales Order → SS Coil create dialog."""
+	source = frappe.get_doc("Sales Order", source_name)
+	options = []
+	for row in source.items:
+		processes = [_label_for_process(key) for key in _get_enabled_processes_from_row(row, custom=True)]
+		if not processes:
+			processes = ["Slitter"]
+		existing = frappe.get_all(
+			"SS Coil",
+			filters={"sales_order_item": row.name},
+			fields=["name", "operation", "order_status"],
+			order_by="modified desc",
+		)
+		options.append(
+			{
+				"sales_order_item": row.name,
+				"item_code": row.item_code,
+				"item_name": row.item_name,
+				"qty": flt(row.qty),
+				"dimension": row.get("custom_dimension"),
+				"tag_no": row.get("custom_raw_material_tag_no") or row.get("custom_tag_no"),
+				"processes": processes,
+				"existing_ss_coils": existing,
+			}
+		)
+	return options
+
+
+@frappe.whitelist()
+def create_ss_coil_from_sales_order(source_name, sales_order_item=None, operation=None):
+	"""Build a new (unsaved) SS Coil from a Sales Order + Sales Order Item.
+
+	Mirrors picking order_no + sales_order_item on the SS Coil form: fills
+	Coil SO, input coil, cutting scheme, machine/ratios, and sets operation
+	to the first configured process (Slitter/Leveler/Reshearing) unless
+	operation is passed explicitly.
+	"""
+	source = frappe.get_doc("Sales Order", source_name)
+	so_item = _get_sales_order_item_row(source, sales_order_item)
+
+	ss_coil = frappe.new_doc("SS Coil")
+	ss_coil.order_no = source.name
+	ss_coil.sales_order_item = so_item.name
+	ss_coil.customer_name = source.customer_name
+	ss_coil.for_customer = source.get("custom_for_customer")
+	ss_coil.order_received_date = source.transaction_date
+	ss_coil.sc_date = nowdate()
+	ss_coil.order_status = "Not Started"
+	ss_coil.operation = _resolve_ss_coil_operation(so_item, operation)
+	ss_coil.machine = so_item.get("custom_machine") or ""
+	ss_coil.calc_ratio = flt(so_item.get("custom_calc_ratio"))
+	ss_coil.calc_ratio_2 = flt(so_item.get("custom_calc_ratio_2"))
+	ss_coil.actual_ratio = flt(so_item.get("custom_actual_ratio"))
+	ss_coil.remaining_width = flt(so_item.get("custom_remaining_width"))
+
+	ss_coil.append("so_item", _coil_so_row_from_sales_order_item(so_item, source.name))
+	input_row = _input_coil_row_from_sales_order_item(so_item)
+	if input_row:
+		ss_coil.append("input_coil", input_row)
+	for scheme_row in _cutting_scheme_rows_for_sales_order_item(so_item.name):
+		ss_coil.append("cutting_detail", scheme_row)
+
+	return ss_coil
 
 
 @frappe.whitelist()

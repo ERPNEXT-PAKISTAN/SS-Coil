@@ -2,7 +2,11 @@ frappe.ui.form.on("Sales Order", {
 	refresh(frm) {
 		bind_live_dimension_events(frm);
 		add_sales_order_tag_buttons(frm);
+		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
+			add_coil_detail_print_button(frm);
+		});
 		add_sales_order_create_stock_entry_button(frm);
+		add_sales_order_create_ss_coil_button(frm);
 		render_sales_order_dashboard(frm);
 		render_packing_detail(frm);
 		render_cutting_scheme_report(frm);
@@ -49,6 +53,154 @@ function add_sales_order_create_stock_entry_button(frm) {
 			__("Sync")
 		);
 	}
+}
+
+function add_sales_order_create_ss_coil_button(frm) {
+	if (frm.is_new() || !(frm.doc.items || []).length) return;
+
+	frm.add_custom_button(
+		__("Create SS Coil"),
+		function () {
+			const items = frm.doc.items || [];
+			if (items.length === 1) {
+				open_ss_coil_from_sales_order(frm.doc.name, items[0].name);
+				return;
+			}
+			open_sales_order_ss_coil_item_dialog(frm);
+		},
+		__("Create")
+	);
+
+	frm.add_custom_button(
+		__("View SS Coil"),
+		function () {
+			frappe.set_route("List", "SS Coil", { order_no: frm.doc.name });
+		},
+		__("Create")
+	);
+}
+
+function open_ss_coil_from_sales_order(sales_order, sales_order_item, operation) {
+	frappe.call({
+		method: "ss_coil.api.create_ss_coil_from_sales_order",
+		args: {
+			source_name: sales_order,
+			sales_order_item,
+			operation,
+		},
+		freeze: true,
+		freeze_message: __("Preparing SS Coil..."),
+		callback(r) {
+			if (!r.message) return;
+			frappe.model.sync(r.message);
+			frappe.set_route("Form", "SS Coil", r.message.name);
+		},
+	});
+}
+
+function open_sales_order_ss_coil_item_dialog(frm) {
+	frappe.call({
+		method: "ss_coil.api.get_sales_order_ss_coil_create_options",
+		args: { source_name: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Loading Sales Order items..."),
+		callback(r) {
+			const options = r.message || [];
+			if (!options.length) {
+				frappe.msgprint(__("This Sales Order has no items."));
+				return;
+			}
+
+			const fields = [
+				{
+					fieldname: "sales_order_item",
+					label: __("Sales Order Item"),
+					fieldtype: "Select",
+					reqd: 1,
+					options: options.map((row) => row.sales_order_item).join("\n"),
+				},
+				{
+					fieldname: "item_details",
+					fieldtype: "HTML",
+					label: __("Item Details"),
+				},
+				{
+					fieldname: "operation",
+					label: __("Operation"),
+					fieldtype: "Select",
+					reqd: 1,
+				},
+				{
+					fieldname: "existing_html",
+					fieldtype: "HTML",
+					label: __("Existing SS Coil"),
+				},
+			];
+
+			const dialog = new frappe.ui.Dialog({
+				title: __("Create SS Coil"),
+				fields,
+				primary_action_label: __("Create"),
+				primary_action(values) {
+					dialog.hide();
+					open_ss_coil_from_sales_order(
+						frm.doc.name,
+						values.sales_order_item,
+						values.operation
+					);
+				},
+			});
+
+			const itemField = dialog.fields_dict.sales_order_item;
+			const detailsField = dialog.fields_dict.item_details;
+			const operationField = dialog.fields_dict.operation;
+			const existingField = dialog.fields_dict.existing_html;
+
+			function renderExisting(itemName) {
+				const row = options.find((entry) => entry.sales_order_item === itemName) || options[0];
+				const processes = row.processes || ["Slitter"];
+				detailsField.$wrapper.html(
+					`<div style="font-size:12px;color:#334155;line-height:1.6;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+						<div><b>${frappe.utils.escape_html(row.item_code || "-")}</b> — ${frappe.utils.escape_html(
+							row.item_name || ""
+						)}</div>
+						<div>${__("Qty")}: ${frappe.utils.escape_html(String(row.qty ?? "-"))} | ${__(
+							"Dimension"
+						)}: ${frappe.utils.escape_html(row.dimension || "-")} | ${__("Tag")}: ${frappe.utils.escape_html(
+							row.tag_no || "-"
+						)}</div>
+					</div>`
+				);
+				operationField.df.options = processes.join("\n");
+				operationField.set_value(processes[0]);
+				operationField.refresh();
+
+				const existing = row.existing_ss_coils || [];
+				existingField.$wrapper.html(
+					existing.length
+						? `<div style="font-size:12px;color:#475569;line-height:1.6;">${existing
+								.map(
+									(doc) =>
+										`<div><b>${frappe.utils.escape_html(doc.name)}</b> — ${frappe.utils.escape_html(
+											doc.operation || "-"
+										)} (${frappe.utils.escape_html(doc.order_status || "-")})</div>`
+								)
+								.join("")}</div>`
+						: `<div style="font-size:12px;color:#64748b;">${__(
+								"No SS Coil exists yet for this line."
+						  )}</div>`
+				);
+			}
+
+			itemField.$input.on("change", function () {
+				renderExisting(itemField.get_value());
+			});
+
+			dialog.show();
+			itemField.set_value(options[0].sales_order_item);
+			renderExisting(options[0].sales_order_item);
+		},
+	});
 }
 
 function add_sales_order_tag_buttons(frm) {

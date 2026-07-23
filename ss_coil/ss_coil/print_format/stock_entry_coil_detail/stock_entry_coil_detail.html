@@ -1,0 +1,5 @@
+{% if coil_detail_print_html %}
+{{ coil_detail_print_html | safe }}
+{% else %}
+{{ build_coil_detail_print_html(doc) | safe }}
+{% endif %}

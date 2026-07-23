@@ -9,12 +9,15 @@ import frappe
 from frappe.utils.pdf import pdf_body_html as fw_pdf_body_html
 
 from ss_coil.api import _get_sticker_print_options, build_stock_entry_sticker_sheet_html
+from ss_coil.coil_print import DETAIL_PRINT_FORMATS, build_coil_detail_print_html
 
 STICKER_PRINT_FORMATS = ("Stock Entry Sticker", "Stock Entry Sticker Thermal")
+DETAIL_PRINT_FORMAT_NAMES = frozenset(DETAIL_PRINT_FORMATS.values())
 
 
 def pdf_body_html(jenv, template, print_format, args):
 	_inject_sticker_print_html(print_format, args)
+	_inject_coil_detail_print_html(print_format, args)
 
 	try:
 		from print_designer.print_designer.pdf import pdf_body_html as pd_pdf_body_html
@@ -42,3 +45,15 @@ def _inject_sticker_print_html(print_format, args):
 	args["filter_sticker_items"] = has_filter
 	if html:
 		doc.custom_sticker_print_html = html
+
+
+def _inject_coil_detail_print_html(print_format, args):
+	if not print_format or print_format.name not in DETAIL_PRINT_FORMAT_NAMES:
+		return
+
+	doc = args.get("doc")
+	if not doc:
+		return
+
+	html = build_coil_detail_print_html(doc)
+	args["coil_detail_print_html"] = html or ""

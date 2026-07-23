@@ -35,7 +35,18 @@ function open_coil_detail_print(frm) {
 
 	const print_window = window.open(url, "_blank");
 	if (!print_window) {
-		frappe.msgprint(__("Please enable pop-ups to preview the report."));
+		frappe.msgprint({
+			title: __("Pop-up Blocked"),
+			message: __("Please allow pop-ups for this site, then click Print Report again."),
+			indicator: "orange",
+		});
+		return;
+	}
+
+	try {
+		print_window.focus();
+	} catch (e) {
+		// ignore cross-window focus errors
 	}
 }
 

@@ -1,3 +1,15 @@
+<style>
+.print-format {
+	orientation: Landscape;
+	page-size: A4;
+	page-width: 297mm;
+	page-height: 210mm;
+	margin-top: 6mm;
+	margin-bottom: 6mm;
+	margin-left: 6mm;
+	margin-right: 6mm;
+}
+</style>
 {% if coil_detail_print_html %}
 {{ coil_detail_print_html | safe }}
 {% else %}

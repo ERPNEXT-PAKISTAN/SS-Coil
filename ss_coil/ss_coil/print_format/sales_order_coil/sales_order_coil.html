@@ -1,1 +1,17 @@
+<style>
+.print-format {
+	orientation: Landscape;
+	page-size: A4;
+	page-width: 297mm;
+	page-height: 210mm;
+	margin-top: 6mm;
+	margin-bottom: 6mm;
+	margin-left: 6mm;
+	margin-right: 6mm;
+}
+</style>
+{% if delivery_advise_print_html %}
+{{ delivery_advise_print_html | safe }}
+{% else %}
 {{ build_delivery_advise_print_html(doc) | safe }}
+{% endif %}

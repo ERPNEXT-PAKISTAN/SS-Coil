@@ -12,13 +12,17 @@ DELIVERY_ADVISE_PRINT_FORMATS = {
 
 
 def build_delivery_advise_print_html(doc):
-	doc = _ensure_doc(doc)
-	if doc.doctype not in DELIVERY_ADVISE_PRINT_FORMATS:
-		return ""
+	try:
+		doc = _ensure_doc(doc)
+		if doc.doctype not in DELIVERY_ADVISE_PRINT_FORMATS:
+			return ""
 
-	header = _delivery_advise_header(doc)
-	rows, total_qty, total_weight = _delivery_advise_item_rows(doc)
-	return _render_delivery_advise_html(header, rows, total_qty, total_weight)
+		header = _delivery_advise_header(doc)
+		rows, total_qty, total_weight = _delivery_advise_item_rows(doc)
+		return _render_delivery_advise_html(header, rows, total_qty, total_weight)
+	except Exception:
+		frappe.log_error(title="Delivery Advise Print Error")
+		return "<p>Unable to render Delivery Advise print format.</p>"
 
 
 def _ensure_doc(doc):
@@ -150,19 +154,22 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 		+ f'<span class="voucher-no">{_cell(header["name"])} | <strong class="job-purpose">{_cell(header["job_purpose"])}</strong></span>'
 		+ '<span class="doc-title">Delivery Advise</span>'
 		+ "</div></div>"
-		+ '<table class="info-grid" cellspacing="0" cellpadding="0">'
-		+ "<tr>"
-		f'<td><span class="coil-lbl">Customer:</span> <span class="coil-val">{_cell(header["customer"])}</span></td>'
-		f'<td><span class="coil-lbl">LOT No:</span> <span class="coil-val">{_cell(header["lot"])}</span></td>'
-		f'<td><span class="coil-lbl">Invoice / IGP No:</span> <span class="coil-val">{_cell(header["invoice_igp"])}</span></td>'
-		+ "</tr><tr>"
-		f'<td><span class="coil-lbl">For Customer:</span> <span class="coil-val">{_cell(header["for_customer"])}</span></td>'
-		f'<td><span class="coil-lbl">Vehicle No:</span> <span class="coil-val">{_cell(header["vehicle_no"])}</span></td>'
-		f'<td><span class="coil-lbl">Date:</span> <span class="coil-val">{_cell(header["date"])}</span></td>'
-		+ "</tr><tr>"
-		f'<td><span class="coil-lbl">MR Number:</span> <span class="coil-val">{_cell(header["mr_number"])}</span></td>'
-		f'<td><span class="coil-lbl">Driver Name:</span> <span class="coil-val">{_cell(header["driver_name"])}</span></td>'
-		+ "<td></td></tr></table>"
+		+ '<div class="info-grid">'
+		+ '<div class="info-row">'
+		f'<div class="info-left"><span class="coil-lbl">Customer:</span> <span class="coil-val">{_cell(header["customer"])}</span></div>'
+		f'<div class="info-center"><span class="coil-lbl">LOT No:</span> <span class="coil-val">{_cell(header["lot"])}</span></div>'
+		f'<div class="info-right"><span class="coil-lbl">Invoice / IGP No:</span> <span class="coil-val">{_cell(header["invoice_igp"])}</span></div>'
+		+ "</div>"
+		+ '<div class="info-row">'
+		f'<div class="info-left"><span class="coil-lbl">For Customer:</span> <span class="coil-val">{_cell(header["for_customer"])}</span></div>'
+		f'<div class="info-center"><span class="coil-lbl">Vehicle No:</span> <span class="coil-val">{_cell(header["vehicle_no"])}</span></div>'
+		f'<div class="info-right"><span class="coil-lbl">Date:</span> <span class="coil-val">{_cell(header["date"])}</span></div>'
+		+ "</div>"
+		+ '<div class="info-row">'
+		f'<div class="info-left"><span class="coil-lbl">MR Number:</span> <span class="coil-val">{_cell(header["mr_number"])}</span></div>'
+		f'<div class="info-center"><span class="coil-lbl">Driver Name:</span> <span class="coil-val">{_cell(header["driver_name"])}</span></div>'
+		+ '<div class="info-right"></div>'
+		+ "</div></div>"
 		+ '<div class="section-title">Items</div>'
 		+ '<table class="items"><thead><tr>'
 		+ '<th class="col-tag col-wrap">Tag No</th>'
@@ -200,6 +207,19 @@ def _render_delivery_advise_styles():
 	return """
 <style>
 	@page { size: A4 landscape; margin: 6mm; }
+	.print-format {
+		orientation: Landscape;
+		page-size: A4;
+		page-width: 297mm;
+		page-height: 210mm;
+		margin-top: 6mm;
+		margin-bottom: 6mm;
+		margin-left: 6mm;
+		margin-right: 6mm;
+		font-family: Inter, Arial, sans-serif;
+		font-size: 11px;
+		color: #0f172a;
+	}
 	@media screen {
 		.print-format {
 			box-sizing: border-box;
@@ -227,11 +247,6 @@ def _render_delivery_advise_styles():
 			page-break-before: avoid;
 		}
 	}
-	.print-format {
-		font-family: Inter, Arial, sans-serif;
-		font-size: 11px;
-		color: #0f172a;
-	}
 	.coil-print {
 		width: 100%;
 		max-width: 100%;
@@ -247,8 +262,8 @@ def _render_delivery_advise_styles():
 	.coil-print table { border-collapse: collapse; border-spacing: 0; }
 	.coil-print .report-header {
 		text-align: center;
-		margin-bottom: 8px;
-		padding-bottom: 6px;
+		margin-bottom: 4px;
+		padding-bottom: 4px;
 		border-bottom: 2px solid #1e3a5f;
 	}
 	.coil-print .company-heading {
@@ -274,19 +289,34 @@ def _render_delivery_advise_styles():
 	}
 	.coil-print .info-grid {
 		width: 100%;
-		table-layout: fixed;
-		margin: 8px 0 10px;
+		margin: 2px 0 6px;
 	}
-	.coil-print .info-grid td {
-		width: 33.33%;
-		padding: 4px 8px 4px 0;
-		border: none;
-		vertical-align: top;
-		line-height: 1.35;
+	.coil-print .info-row {
+		display: table;
+		table-layout: fixed;
+		width: 100%;
+		margin: 0;
+		padding: 0;
+		line-height: 1.1;
 		font-size: 10px;
+	}
+	.coil-print .info-row + .info-row {
+		margin-top: 1px;
+	}
+	.coil-print .info-left,
+	.coil-print .info-center,
+	.coil-print .info-right {
+		display: table-cell;
+		vertical-align: top;
+		margin: 0;
+		padding: 0;
+		line-height: 1.1;
 		white-space: normal;
 		word-break: break-word;
 	}
+	.coil-print .info-left { text-align: left; padding-right: 8px; }
+	.coil-print .info-center { text-align: center; padding-left: 4px; padding-right: 4px; }
+	.coil-print .info-right { text-align: right; padding-left: 8px; }
 	.coil-print .coil-lbl { font-weight: 500; color: #64748b; }
 	.coil-print .coil-val { font-weight: 700; color: #0f172a; }
 	.coil-print .section-title {

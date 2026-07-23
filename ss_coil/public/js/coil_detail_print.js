@@ -1,6 +1,6 @@
 const COIL_DETAIL_PRINT_FORMATS = {
 	"Stock Entry": "Stock Entry Coil",
-	"Sales Order": "Sales Order Coil Detail",
+	"Sales Order": "Sales Order Coil",
 	"SS Coil": "SS Coil Detail",
 };
 

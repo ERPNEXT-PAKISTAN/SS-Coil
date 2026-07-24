@@ -75,10 +75,15 @@ function add_sales_order_create_stock_entry_button(frm) {
 					freeze: true,
 					freeze_message: __("Syncing..."),
 					callback(r) {
-						// Already persisted server-side; reflect locally without
-						// marking the form dirty.
-						frm.doc.custom_source_stock_entries = (r.message || {}).custom_source_stock_entries || "";
-						frm.refresh_field("custom_source_stock_entries");
+						const msg = r.message || {};
+						if (frm.fields_dict.custom_source_stock_entries) {
+							frm.doc.custom_source_stock_entries = msg.custom_source_stock_entries || "";
+							frm.refresh_field("custom_source_stock_entries");
+						}
+						if (frm.fields_dict.custom_igp_no && msg.custom_igp_no !== undefined) {
+							frm.doc.custom_igp_no = msg.custom_igp_no || "";
+							frm.refresh_field("custom_igp_no");
+						}
 						frappe.show_alert({ message: __("Stock Entry links synced"), indicator: "green" });
 					},
 				});

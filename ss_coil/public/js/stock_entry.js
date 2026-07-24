@@ -268,10 +268,19 @@ function add_stock_entry_create_sales_order_button(frm) {
 					freeze: true,
 					freeze_message: __("Syncing..."),
 					callback(r) {
-						// Already persisted server-side via frappe.db.set_value; just
-						// reflect it locally without marking the form dirty.
-						frm.doc.custom_linked_sales_orders = (r.message || {}).custom_linked_sales_orders || "";
-						frm.refresh_field("custom_linked_sales_orders");
+						const msg = r.message || {};
+						if (frm.fields_dict.custom_linked_sales_orders) {
+							frm.doc.custom_linked_sales_orders = msg.custom_linked_sales_orders || "";
+							frm.refresh_field("custom_linked_sales_orders");
+						}
+						if (frm.fields_dict.custom_sales_order) {
+							frm.doc.custom_sales_order = msg.custom_sales_order || "";
+							frm.refresh_field("custom_sales_order");
+						}
+						if (frm.fields_dict.custom_invoice__igp_no && msg.custom_invoice__igp_no) {
+							frm.doc.custom_invoice__igp_no = msg.custom_invoice__igp_no;
+							frm.refresh_field("custom_invoice__igp_no");
+						}
 						frappe.show_alert({ message: __("Sales Order links synced"), indicator: "green" });
 					},
 				});

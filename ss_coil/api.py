@@ -609,6 +609,83 @@ def _stock_entry_inward_warehouse(stock_entry):
 	return None
 
 
+def _sales_orders_for_stock_entry(stock_entry_name):
+	"""Sales Orders that reference this Stock Entry (from SO items + SE link fields)."""
+	names = []
+	if _has_field("Sales Order Item", "custom_source_stock_entry"):
+		names.extend(
+			frappe.get_all(
+				"Sales Order Item",
+				filters={"custom_source_stock_entry": stock_entry_name},
+				pluck="parent",
+				distinct=True,
+				order_by="parent asc",
+			)
+		)
+	if _has_field("Stock Entry", "custom_linked_sales_orders"):
+		linked = frappe.db.get_value("Stock Entry", stock_entry_name, "custom_linked_sales_orders") or ""
+		names.extend(_parse_comma_separated_names(linked))
+	if _has_field("Stock Entry", "custom_sales_order"):
+		manual = frappe.db.get_value("Stock Entry", stock_entry_name, "custom_sales_order")
+		if manual:
+			names.append(manual)
+	return list(dict.fromkeys(names))
+
+
+def _apply_stock_entry_link_summary(stock_entry_name, sales_order_names):
+	updates = {}
+	if _has_field("Stock Entry", "custom_linked_sales_orders"):
+		updates["custom_linked_sales_orders"] = ", ".join(sales_order_names)
+	if _has_field("Stock Entry", "custom_sales_order"):
+		updates["custom_sales_order"] = sales_order_names[0] if sales_order_names else ""
+	if updates:
+		frappe.db.set_value("Stock Entry", stock_entry_name, updates, update_modified=False)
+	return updates
+
+
+def _push_stock_entry_header_to_sales_order(stock_entry_name, sales_order_name):
+	if not stock_entry_name or not sales_order_name:
+		return {}
+	if not frappe.db.exists("Stock Entry", stock_entry_name) or not frappe.db.exists("Sales Order", sales_order_name):
+		return {}
+
+	stock_entry = frappe.get_doc("Stock Entry", stock_entry_name)
+	updates = {}
+
+	igp = stock_entry.get("custom_invoice__igp_no")
+	if igp and _has_field("Sales Order", "custom_igp_no"):
+		updates["custom_igp_no"] = igp
+
+	warehouse = _stock_entry_inward_warehouse(stock_entry)
+	if warehouse:
+		if _has_field("Sales Order", "custom_source_warehouse"):
+			updates["custom_source_warehouse"] = warehouse
+		if _has_field("Sales Order", "set_warehouse"):
+			updates["set_warehouse"] = warehouse
+
+	if updates:
+		frappe.db.set_value("Sales Order", sales_order_name, updates, update_modified=True)
+	return updates
+
+
+def _push_sales_order_igp_to_stock_entry(sales_order_name, stock_entry_name):
+	if not sales_order_name or not stock_entry_name:
+		return {}
+	if not _has_field("Stock Entry", "custom_invoice__igp_no") or not _has_field("Sales Order", "custom_igp_no"):
+		return {}
+	igp = frappe.db.get_value("Sales Order", sales_order_name, "custom_igp_no")
+	if not igp:
+		return {}
+	frappe.db.set_value(
+		"Stock Entry",
+		stock_entry_name,
+		"custom_invoice__igp_no",
+		igp,
+		update_modified=True,
+	)
+	return {"custom_invoice__igp_no": igp}
+
+
 def _apply_stock_entry_warehouse_to_sales_order(sales_order, stock_entry):
 	warehouse = _stock_entry_inward_warehouse(stock_entry)
 	if not warehouse:
@@ -3371,16 +3448,32 @@ def sync_sales_order_stock_entry_links(sales_order):
 	"""
 	doc = frappe.get_doc("Sales Order", sales_order)
 	sync_stock_entry_sales_order_links(doc)
+
+	stock_entry_names = list(
+		dict.fromkeys(
+			row.custom_source_stock_entry for row in (doc.items or []) if row.get("custom_source_stock_entry")
+		)
+	)
+	for stock_entry_name in stock_entry_names:
+		_push_stock_entry_header_to_sales_order(stock_entry_name, sales_order)
+		if _has_field("Sales Order", "custom_igp_no"):
+			_push_sales_order_igp_to_stock_entry(sales_order, stock_entry_name)
+
+	response = {}
 	if _has_field("Sales Order", "custom_source_stock_entries"):
+		response["custom_source_stock_entries"] = doc.custom_source_stock_entries or ""
 		frappe.db.set_value(
 			"Sales Order",
 			sales_order,
 			"custom_source_stock_entries",
-			doc.custom_source_stock_entries or "",
+			response["custom_source_stock_entries"],
 			update_modified=False,
 		)
+	if _has_field("Sales Order", "custom_igp_no"):
+		response["custom_igp_no"] = frappe.db.get_value("Sales Order", sales_order, "custom_igp_no") or ""
+
 	frappe.db.commit()
-	return {"custom_source_stock_entries": doc.get("custom_source_stock_entries") or ""}
+	return response
 
 
 @frappe.whitelist()
@@ -3391,25 +3484,35 @@ def sync_stock_entry_links_from_source(stock_entry):
 	before_save hook, this also drops names that no longer apply (e.g. if a
 	Sales Order's items were edited to point elsewhere since).
 	"""
-	if not _has_field("Sales Order Item", "custom_source_stock_entry") or not _has_field(
-		"Stock Entry", "custom_linked_sales_orders"
-	):
-		return {"custom_linked_sales_orders": ""}
+	sales_order_names = []
+	if _has_field("Sales Order Item", "custom_source_stock_entry"):
+		sales_orders = frappe.get_all(
+			"Sales Order Item",
+			filters={"custom_source_stock_entry": stock_entry},
+			fields=["parent"],
+			distinct=True,
+			order_by="parent asc",
+		)
+		sales_order_names = [row.parent for row in sales_orders]
 
-	sales_orders = frappe.get_all(
-		"Sales Order Item",
-		filters={"custom_source_stock_entry": stock_entry},
-		fields=["parent"],
-		distinct=True,
-		order_by="parent asc",
-	)
-	value = ", ".join(row.parent for row in sales_orders)
-	updates = {"custom_linked_sales_orders": value}
-	if _has_field("Stock Entry", "custom_sales_order") and sales_orders:
-		updates["custom_sales_order"] = sales_orders[0].parent
-	frappe.db.set_value("Stock Entry", stock_entry, updates, update_modified=False)
+	if not sales_order_names and _has_field("Stock Entry", "custom_sales_order"):
+		manual_so = frappe.db.get_value("Stock Entry", stock_entry, "custom_sales_order")
+		if manual_so and frappe.db.exists("Sales Order", manual_so):
+			sales_order_names = [manual_so]
+
+	link_updates = {}
+	if _has_field("Stock Entry", "custom_linked_sales_orders"):
+		link_updates = _apply_stock_entry_link_summary(stock_entry, sales_order_names)
+
+	for sales_order_name in sales_order_names:
+		_push_stock_entry_header_to_sales_order(stock_entry, sales_order_name)
+
 	frappe.db.commit()
-	return {"custom_linked_sales_orders": value}
+	return {
+		"custom_linked_sales_orders": link_updates.get("custom_linked_sales_orders", ""),
+		"custom_sales_order": link_updates.get("custom_sales_order", ""),
+		"custom_invoice__igp_no": frappe.db.get_value("Stock Entry", stock_entry, "custom_invoice__igp_no") or "",
+	}
 
 
 def sync_stock_entry_sales_order_links(doc, method=None):
@@ -3436,19 +3539,13 @@ def sync_stock_entry_sales_order_links(doc, method=None):
 	for stock_entry_name in stock_entry_names:
 		if not frappe.db.exists("Stock Entry", stock_entry_name):
 			continue
-		existing = frappe.db.get_value("Stock Entry", stock_entry_name, "custom_linked_sales_orders") or ""
-		linked = [value.strip() for value in existing.split(",") if value.strip()]
+		linked = _sales_orders_for_stock_entry(stock_entry_name)
 		if doc.name not in linked:
 			linked.append(doc.name)
-			updates = {"custom_linked_sales_orders": ", ".join(linked)}
-			if _has_field("Stock Entry", "custom_sales_order"):
-				updates["custom_sales_order"] = linked[0]
-			frappe.db.set_value(
-				"Stock Entry",
-				stock_entry_name,
-				updates,
-				update_modified=False,
-			)
+		_apply_stock_entry_link_summary(stock_entry_name, linked)
+		_push_stock_entry_header_to_sales_order(stock_entry_name, doc.name)
+		if _has_field("Sales Order", "custom_igp_no"):
+			_push_sales_order_igp_to_stock_entry(doc.name, stock_entry_name)
 
 
 def prepare_stock_entry_links(doc, method=None):

@@ -278,6 +278,10 @@ function so_mfg_render_dialog(d, frm, so_items, made_map) {
     const src_ctrl = make_wh_ctrl('so-mfg-src-wh-wrap', 'e.g. Stores - ATC');
     const tgt_ctrl = make_wh_ctrl('so-mfg-tgt-wh-wrap', 'e.g. Finished Goods - ATC');
 
+    if (frm.doc.custom_source_warehouse && src_ctrl) {
+        src_ctrl.set_value(frm.doc.custom_source_warehouse);
+    }
+
     // Prefill FG warehouse from Stock Settings default
     frappe.call({
         method: 'frappe.client.get_value',

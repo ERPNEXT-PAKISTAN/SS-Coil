@@ -30,6 +30,9 @@ function apply_ss_coil_sales_order_header_defaults(frm) {
 	if (!frm.is_new()) {
 		return;
 	}
+	if (frm.fields_dict.custom_source_warehouse && !frm.doc.custom_source_warehouse) {
+		frm.set_value("custom_source_warehouse", SS_COIL_DEFAULT_WAREHOUSE);
+	}
 	if (frm.fields_dict.set_warehouse && !frm.doc.set_warehouse) {
 		frm.set_value("set_warehouse", SS_COIL_DEFAULT_WAREHOUSE);
 	}
@@ -44,7 +47,7 @@ function apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn) {
 		cdt,
 		cdn,
 		"warehouse",
-		frm.doc.set_warehouse || SS_COIL_DEFAULT_WAREHOUSE
+		frm.doc.custom_source_warehouse || frm.doc.set_warehouse || SS_COIL_DEFAULT_WAREHOUSE
 	);
 }
 

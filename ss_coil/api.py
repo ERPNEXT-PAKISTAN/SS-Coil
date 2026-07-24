@@ -135,15 +135,18 @@ def apply_stock_entry_ss_coil_defaults(doc):
 
 
 def apply_sales_order_ss_coil_defaults(doc):
-	if _default_ss_coil_warehouse_exists() and _has_field(doc.doctype, "set_warehouse") and not doc.get(
-		"set_warehouse"
-	):
-		doc.set_warehouse = DEFAULT_SS_COIL_WAREHOUSE
+	if _default_ss_coil_warehouse_exists():
+		if _has_field(doc.doctype, "custom_source_warehouse") and not doc.get("custom_source_warehouse"):
+			doc.custom_source_warehouse = DEFAULT_SS_COIL_WAREHOUSE
+		if _has_field(doc.doctype, "set_warehouse") and not doc.get("set_warehouse"):
+			doc.set_warehouse = DEFAULT_SS_COIL_WAREHOUSE
 
 	for row in doc.items or []:
 		if _has_field(row.doctype, "warehouse") and not row.get("warehouse"):
-			row.warehouse = doc.get("set_warehouse") or (
-				DEFAULT_SS_COIL_WAREHOUSE if _default_ss_coil_warehouse_exists() else None
+			row.warehouse = (
+				doc.get("custom_source_warehouse")
+				or doc.get("set_warehouse")
+				or (DEFAULT_SS_COIL_WAREHOUSE if _default_ss_coil_warehouse_exists() else None)
 			)
 
 
@@ -576,12 +579,69 @@ def _sales_order_from_purchase_receipt(purchase_receipt):
 	return _first_unique([_sales_order_from_purchase_order(po) for po in purchase_orders])
 
 
+def _parse_comma_separated_names(value):
+	return [part.strip() for part in str(value or "").split(",") if part.strip()]
+
+
+def _stock_entry_linked_sales_orders(doc):
+	if not _has_field(doc.doctype, "custom_linked_sales_orders"):
+		return []
+	return _parse_comma_separated_names(doc.get("custom_linked_sales_orders"))
+
+
+def populate_stock_entry_custom_sales_order_from_links(doc):
+	if doc.doctype != "Stock Entry" or not _has_field(doc.doctype, "custom_sales_order"):
+		return
+	linked = _stock_entry_linked_sales_orders(doc)
+	if linked:
+		doc.custom_sales_order = linked[0]
+
+
+def _stock_entry_inward_warehouse(stock_entry):
+	warehouse = stock_entry.get("to_warehouse")
+	if warehouse:
+		return warehouse
+	for row in stock_entry.items or []:
+		if row.get("t_warehouse"):
+			return row.t_warehouse
+	if _default_ss_coil_warehouse_exists():
+		return DEFAULT_SS_COIL_WAREHOUSE
+	return None
+
+
+def _apply_stock_entry_warehouse_to_sales_order(sales_order, stock_entry):
+	warehouse = _stock_entry_inward_warehouse(stock_entry)
+	if not warehouse:
+		return
+	if _has_field("Sales Order", "custom_source_warehouse"):
+		sales_order.custom_source_warehouse = warehouse
+	if _has_field("Sales Order", "set_warehouse"):
+		sales_order.set_warehouse = warehouse
+	for row in sales_order.items or []:
+		if _has_field(row.doctype, "warehouse") and not row.get("warehouse"):
+			row.warehouse = warehouse
+
+
+def _apply_sales_order_warehouse_to_stock_entry(stock_entry, sales_order):
+	warehouse = sales_order.get("custom_source_warehouse") or sales_order.get("set_warehouse")
+	if not warehouse:
+		return
+	if _has_field(stock_entry.doctype, "to_warehouse") and not stock_entry.get("to_warehouse"):
+		stock_entry.to_warehouse = warehouse
+	for row in stock_entry.items or []:
+		if _has_field(row.doctype, "t_warehouse") and not row.get("t_warehouse"):
+			row.t_warehouse = warehouse
+
+
 def _infer_custom_sales_order(doc):
 	if getattr(doc, "custom_sales_order", None):
 		return doc.custom_sales_order
 
 	doctype = doc.doctype
 	if doctype == "Stock Entry":
+		linked = _stock_entry_linked_sales_orders(doc)
+		if linked:
+			return linked[0]
 		return frappe.db.get_value("SS Coil", {"stock_entry": doc.name}, "order_no")
 
 	if doctype == "Payment Entry":
@@ -630,6 +690,10 @@ def _infer_custom_sales_order(doc):
 def populate_custom_sales_order(doc, method=None):
 	if not _has_field(doc.doctype, "custom_sales_order"):
 		return
+	if doc.doctype == "Stock Entry":
+		populate_stock_entry_custom_sales_order_from_links(doc)
+		if doc.get("custom_sales_order"):
+			return
 	sales_order = _infer_custom_sales_order(doc)
 	if sales_order:
 		doc.custom_sales_order = sales_order
@@ -2976,6 +3040,9 @@ def create_sales_order_from_stock_entry(source_name):
 	if not sales_order.get("company"):
 		sales_order.company = source.get("company")
 
+	if source.get("custom_invoice__igp_no") and _has_field("Sales Order", "custom_igp_no"):
+		sales_order.custom_igp_no = source.get("custom_invoice__igp_no")
+
 	item_fields = _copyable_fieldnames("Stock Entry Detail", "Sales Order Item")
 	for row in source.items:
 		so_row = sales_order.append("items", {})
@@ -2993,6 +3060,8 @@ def create_sales_order_from_stock_entry(source_name):
 
 	if _has_field("Sales Order", "custom_source_stock_entries"):
 		sales_order.custom_source_stock_entries = source.name
+
+	_apply_stock_entry_warehouse_to_sales_order(sales_order, source)
 
 	return sales_order
 
@@ -3074,6 +3143,8 @@ def create_stock_entry_from_sales_order(source_name):
 			value = row.get(fieldname)
 			if value not in (None, ""):
 				se_row.set(fieldname, value)
+
+	_apply_sales_order_warehouse_to_stock_entry(stock_entry, source)
 
 	return stock_entry
 
@@ -3333,7 +3404,10 @@ def sync_stock_entry_links_from_source(stock_entry):
 		order_by="parent asc",
 	)
 	value = ", ".join(row.parent for row in sales_orders)
-	frappe.db.set_value("Stock Entry", stock_entry, "custom_linked_sales_orders", value, update_modified=False)
+	updates = {"custom_linked_sales_orders": value}
+	if _has_field("Stock Entry", "custom_sales_order") and sales_orders:
+		updates["custom_sales_order"] = sales_orders[0].parent
+	frappe.db.set_value("Stock Entry", stock_entry, updates, update_modified=False)
 	frappe.db.commit()
 	return {"custom_linked_sales_orders": value}
 
@@ -3366,11 +3440,13 @@ def sync_stock_entry_sales_order_links(doc, method=None):
 		linked = [value.strip() for value in existing.split(",") if value.strip()]
 		if doc.name not in linked:
 			linked.append(doc.name)
+			updates = {"custom_linked_sales_orders": ", ".join(linked)}
+			if _has_field("Stock Entry", "custom_sales_order"):
+				updates["custom_sales_order"] = linked[0]
 			frappe.db.set_value(
 				"Stock Entry",
 				stock_entry_name,
-				"custom_linked_sales_orders",
-				", ".join(linked),
+				updates,
 				update_modified=False,
 			)
 
@@ -3726,6 +3802,13 @@ def setup_stock_entry_sales_order_link_fields():
 			},
 		],
 		"Sales Order": [
+			{
+				"fieldname": "custom_source_warehouse",
+				"label": "Source Warehouse",
+				"fieldtype": "Link",
+				"options": "Warehouse",
+				"insert_after": "set_warehouse",
+			},
 			{
 				"fieldname": "custom_source_stock_entries",
 				"label": "Source Stock Entries",

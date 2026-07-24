@@ -87,6 +87,7 @@ doctype_list_js = {
 doc_events = {
 	"Sales Order": {
 		"before_validate": [
+			"ss_coil.api.apply_sales_order_ss_coil_defaults",
 			"ss_coil.api.sync_sales_order_item_dimensions",
 		],
 		"before_save": [

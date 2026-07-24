@@ -57,6 +57,9 @@ def _has_field(doctype, fieldname):
 
 TAG_ORIGIN_DOCTYPES = ("Purchase Receipt", "Stock Entry")
 
+DEFAULT_SS_COIL_WAREHOUSE = "Stores - SSC"
+DEFAULT_QTY_OF_COIL = 1.0
+
 
 def _is_material_receipt_stock_entry(doc):
 	if (doc.purpose or "") == "Material Receipt":
@@ -96,6 +99,52 @@ def apply_inward_tag_row_defaults(doc):
 			needs_header = True
 	if needs_header and _has_field(doc.doctype, "custom_create_tag_numbers"):
 		doc.custom_create_tag_numbers = 1
+
+
+def _default_ss_coil_warehouse_exists():
+	return bool(frappe.db.exists("Warehouse", DEFAULT_SS_COIL_WAREHOUSE))
+
+
+def apply_stock_entry_detail_ss_coil_defaults(doc, row):
+	if _has_field(row.doctype, "custom_qty_of_coil") and row.get("custom_qty_of_coil") in (None, ""):
+		row.custom_qty_of_coil = DEFAULT_QTY_OF_COIL
+
+	if not _default_ss_coil_warehouse_exists():
+		return
+
+	if _is_material_receipt_stock_entry(doc):
+		if _has_field(row.doctype, "t_warehouse") and not row.get("t_warehouse"):
+			row.t_warehouse = doc.get("to_warehouse") or DEFAULT_SS_COIL_WAREHOUSE
+		return
+
+	if _has_field(row.doctype, "s_warehouse") and not row.get("s_warehouse"):
+		row.s_warehouse = doc.get("from_warehouse") or DEFAULT_SS_COIL_WAREHOUSE
+	if _has_field(row.doctype, "t_warehouse") and not row.get("t_warehouse"):
+		row.t_warehouse = doc.get("to_warehouse") or DEFAULT_SS_COIL_WAREHOUSE
+
+
+def apply_stock_entry_ss_coil_defaults(doc):
+	if _default_ss_coil_warehouse_exists():
+		if _has_field(doc.doctype, "from_warehouse") and not doc.get("from_warehouse"):
+			doc.from_warehouse = DEFAULT_SS_COIL_WAREHOUSE
+		if _has_field(doc.doctype, "to_warehouse") and not doc.get("to_warehouse"):
+			doc.to_warehouse = DEFAULT_SS_COIL_WAREHOUSE
+
+	for row in doc.items or []:
+		apply_stock_entry_detail_ss_coil_defaults(doc, row)
+
+
+def apply_sales_order_ss_coil_defaults(doc):
+	if _default_ss_coil_warehouse_exists() and _has_field(doc.doctype, "set_warehouse") and not doc.get(
+		"set_warehouse"
+	):
+		doc.set_warehouse = DEFAULT_SS_COIL_WAREHOUSE
+
+	for row in doc.items or []:
+		if _has_field(row.doctype, "warehouse") and not row.get("warehouse"):
+			row.warehouse = doc.get("set_warehouse") or (
+				DEFAULT_SS_COIL_WAREHOUSE if _default_ss_coil_warehouse_exists() else None
+			)
 
 
 STOCK_SOURCE_PURCHASE_RECEIPTS = "Purchase Receipts"
@@ -3328,6 +3377,7 @@ def sync_stock_entry_sales_order_links(doc, method=None):
 
 def prepare_stock_entry_links(doc, method=None):
 	populate_custom_sales_order(doc, method=method)
+	apply_stock_entry_ss_coil_defaults(doc)
 	apply_inward_tag_row_defaults(doc)
 	assign_stock_entry_detail_tags(doc, method=method)
 

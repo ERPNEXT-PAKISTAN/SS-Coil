@@ -6,7 +6,13 @@
 // the parent/child field lists needing to stay in sync with
 // stock_entry_data_entry.py's meta endpoint.
 
+const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
+const SS_COIL_DEFAULT_QTY_OF_COIL = 1;
+
 frappe.ui.form.on("Stock Entry", {
+	setup(frm) {
+		apply_ss_coil_stock_entry_header_defaults(frm);
+	},
 	refresh(frm) {
 		ensure_inward_tag_batch_dialog_suppressed();
 		add_stock_entry_data_entry_button(frm);
@@ -44,6 +50,9 @@ frappe.ui.form.on("Stock Entry", {
 	custom_create_tag_numbers(frm) {
 		toggle_stock_entry_tag_fields(frm);
 	},
+	items_add(frm, cdt, cdn) {
+		apply_ss_coil_stock_entry_row_defaults(frm, cdt, cdn);
+	},
 });
 
 function setup_finish_good_item_query(frm) {
@@ -58,6 +67,7 @@ function setup_finish_good_item_query(frm) {
 
 frappe.ui.form.on("Stock Entry Detail", {
 	item_code(frm, cdt, cdn) {
+		apply_ss_coil_stock_entry_row_defaults(frm, cdt, cdn);
 		set_stock_entry_dimension_from_values(cdt, cdn);
 		if (is_material_receipt_stock_entry(frm.doc)) {
 			apply_inward_item_tag_default(frm, cdt, cdn);
@@ -97,6 +107,55 @@ frappe.ui.form.on("Stock Entry Detail", {
 
 function is_material_receipt_stock_entry(doc) {
 	return (doc.purpose || "") === "Material Receipt";
+}
+
+function apply_ss_coil_stock_entry_header_defaults(frm) {
+	if (!frm.is_new()) {
+		return;
+	}
+	if (frm.fields_dict.from_warehouse && !frm.doc.from_warehouse) {
+		frm.set_value("from_warehouse", SS_COIL_DEFAULT_WAREHOUSE);
+	}
+	if (frm.fields_dict.to_warehouse && !frm.doc.to_warehouse) {
+		frm.set_value("to_warehouse", SS_COIL_DEFAULT_WAREHOUSE);
+	}
+}
+
+function apply_ss_coil_stock_entry_row_defaults(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row) {
+		return;
+	}
+	if (row.custom_qty_of_coil === undefined || row.custom_qty_of_coil === null || row.custom_qty_of_coil === "") {
+		frappe.model.set_value(cdt, cdn, "custom_qty_of_coil", SS_COIL_DEFAULT_QTY_OF_COIL);
+	}
+	if (is_material_receipt_stock_entry(frm.doc)) {
+		if (!row.t_warehouse) {
+			frappe.model.set_value(
+				cdt,
+				cdn,
+				"t_warehouse",
+				frm.doc.to_warehouse || SS_COIL_DEFAULT_WAREHOUSE
+			);
+		}
+		return;
+	}
+	if (!row.s_warehouse) {
+		frappe.model.set_value(
+			cdt,
+			cdn,
+			"s_warehouse",
+			frm.doc.from_warehouse || SS_COIL_DEFAULT_WAREHOUSE
+		);
+	}
+	if (!row.t_warehouse) {
+		frappe.model.set_value(
+			cdt,
+			cdn,
+			"t_warehouse",
+			frm.doc.to_warehouse || SS_COIL_DEFAULT_WAREHOUSE
+		);
+	}
 }
 
 let inward_tag_batch_dialog_wrapped = false;
@@ -552,6 +611,7 @@ function make_stock_entry_data_entry_item_row(existing) {
 			name: frappe.utils.get_random(10),
 			doctype: "Stock Entry Detail",
 			__islocal: 1,
+			custom_qty_of_coil: SS_COIL_DEFAULT_QTY_OF_COIL,
 		}
 	);
 }

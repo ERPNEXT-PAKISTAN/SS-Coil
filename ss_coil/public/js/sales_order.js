@@ -1,4 +1,7 @@
 frappe.ui.form.on("Sales Order", {
+	setup(frm) {
+		apply_ss_coil_sales_order_header_defaults(frm);
+	},
 	refresh(frm) {
 		bind_live_dimension_events(frm);
 		add_sales_order_tag_buttons(frm);
@@ -16,7 +19,34 @@ frappe.ui.form.on("Sales Order", {
 			set_custom_dimension_from_values(row.doctype, row.name);
 		});
 	},
+	items_add(frm, cdt, cdn) {
+		apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn);
+	},
 });
+
+const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
+
+function apply_ss_coil_sales_order_header_defaults(frm) {
+	if (!frm.is_new()) {
+		return;
+	}
+	if (frm.fields_dict.set_warehouse && !frm.doc.set_warehouse) {
+		frm.set_value("set_warehouse", SS_COIL_DEFAULT_WAREHOUSE);
+	}
+}
+
+function apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row || row.warehouse) {
+		return;
+	}
+	frappe.model.set_value(
+		cdt,
+		cdn,
+		"warehouse",
+		frm.doc.set_warehouse || SS_COIL_DEFAULT_WAREHOUSE
+	);
+}
 
 function add_sales_order_create_stock_entry_button(frm) {
 	if (frm.is_new() || !(frm.doc.items || []).length) return;
@@ -228,6 +258,7 @@ function add_sales_order_tag_buttons(frm) {
 
 frappe.ui.form.on("Sales Order Item", {
 	item_code(frm, cdt, cdn) {
+		apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn);
 		apply_sales_order_item_coil_defaults(frm, cdt, cdn);
 	},
 	custom_raw_material_item(frm, cdt, cdn) {

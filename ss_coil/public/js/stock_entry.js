@@ -8,6 +8,7 @@
 
 frappe.ui.form.on("Stock Entry", {
 	refresh(frm) {
+		ensure_inward_tag_batch_dialog_suppressed();
 		add_stock_entry_data_entry_button(frm);
 		add_stock_entry_sticker_print_button(frm);
 		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
@@ -23,6 +24,7 @@ frappe.ui.form.on("Stock Entry", {
 		});
 	},
 	onload(frm) {
+		ensure_inward_tag_batch_dialog_suppressed();
 		setup_finish_good_item_query(frm);
 		(frm.doc.items || []).forEach((row) => {
 			set_stock_entry_dimension_from_values(row.doctype, row.name);
@@ -95,6 +97,56 @@ frappe.ui.form.on("Stock Entry Detail", {
 
 function is_material_receipt_stock_entry(doc) {
 	return (doc.purpose || "") === "Material Receipt";
+}
+
+let inward_tag_batch_dialog_wrapped = false;
+
+function ensure_inward_tag_batch_dialog_suppressed() {
+	if (inward_tag_batch_dialog_wrapped || !erpnext.stock || !erpnext.stock.select_batch_and_serial_no) {
+		return;
+	}
+
+	const original = erpnext.stock.select_batch_and_serial_no;
+	erpnext.stock.select_batch_and_serial_no = function (frm, item) {
+		if (!item || !item.item_code) {
+			return original(frm, item);
+		}
+
+		frappe.db
+			.get_value("Item", item.item_code, [
+				"has_batch_no",
+				"custom_use_tag_as_batch_no",
+				"custom_create_tag_on_receipt",
+			])
+			.then((r) => {
+				if (should_skip_inward_tag_batch_dialog(frm, item, r.message || {})) {
+					frappe.flags.dialog_set = false;
+					return;
+				}
+				original(frm, item);
+			});
+	};
+
+	inward_tag_batch_dialog_wrapped = true;
+}
+
+function should_skip_inward_tag_batch_dialog(frm, item, item_flags) {
+	if (!is_material_receipt_stock_entry(frm.doc)) {
+		return false;
+	}
+	if (item.serial_and_batch_bundle || item.batch_no) {
+		return true;
+	}
+	if (!item_flags.has_batch_no) {
+		return false;
+	}
+	if (cint(item_flags.custom_use_tag_as_batch_no) === 0) {
+		return false;
+	}
+	const tag_on_save =
+		!!frm.doc.custom_create_tag_numbers &&
+		(!!item.custom_create_tag_no || !!cint(item_flags.custom_create_tag_on_receipt));
+	return tag_on_save;
 }
 
 function apply_inward_item_tag_default(frm, cdt, cdn) {

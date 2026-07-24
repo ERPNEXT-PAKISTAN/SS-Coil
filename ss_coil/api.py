@@ -338,12 +338,23 @@ def _ensure_batch_for_tag_row(row, tag_no):
 			}
 		).insert(ignore_permissions=True)
 	row.batch_no = tag_no
+	if _has_field(row.doctype, "use_serial_batch_fields"):
+		row.use_serial_batch_fields = 1
+	if _has_field(row.doctype, "serial_and_batch_bundle"):
+		row.serial_and_batch_bundle = ""
+
+
+def _sync_row_batch_from_tag(row, tag_no=None):
+	tag_no = tag_no or getattr(row, "custom_tag_no", None)
+	if tag_no:
+		_ensure_batch_for_tag_row(row, tag_no)
 
 
 def _create_origin_tag(doc, row, source_doctype, sales_order=None, stock_entry=None):
 	existing = _resolve_carried_tag(row, doc)
 	if existing:
 		row.custom_tag_no = existing
+		_sync_row_batch_from_tag(row, existing)
 		return existing
 
 	if row.custom_tag_no:
@@ -1354,6 +1365,7 @@ def assign_purchase_receipt_item_tags(doc, method=None):
 		carried_tag = _resolve_carried_tag(row, doc)
 		if carried_tag:
 			row.custom_tag_no = carried_tag
+			_sync_row_batch_from_tag(row, carried_tag)
 			_update_tag_location(
 				doc,
 				row,
@@ -1402,6 +1414,7 @@ def assign_stock_entry_detail_tags(doc, method=None):
 		carried_tag = _resolve_carried_tag(row, doc)
 		if carried_tag:
 			row.custom_tag_no = carried_tag
+			_sync_row_batch_from_tag(row, carried_tag)
 			_update_tag_location(
 				doc,
 				row,

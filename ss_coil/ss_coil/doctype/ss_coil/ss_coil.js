@@ -1839,6 +1839,7 @@ function load_input_coil_from_sales_order_item(frm, item) {
 	});
 }
 
+// Preview sub-tags in the grid only; Tag Registry is updated on server Save after Start.
 function buildSubTag(parentTagNo, sequenceNumber) {
 	if (!parentTagNo) return "";
 	const trimmed = String(parentTagNo).trim();

@@ -1763,6 +1763,31 @@ def assign_stock_entry_detail_tags(doc, method=None):
 			)
 
 
+def _ss_coil_should_register_output_tags(doc):
+	"""Persist sub-tag numbers on save; Tag Registry only after Start (not Not Started)."""
+	status = (getattr(doc, "order_status", None) or "Not Started").strip()
+	return status != "Not Started"
+
+
+def _register_ss_coil_job_output_tag(doc, row, parent_tag_no, root_tag_no):
+	if not row.tag_no or not _ss_coil_should_register_output_tags(doc):
+		return
+	_register_tag(
+		row.tag_no,
+		source_doctype="SS Coil",
+		source_docname=doc.name,
+		source_child_doctype=row.doctype,
+		source_child_name=row.name,
+		item_code=getattr(row, "class", None),
+		item_name=getattr(row, "class", None),
+		sales_order=doc.order_no,
+		stock_entry=doc.stock_entry,
+		parent_tag_no=parent_tag_no,
+		root_tag_no=root_tag_no or parent_tag_no or row.tag_no,
+		status="Produced",
+	)
+
+
 def prepare_ss_coil_output_tags(doc, method=None):
 	if getattr(getattr(doc, "flags", None), "skip_auto_job_output", False):
 		return
@@ -1778,21 +1803,7 @@ def prepare_ss_coil_output_tags(doc, method=None):
 		if row_parent_tag and not row.tag_no:
 			row.tag_no = _next_sub_tag(row_parent_tag)
 
-		if row.tag_no:
-			_register_tag(
-				row.tag_no,
-				source_doctype="SS Coil",
-				source_docname=doc.name,
-				source_child_doctype=row.doctype,
-				source_child_name=row.name,
-				item_code=getattr(row, "class", None),
-				item_name=getattr(row, "class", None),
-				sales_order=doc.order_no,
-				stock_entry=doc.stock_entry,
-				parent_tag_no=row_parent_tag,
-				root_tag_no=root_tag_no or row_parent_tag or row.tag_no,
-				status="Produced",
-			)
+		_register_ss_coil_job_output_tag(doc, row, row_parent_tag, root_tag_no)
 
 
 def _get_coil_output_target_fields():
@@ -2708,20 +2719,7 @@ def sync_ss_coil_output_tags(ss_coil=None):
 				doc_changed = True
 
 			if effective_tag:
-				_register_tag(
-					effective_tag,
-					source_doctype="SS Coil",
-					source_docname=doc.name,
-					source_child_doctype=row.doctype,
-					source_child_name=row.name,
-					item_code=getattr(row, "class", None),
-					item_name=getattr(row, "class", None),
-					sales_order=doc.order_no,
-					stock_entry=doc.stock_entry,
-					parent_tag_no=parent_tag_no,
-					root_tag_no=root_tag_no or parent_tag_no or effective_tag,
-					status="Produced",
-				)
+				_register_ss_coil_job_output_tag(doc, row, parent_tag_no, root_tag_no)
 
 		if doc_changed:
 			updated.append(doc.name)

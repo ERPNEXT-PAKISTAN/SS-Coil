@@ -109,6 +109,8 @@ doc_events = {
 		#
 		# before_validate: mutates the doc's own fields (job_output rows,
 		# tag assignment) before the DB write - only needs to run once.
+		# Sub-tag numbers are assigned here on every save; Tag Registry rows
+		# for those tags are deferred until order_status is not Not Started.
 		#
 		# on_update: sync_ss_coil_process_tracking also rolls up this SS
 		# Coil's status onto its Sales Order Item via a query that only

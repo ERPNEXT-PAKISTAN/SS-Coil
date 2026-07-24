@@ -40,6 +40,7 @@ frappe.ui.form.on("SS Coil", {
 		update_calc_ratio(frm);
 		update_remaining_width(frm);
 		update_input_coil_length(frm);
+		sync_cutting_detail_so_no(frm, false);
 		rebuild_job_output_if_needed(frm);
 		render_job_output_qr_fields(frm);
 		load_ss_coil_flow_and_dashboards(frm);
@@ -60,6 +61,7 @@ frappe.ui.form.on("SS Coil", {
 		update_calc_ratio(frm);
 	},
 	cutting_detail_add(frm) {
+		sync_cutting_detail_so_no(frm, false);
 		rebuild_job_output_from_input(frm);
 		update_grand_totals(frm);
 	},
@@ -193,6 +195,8 @@ frappe.ui.form.on("SS Coil", {
 				if (!row.item_name && item.item_code) {
 					row.item_name = item.item_name || item.item_code;
 				}
+
+				apply_ss_coil_fields_from_sales_order_item(frm, item, row);
 
 				frm.set_value("machine", item.custom_machine || "");
 				frm.set_value("calc_ratio", flt(item.custom_calc_ratio));
@@ -1958,7 +1962,12 @@ function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequ
 			return;
 		}
 		if (fieldname === "packing") {
-			row.packing = existing_row?.packing || so_row.custom_packing_type || so_row.packing || "";
+			row.packing =
+				existing_row?.packing ||
+				frm._so_item_packing_type ||
+				so_row.custom_packing_type ||
+				so_row.packing ||
+				"";
 			return;
 		}
 		if (fieldname === "barcode") {
@@ -2715,6 +2724,9 @@ function load_cutting_scheme_from_so_item(frm, rows) {
 				row[fieldname] = source_row[fieldname];
 			}
 		});
+		if (frm.doc.order_no) {
+			row.so_no = frm.doc.order_no;
+		}
 	});
 
 	frm.refresh_field("cutting_detail");
@@ -2723,11 +2735,50 @@ function load_cutting_scheme_from_so_item(frm, rows) {
 	update_grand_totals(frm);
 }
 
+function apply_ss_coil_fields_from_sales_order_item(frm, item, soRow) {
+	const mill = item.custom_mill || "";
+	const specification = item.custom_specification || "";
+	const commodity = item.custom_commodity || "";
+
+	if (mill) {
+		soRow.mill = mill;
+		frm.set_value("mill", mill);
+	}
+	if (specification) {
+		soRow.specification = specification;
+		frm.set_value("specifications", specification);
+	}
+	if (commodity) {
+		frm.set_value("commodity", commodity);
+	}
+	frm._so_item_packing_type = item.custom_packing_type || "";
+}
+
+function sync_cutting_detail_so_no(frm, refresh_field = true) {
+	if (!frm.doc.order_no) {
+		return;
+	}
+	let changed = false;
+	(frm.doc.cutting_detail || []).forEach((row) => {
+		if (row.so_no !== frm.doc.order_no) {
+			row.so_no = frm.doc.order_no;
+			changed = true;
+		}
+	});
+	if (refresh_field && changed) {
+		frm.refresh_field("cutting_detail");
+	}
+}
+
 function clear_sales_order_item_mapped_fields(frm) {
 	frm.set_value("machine", "");
 	frm.set_value("calc_ratio", 0);
 	frm.set_value("calc_ratio_2", 0);
 	frm.set_value("actual_ratio", 0);
 	frm.set_value("remaining_width", 0);
+	frm.set_value("mill", "");
+	frm.set_value("specifications", "");
+	frm.set_value("commodity", "");
+	frm._so_item_packing_type = "";
 	frm.set_value("order_status", "Not Started");
 }

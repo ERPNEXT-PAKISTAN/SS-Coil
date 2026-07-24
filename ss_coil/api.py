@@ -1820,6 +1820,62 @@ def _build_child_tag(parent_tag_no, sequence_number):
 	return f"{base}-{sequence}"
 
 
+def _ss_coil_sales_order_item_doc(doc):
+	if not doc.get("sales_order_item"):
+		return None
+	if not frappe.db.exists("Sales Order Item", doc.sales_order_item):
+		return None
+	return frappe.get_cached_doc("Sales Order Item", doc.sales_order_item)
+
+
+def _ss_coil_packing_type(doc, so_row=None):
+	so_item_doc = _ss_coil_sales_order_item_doc(doc)
+	if so_item_doc and so_item_doc.get("custom_packing_type"):
+		return so_item_doc.get("custom_packing_type")
+	if so_row:
+		return getattr(so_row, "custom_packing_type", None) or getattr(so_row, "packing", None)
+	return None
+
+
+def sync_ss_coil_sales_order_item_fields(doc, method=None):
+	"""Pull Sales Order item values onto SS Coil header, so_item, cutting_detail, and job_output."""
+	if doc.doctype != "SS Coil":
+		return
+
+	so_item_doc = _ss_coil_sales_order_item_doc(doc)
+	so_row = (doc.so_item or [None])[0]
+
+	if so_item_doc and so_row:
+		for coil_field, so_field in (
+			("mill", "custom_mill"),
+			("specification", "custom_specification"),
+		):
+			value = so_item_doc.get(so_field)
+			if value not in (None, "") and not so_row.get(coil_field):
+				so_row.set(coil_field, value)
+
+	if so_item_doc:
+		mill = so_item_doc.get("custom_mill")
+		spec = so_item_doc.get("custom_specification")
+		commodity = so_item_doc.get("custom_commodity")
+		if mill not in (None, ""):
+			doc.mill = mill
+		if spec not in (None, ""):
+			doc.specifications = spec
+		if commodity not in (None, ""):
+			doc.commodity = commodity
+
+	if doc.order_no:
+		for row in doc.cutting_detail or []:
+			row.so_no = doc.order_no
+
+	packing_type = _ss_coil_packing_type(doc, so_row)
+	if packing_type:
+		for row in doc.job_output or []:
+			if not row.get("packing"):
+				row.packing = packing_type
+
+
 def _sync_job_output_rows_from_cutting_detail(doc):
 	input_row = (doc.input_coil or [None])[0]
 	so_row = (doc.so_item or [None])[0]
@@ -1873,7 +1929,10 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 			elif fieldname == "width":
 				row.width = output_width or getattr(existing_row, "width", None) or getattr(so_row, "width", None)
 			elif fieldname == "packing":
-				row.packing = getattr(existing_row, "packing", None) or getattr(so_row, "packing", None) or getattr(so_row, "custom_packing_type", None)
+				row.packing = (
+					getattr(existing_row, "packing", None)
+					or _ss_coil_packing_type(doc, so_row)
+				)
 			elif fieldname == "length":
 				row.length = getattr(existing_row, "length", None) or getattr(input_row, "length", None)
 			elif fieldname == "barcode":
@@ -3569,6 +3628,8 @@ def create_ss_coil_from_sales_order(source_name, sales_order_item=None, operatio
 		ss_coil.append("input_coil", input_row)
 	for scheme_row in _cutting_scheme_rows_for_sales_order_item(so_item.name):
 		ss_coil.append("cutting_detail", scheme_row)
+
+	sync_ss_coil_sales_order_item_fields(ss_coil)
 
 	return ss_coil
 

@@ -334,33 +334,40 @@ def _reset_stock_entry_row_tag_fields(row):
 		row.use_serial_batch_fields = 0
 
 
+def _effective_stock_entry_row_tag(row):
+	tag = getattr(row, "custom_tag_no", None)
+	if tag:
+		return tag
+	return _find_tag_by_batch(getattr(row, "batch_no", None), getattr(row, "item_code", None))
+
+
 def _stock_entry_row_tag_is_foreign(doc, row):
-	tag = row.get("custom_tag_no")
+	"""True if this row must not keep tag/batch (duplicate, copy, or second owner)."""
+	tag = _effective_stock_entry_row_tag(row)
 	if not tag or doc.doctype != "Stock Entry":
 		return False
-
-	if frappe.db.exists(
-		"Stock Entry Detail",
-		{"custom_tag_no": tag, "parent": ["!=", doc.name]},
-	):
-		return True
 
 	if frappe.db.exists("Tag Registry", tag):
 		reg = frappe.db.get_value(
 			"Tag Registry",
 			tag,
-			["source_doctype", "source_docname"],
+			["source_doctype", "source_docname", "source_child_name"],
 			as_dict=True,
 		)
-		if (
-			reg
-			and reg.source_doctype == "Stock Entry"
-			and reg.source_docname
-			and reg.source_docname != doc.name
-		):
+		if reg and reg.source_doctype == "Stock Entry" and reg.source_docname:
+			if reg.source_docname == doc.name and reg.source_child_name == row.name:
+				return False
 			return True
 
-	return False
+	owners = frappe.get_all(
+		"Stock Entry Detail",
+		filters={"custom_tag_no": tag},
+		fields=["parent", "name"],
+	)
+	for owner in owners:
+		if owner.parent == doc.name and owner.name == row.name:
+			return False
+	return bool(owners)
 
 
 def clear_copied_stock_entry_origin_tags(doc):
@@ -373,7 +380,7 @@ def clear_copied_stock_entry_origin_tags(doc):
 
 	seen_tags = set()
 	for row in doc.items:
-		tag = row.get("custom_tag_no")
+		tag = _effective_stock_entry_row_tag(row)
 		if not tag:
 			continue
 		if tag in seen_tags or _stock_entry_row_tag_is_foreign(doc, row):
@@ -383,12 +390,16 @@ def clear_copied_stock_entry_origin_tags(doc):
 
 
 def _resolve_carried_tag(row, doc=None):
-	if getattr(row, "custom_tag_no", None):
+	row_tag = getattr(row, "custom_tag_no", None)
+	if row_tag:
 		if doc and doc.doctype == "Stock Entry" and _stock_entry_row_tag_is_foreign(doc, row):
 			return None
-		return row.custom_tag_no
+		return row_tag
 
 	tag = _find_tag_by_batch(getattr(row, "batch_no", None), getattr(row, "item_code", None))
+	if tag and doc and doc.doctype == "Stock Entry":
+		if _stock_entry_row_tag_is_foreign(doc, row):
+			return None
 	if tag:
 		return tag
 
@@ -1577,7 +1588,8 @@ def backfill_sales_order_item_dimensions(sales_order=None):
 
 
 def assign_sales_order_item_tags(doc, method=None):
-	"""Sales Order does not create tags. Only sync manually linked tags to the registry."""
+	"""Sales Order does not create origin tags; link registry and pull tags from source Stock Entry."""
+	sync_sales_order_item_tags_from_stock_entry(doc)
 	for row in doc.items or []:
 		if not row.get("custom_tag_no"):
 			continue
@@ -1587,6 +1599,66 @@ def assign_sales_order_item_tags(doc, method=None):
 			status="Linked",
 			sales_order=doc.name,
 		)
+
+
+def sync_sales_order_item_tags_from_stock_entry(doc):
+	"""Copy mother-coil tag/batch from linked Stock Entry Detail onto SO items."""
+	for row in doc.items or []:
+		stock_entry = row.get("custom_source_stock_entry")
+		if not stock_entry:
+			continue
+
+		se_row = _get_linked_stock_entry_detail_row(row, stock_entry)
+		if not se_row:
+			continue
+		_apply_stock_entry_row_tags_to_sales_order_item(row, se_row)
+
+
+def _get_linked_stock_entry_detail_row(so_row, stock_entry):
+	detail_name = so_row.get("custom_source_stock_entry_detail")
+	if detail_name and frappe.db.exists("Stock Entry Detail", detail_name):
+		return frappe.get_doc("Stock Entry Detail", detail_name)
+
+	filters = {"parent": stock_entry}
+	raw_item = so_row.get("custom_raw_material_item")
+	if raw_item:
+		filters["item_code"] = raw_item
+	elif so_row.get("item_code"):
+		filters["item_code"] = so_row.item_code
+
+	detail_name = frappe.db.get_value("Stock Entry Detail", filters, "name")
+	if detail_name:
+		return frappe.get_doc("Stock Entry Detail", detail_name)
+	return None
+
+
+def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row):
+	tag = se_row.get("custom_tag_no") or _find_tag_by_batch(
+		se_row.get("batch_no"), se_row.get("item_code")
+	)
+	batch_no = se_row.get("batch_no")
+	if tag and batch_no == tag and not frappe.db.exists("Batch", batch_no):
+		batch_no = tag if frappe.db.exists("Batch", tag) else batch_no
+
+	if _has_field("Sales Order Item", "custom_stock_source_type"):
+		so_row.custom_stock_source_type = STOCK_SOURCE_STOCK_ENTRY
+
+	raw_item = se_row.get("item_code")
+	if _has_field("Sales Order Item", "custom_raw_material_item") and raw_item:
+		so_row.custom_raw_material_item = raw_item
+
+	if tag and _has_field("Sales Order Item", "custom_raw_material_tag_no"):
+		so_row.custom_raw_material_tag_no = tag
+
+	if (
+		batch_no
+		and _has_field("Sales Order Item", "custom_raw_material_batch_no")
+		and frappe.db.exists("Batch", batch_no)
+	):
+		so_row.custom_raw_material_batch_no = batch_no
+
+	if so_row.get("custom_tag_no") in (None, "", tag):
+		so_row.custom_tag_no = None
 
 
 def sync_sales_order_item_tag_registry(doc, method=None):
@@ -3189,6 +3261,7 @@ def create_sales_order_from_stock_entry(source_name):
 			if value not in (None, ""):
 				so_row.set(fieldname, value)
 		_apply_finish_good_to_sales_order_row(so_row, row)
+		_apply_stock_entry_row_tags_to_sales_order_item(so_row, row)
 		if not so_row.get("delivery_date"):
 			so_row.delivery_date = sales_order.transaction_date
 		if _has_field("Sales Order Item", "custom_source_stock_entry"):
@@ -3238,7 +3311,6 @@ def _apply_finish_good_to_sales_order_row(so_row, se_row):
 	parent_tag = se_row.get("custom_tag_no")
 	if parent_tag and _has_field("Sales Order Item", "custom_raw_material_tag_no"):
 		so_row.custom_raw_material_tag_no = parent_tag
-		# SO Item.custom_tag_no is for production child tags, not the mother coil.
 		if so_row.get("custom_tag_no") == parent_tag:
 			so_row.custom_tag_no = None
 
@@ -3509,6 +3581,7 @@ def sync_sales_order_stock_entry_links(sales_order):
 	"""
 	doc = frappe.get_doc("Sales Order", sales_order)
 	sync_stock_entry_sales_order_links(doc)
+	sync_sales_order_item_tags_from_stock_entry(doc)
 
 	stock_entry_names = list(
 		dict.fromkeys(
@@ -3532,6 +3605,23 @@ def sync_sales_order_stock_entry_links(sales_order):
 		)
 	if _has_field("Sales Order", "custom_igp_no"):
 		response["custom_igp_no"] = frappe.db.get_value("Sales Order", sales_order, "custom_igp_no") or ""
+
+	item_updates = {}
+	for row in doc.items or []:
+		updates = {}
+		if _has_field(row.doctype, "custom_raw_material_tag_no"):
+			updates["custom_raw_material_tag_no"] = row.get("custom_raw_material_tag_no") or ""
+		if _has_field(row.doctype, "custom_raw_material_batch_no"):
+			updates["custom_raw_material_batch_no"] = row.get("custom_raw_material_batch_no") or ""
+		if _has_field(row.doctype, "custom_raw_material_item"):
+			updates["custom_raw_material_item"] = row.get("custom_raw_material_item") or ""
+		if _has_field(row.doctype, "custom_stock_source_type") and row.get("custom_stock_source_type"):
+			updates["custom_stock_source_type"] = row.custom_stock_source_type
+		if updates:
+			frappe.db.set_value("Sales Order Item", row.name, updates, update_modified=True)
+			item_updates[row.name] = updates
+
+	response["item_updates"] = item_updates
 
 	frappe.db.commit()
 	return response
@@ -3910,6 +4000,27 @@ def setup_tag_origin_fields():
 				updates,
 				update_modified=False,
 			)
+
+	if frappe.db.exists("Property Setter", "Stock Entry Detail-batch_no-no_copy"):
+		frappe.db.set_value(
+			"Property Setter",
+			"Stock Entry Detail-batch_no-no_copy",
+			"value",
+			"1",
+			update_modified=False,
+		)
+	else:
+		frappe.get_doc(
+			{
+				"doctype": "Property Setter",
+				"doctype_or_field": "DocField",
+				"doc_type": "Stock Entry Detail",
+				"field_name": "batch_no",
+				"property": "no_copy",
+				"property_type": "Check",
+				"value": "1",
+			}
+		).insert(ignore_permissions=True)
 
 	_update_sales_order_item_field_order()
 	_setup_purchase_receipt_coil_fields()

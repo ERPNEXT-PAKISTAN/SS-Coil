@@ -84,6 +84,15 @@ function add_sales_order_create_stock_entry_button(frm) {
 							frm.doc.custom_igp_no = msg.custom_igp_no || "";
 							frm.refresh_field("custom_igp_no");
 						}
+						const itemUpdates = msg.item_updates || {};
+						(frm.doc.items || []).forEach((row) => {
+							const patch = itemUpdates[row.name];
+							if (!patch) return;
+							Object.keys(patch).forEach((fieldname) => {
+								row[fieldname] = patch[fieldname];
+							});
+						});
+						frm.refresh_field("items");
 						frappe.show_alert({ message: __("Stock Entry links synced"), indicator: "green" });
 					},
 				});

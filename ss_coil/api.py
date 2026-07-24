@@ -323,8 +323,69 @@ def _find_stock_entry_detail_tag(stock_entry=None, se_detail=None, item_code=Non
 	return None
 
 
+def _reset_stock_entry_row_tag_fields(row):
+	if _has_field(row.doctype, "custom_tag_no"):
+		row.custom_tag_no = None
+	if _has_field(row.doctype, "batch_no"):
+		row.batch_no = None
+	if _has_field(row.doctype, "serial_and_batch_bundle"):
+		row.serial_and_batch_bundle = ""
+	if _has_field(row.doctype, "use_serial_batch_fields"):
+		row.use_serial_batch_fields = 0
+
+
+def _stock_entry_row_tag_is_foreign(doc, row):
+	tag = row.get("custom_tag_no")
+	if not tag or doc.doctype != "Stock Entry":
+		return False
+
+	if frappe.db.exists(
+		"Stock Entry Detail",
+		{"custom_tag_no": tag, "parent": ["!=", doc.name]},
+	):
+		return True
+
+	if frappe.db.exists("Tag Registry", tag):
+		reg = frappe.db.get_value(
+			"Tag Registry",
+			tag,
+			["source_doctype", "source_docname"],
+			as_dict=True,
+		)
+		if (
+			reg
+			and reg.source_doctype == "Stock Entry"
+			and reg.source_docname
+			and reg.source_docname != doc.name
+		):
+			return True
+
+	return False
+
+
+def clear_copied_stock_entry_origin_tags(doc):
+	"""Drop tag/batch values copied from another Stock Entry (duplicate / paste).
+
+	Each Material Receipt inward row must get its own origin tag on save.
+	"""
+	if doc.doctype != "Stock Entry" or not doc.get("items"):
+		return
+
+	seen_tags = set()
+	for row in doc.items:
+		tag = row.get("custom_tag_no")
+		if not tag:
+			continue
+		if tag in seen_tags or _stock_entry_row_tag_is_foreign(doc, row):
+			_reset_stock_entry_row_tag_fields(row)
+			continue
+		seen_tags.add(tag)
+
+
 def _resolve_carried_tag(row, doc=None):
 	if getattr(row, "custom_tag_no", None):
+		if doc and doc.doctype == "Stock Entry" and _stock_entry_row_tag_is_foreign(doc, row):
+			return None
 		return row.custom_tag_no
 
 	tag = _find_tag_by_batch(getattr(row, "batch_no", None), getattr(row, "item_code", None))
@@ -3550,6 +3611,7 @@ def sync_stock_entry_sales_order_links(doc, method=None):
 
 def prepare_stock_entry_links(doc, method=None):
 	populate_custom_sales_order(doc, method=method)
+	clear_copied_stock_entry_origin_tags(doc)
 	apply_stock_entry_ss_coil_defaults(doc)
 	apply_inward_tag_row_defaults(doc)
 	assign_stock_entry_detail_tags(doc, method=method)
@@ -3836,13 +3898,16 @@ def setup_tag_origin_fields():
 	}.items():
 		fieldname = f"{doctype}-custom_tag_no"
 		if frappe.db.exists("Custom Field", fieldname):
+			updates = {
+				"read_only": 1,
+				"description": description,
+			}
+			if doctype == "Stock Entry Detail":
+				updates["no_copy"] = 1
 			frappe.db.set_value(
 				"Custom Field",
 				fieldname,
-				{
-					"read_only": 1,
-					"description": description,
-				},
+				updates,
 				update_modified=False,
 			)
 

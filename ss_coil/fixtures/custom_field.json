@@ -3224,7 +3224,7 @@
   "modified": "2026-06-03 01:23:52.583461",
   "module": null,
   "name": "Stock Entry Detail-custom_tag_no",
-  "no_copy": 0,
+  "no_copy": 1,
   "non_negative": 0,
   "options": null,
   "permlevel": 0,

@@ -71,7 +71,10 @@ app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=8"
 doctype_js = {
 	"Sales Order": ["public/js/coil_detail_print.js", "public/js/sales_order.js", "public/js/sales_order_manufacture.js"],
 	"Stock Entry": ["public/js/coil_detail_print.js", "public/js/stock_entry.js"],
-	"SS Coil": "public/js/coil_detail_print.js",
+	"SS Coil": [
+		"public/js/coil_detail_print.js",
+		"public/js/ss_coil_sticker_print.js",
+	],
 	"Delivery Note": "public/js/delivery_note.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Purchase Receipt": "public/js/purchase_receipt.js",
@@ -126,6 +129,7 @@ doc_events = {
 			"ss_coil.api.sync_ss_coil_process_tracking",
 		],
 		"on_update": "ss_coil.api.sync_ss_coil_process_tracking",
+		"before_print": "ss_coil.api.prepare_ss_coil_sticker_print",
 	},
 	"Stock Entry": {
 		"before_validate": "ss_coil.api.prepare_stock_entry_links",

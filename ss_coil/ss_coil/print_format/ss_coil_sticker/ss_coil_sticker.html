@@ -1,23 +1,29 @@
 <style>
-	@page {
-		size: 3in 2in landscape;
-		margin: 0;
-	}
 	.print-format {
-		orientation: Landscape;
-		page-size: 3in 2in;
-		margin: 0;
+		orientation: Portrait;
+		page-size: A4;
+		margin-top: 3mm;
+		margin-bottom: 3mm;
+		margin-left: 3mm;
+		margin-right: 3mm;
 		font-family: Inter, Arial, sans-serif;
 		color: #0f172a;
 		text-align: left;
 	}
-	.sticker-thermal-sheet {
-		width: 3in;
+	.sticker-print-wrap {
+		text-align: left;
+		width: 100%;
 	}
-	.sticker-thermal-item {
-		width: 3in;
-		height: 2in;
-		page-break-after: always;
+	.sticker-sheet {
+		width: 100%;
+		border-collapse: collapse;
+		table-layout: fixed;
+		text-align: left;
+	}
+	.sticker-sheet td {
+		vertical-align: top;
+		border: none;
+		text-align: left;
 	}
 	.sticker-card {
 		border: 1px solid #334155;
@@ -27,6 +33,8 @@
 		height: 2in;
 		box-sizing: border-box;
 		background: #fff;
+		margin: 0;
+		page-break-inside: avoid;
 		overflow: hidden;
 		text-align: left;
 		display: flex;
@@ -76,6 +84,7 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		text-align: left;
 	}
 	.sticker-tagno {
 		font-size: 13px;
@@ -121,6 +130,7 @@
 		text-overflow: ellipsis;
 		padding: 0 2px 2px 0;
 		box-sizing: border-box;
+		text-align: left;
 	}
 	.sticker-triple-col-wide {
 		width: 98px;
@@ -145,6 +155,7 @@
 		white-space: normal;
 		overflow: visible;
 		overflow-wrap: break-word;
+		text-align: left;
 	}
 	.sticker-company-name {
 		font-size: 8.5px;
@@ -171,6 +182,11 @@
 		text-align: left;
 		flex: 0 0 auto;
 	}
+	.sticker-footer-table {
+		width: 100%;
+		border-collapse: collapse;
+		table-layout: fixed;
+	}
 	.sticker-footer-table td {
 		border: none;
 		vertical-align: bottom;
@@ -194,15 +210,25 @@
 </style>
 
 {% if sticker_print_html %}
-{{ sticker_print_html | safe }}
+<div class="sticker-print-wrap">{{ sticker_print_html | safe }}</div>
 {% else %}
 {% set site_url = frappe.utils.get_url() %}
-<div class="sticker-thermal-sheet">
-{% for row in doc.items %}
+{% set ns = namespace(col=0, opened=false) %}
+{% for row in doc.job_output %}
 {% if not filter_sticker_items or row.name in selected_item_names %}
-<div class="sticker-thermal-item">
-	{% set sticker_fields = build_stock_entry_sticker_payload(doc, row) %}
-	<div class="sticker-card" style="width:3in;height:2in;box-sizing:border-box;display:flex;flex-direction:column;">
+{% if row.tag_no %}
+{% if not ns.opened %}
+<table class="sticker-sheet" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;table-layout:fixed;text-align:left;">
+{% set ns.opened = true %}
+{% endif %}
+{% if ns.col == 0 %}
+<tr>
+<td style="width:50%;text-align:left;vertical-align:top;border:none;padding:0 2mm 3mm 0;">
+{% else %}
+<td style="width:50%;text-align:left;vertical-align:top;border:none;padding:0 0 3mm 0;">
+{% endif %}
+	{% set sticker_fields = build_ss_coil_sticker_payload(doc, row) %}
+	<div class="sticker-card" style="width:3in;height:2in;box-sizing:border-box;margin:0;display:flex;flex-direction:column;">
 		<div class="sticker-body-wrap" style="flex:1 1 auto;min-height:0;overflow:hidden;">
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
 			<tr>
@@ -210,16 +236,28 @@
 					{{ build_stock_entry_sticker_body_html(sticker_fields) | safe }}
 				</td>
 				<td class="sticker-qr" style="padding-right:8px;">
-					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR" style="width:70px;height:70px;display:block;margin-left:auto;margin-right:0;">
+					<img src="{{ site_url }}/api/method/ss_coil.api.get_ss_coil_sticker_qr_image?ss_coil={{ doc.name }}&output_name={{ row.name }}" alt="QR" style="width:70px;height:70px;display:block;margin-left:auto;margin-right:0;">
 				</td>
 			</tr>
 		</table>
 		</div>
 		{{ build_stock_entry_sticker_combo_html(sticker_fields) | safe }}
-		{{ build_stock_entry_sticker_footer_html(doc) | safe }}
+		{{ build_ss_coil_sticker_footer_html(doc) | safe }}
 	</div>
-</div>
+</td>
+{% set ns.col = ns.col + 1 %}
+{% if ns.col == 2 %}
+</tr>
+{% set ns.col = 0 %}
+{% endif %}
+{% endif %}
 {% endif %}
 {% endfor %}
-</div>
+{% if ns.col == 1 %}
+<td style="width:50%;border:none;"></td>
+</tr>
+{% endif %}
+{% if ns.opened %}
+</table>
+{% endif %}
 {% endif %}

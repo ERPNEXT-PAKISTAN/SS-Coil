@@ -864,8 +864,8 @@ function show_stock_entry_sticker_print_dialog(frm) {
 				fieldname: "layout",
 				label: __("Printer Type"),
 				options: [
-					{ value: "a4", label: __("A4 Sheet") },
-					{ value: "thermal", label: __("Thermal Printer") },
+					{ value: "a4", label: __("A4 Sheet (3 × 2 in stickers)") },
+					{ value: "thermal", label: __("Thermal / label printer (3 × 2 in)") },
 				],
 				default: "a4",
 				reqd: 1,

@@ -2025,7 +2025,10 @@ def _build_qr_html(payload_text, plain=False, scale=3):
 		qr.svg(buffer, scale=scale)
 		svg = _ensure_svg_viewbox(_strip_svg_preamble(buffer.getvalue().decode()))
 		if plain:
-			return f'<div class="ss-coil-qr" style="padding:0;background:#fff;border:none;display:inline-block;">{svg}</div>'
+			return (
+				f'<div class="ss-coil-qr" style="padding:0;background:#fff;border:none;'
+				f'display:block;margin-left:auto;margin-right:0;">{svg}</div>'
+			)
 		return f'<div class="ss-coil-qr" style="padding:8px; background:#fff; border:1px solid #dbe4f0; border-radius:10px; display:inline-block;">{svg}</div>'
 	return (
 		'<div class="ss-coil-qr-fallback" style="padding:12px; border:1px dashed #8aa2c1; '
@@ -2116,11 +2119,6 @@ def _sticker_field_line(label, value, cls=""):
 
 
 def _sticker_triple_row(items, divider=False):
-	# Fixed-pixel inline-block cells instead of a nested percentage table:
-	# a percentage-width table-layout:fixed table nested inside another
-	# table's cell can't reliably resolve its containing-block width in
-	# print/PDF rendering engines, so percentage columns were silently
-	# collapsing back to a much narrower width than declared.
 	col_classes = ("sticker-triple-col-wide", "sticker-triple-col-narrow", "sticker-triple-col-narrow")
 	cells = "".join(
 		f'<div class="sticker-triple-cell {col_classes[i]}">'
@@ -2172,26 +2170,44 @@ def build_stock_entry_sticker_combo_html(fields):
 	return f'<div class="sticker-combo-line">{html.escape(combo_value)}</div>'
 
 
-def build_stock_entry_sticker_footer_html(doc):
-	logo_url = get_stock_entry_sticker_logo_url(doc.get("company"))
-	logo_html = (
-		f'<div class="sticker-logo-box"><img src="{html.escape(logo_url)}" alt="Logo" class="sticker-logo"></div>'
-		if logo_url
-		else ""
+def build_sticker_footer_html(entry_no, date_value, company):
+	logo_url = get_stock_entry_sticker_logo_url(company)
+	logo_html = ""
+	if logo_url:
+		logo_html = (
+			f'<div class="sticker-logo-box" style="margin:0;padding:1px 2px;display:inline-block;line-height:0;">'
+			f'<img src="{html.escape(logo_url)}" alt="Logo" class="sticker-logo" '
+			f'style="display:block;height:24px;width:auto;max-width:52px;object-fit:contain;"></div>'
+		)
+	company_name = frappe.get_cached_value("Company", company, "company_name") if company else "-"
+	lines_html = (
+		f'<div class="sticker-footer-line" style="margin:0;padding:0;line-height:1.05;">'
+		f'<span class="sticker-label">Entry No:</span> '
+		f'<span class="sticker-value">{html.escape(str(entry_no))}</span></div>'
+		f'<div class="sticker-footer-line" style="margin:0;padding:0;line-height:1.05;">'
+		f'<span class="sticker-label">Date:</span> '
+		f'<span class="sticker-value">{html.escape(str(date_value))}</span></div>'
+		f'<div class="sticker-footer-line sticker-company-name" style="margin:0;padding:0;line-height:1.05;">'
+		f"{html.escape(str(company_name))}</div>"
 	)
-	entry_no = doc.get("name") or "-"
+	logo_cell = logo_html or "&nbsp;"
+	return (
+		f'<div class="sticker-footer" style="margin-top:1px;padding-top:1px;line-height:1.05;flex:0 0 auto;">'
+		f'<table class="sticker-footer-table" cellspacing="0" cellpadding="0" '
+		f'style="width:100%;border-collapse:collapse;table-layout:fixed;">'
+		f"<tr>"
+		f'<td style="vertical-align:bottom;text-align:left;padding:0;border:none;">{lines_html}</td>'
+		f'<td style="vertical-align:bottom;text-align:right;padding:0 0 0 3px;border:none;width:56px;">'
+		f"{logo_cell}</td>"
+		f"</tr></table></div>"
+	)
+
+
+def build_stock_entry_sticker_footer_html(doc):
 	date_value = (
 		frappe.format(doc.get("posting_date"), {"fieldtype": "Date"}) if doc.get("posting_date") else "-"
 	)
-	company_name = doc.get("company") or "-"
-	lines_html = (
-		f'<div class="sticker-footer-line"><span class="sticker-label">Entry No:</span> '
-		f'<span class="sticker-value">{html.escape(str(entry_no))}</span></div>'
-		f'<div class="sticker-footer-line"><span class="sticker-label">Date:</span> '
-		f'<span class="sticker-value">{html.escape(str(date_value))}</span></div>'
-		f'<div class="sticker-footer-line sticker-company-name">{html.escape(str(company_name))}</div>'
-	)
-	return f'<div class="sticker-footer">{logo_html}<div class="sticker-footer-text">{lines_html}</div></div>'
+	return build_sticker_footer_html(doc.get("name") or "-", date_value, doc.get("company"))
 
 
 def _get_sticker_items(doc, item_names=None, filter_items=False):
@@ -2211,8 +2227,8 @@ def _get_sticker_items(doc, item_names=None, filter_items=False):
 
 def _get_sticker_print_options(print_format=None, print_settings=None):
 	print_settings = print_settings or {}
-	has_filter = "item_names" in print_settings
-	item_names = print_settings.get("item_names")
+	has_filter = "item_names" in print_settings or "output_names" in print_settings
+	item_names = print_settings.get("output_names") or print_settings.get("item_names")
 	if isinstance(item_names, str):
 		item_names = frappe.parse_json(item_names)
 	layout = print_settings.get("layout")
@@ -2221,7 +2237,23 @@ def _get_sticker_print_options(print_format=None, print_settings=None):
 	return item_names, layout, has_filter
 
 
-@frappe.whitelist()
+def _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html):
+	return f"""
+	<div class="sticker-card" style="width:3in;height:2in;box-sizing:border-box;display:flex;flex-direction:column;">
+		<div class="sticker-body-wrap" style="flex:1 1 auto;min-height:0;overflow:hidden;">
+		<table class="sticker-inner" cellspacing="0" cellpadding="0">
+			<tr>
+				<td class="sticker-fields">{lines_html}</td>
+				<td class="sticker-qr" style="padding-right:8px;">{qr_html}</td>
+			</tr>
+		</table>
+		</div>
+		{combo_html}
+		{footer_html}
+	</div>
+	"""
+
+
 def build_stock_entry_sticker_html(doc, row):
 	"""Return sticker HTML block with QR code and field text for one item row."""
 	if isinstance(doc, str):
@@ -2238,18 +2270,7 @@ def build_stock_entry_sticker_html(doc, row):
 	lines_html = build_stock_entry_sticker_body_html(fields)
 	combo_html = build_stock_entry_sticker_combo_html(fields)
 	footer_html = build_stock_entry_sticker_footer_html(doc)
-	return f"""
-	<div class="sticker-card">
-		<table class="sticker-inner" cellspacing="0" cellpadding="0">
-			<tr>
-				<td class="sticker-fields">{lines_html}</td>
-				<td class="sticker-qr">{qr_html}</td>
-			</tr>
-		</table>
-		{combo_html}
-		{footer_html}
-	</div>
-	"""
+	return _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html)
 
 
 def build_stock_entry_sticker_sheet_html(doc, item_names=None, layout="a4", filter_items=False):
@@ -2258,6 +2279,10 @@ def build_stock_entry_sticker_sheet_html(doc, item_names=None, layout="a4", filt
 	stickers = [
 		build_stock_entry_sticker_html(doc, row.as_dict() if hasattr(row, "as_dict") else row) for row in rows
 	]
+	return _build_sticker_sheet_html(stickers, layout=layout)
+
+
+def _build_sticker_sheet_html(stickers, layout="a4"):
 	if not stickers:
 		return ""
 
@@ -2266,11 +2291,159 @@ def build_stock_entry_sticker_sheet_html(doc, item_names=None, layout="a4", filt
 			f'<div class="sticker-thermal-item">{sticker_html}</div>' for sticker_html in stickers
 		) + "</div>"
 
-	parts = ['<table class="sticker-sheet" cellspacing="0" cellpadding="0">']
-	for sticker_html in stickers:
-		parts.append(f"<tr><td>{sticker_html}</td></tr>")
+	cell_open = (
+		'<td style="width:50%;text-align:left;vertical-align:top;border:none;'
+		'padding:0 2mm 3mm 0;">'
+	)
+	cell_open_right = (
+		'<td style="width:50%;text-align:left;vertical-align:top;border:none;'
+		'padding:0 0 3mm 0;">'
+	)
+	cell_empty = '<td style="width:50%;border:none;"></td>'
+	parts = [
+		'<table cellspacing="0" cellpadding="0" class="sticker-sheet" '
+		'style="width:100%;border-collapse:collapse;table-layout:fixed;text-align:left;">'
+	]
+	for index in range(0, len(stickers), 2):
+		parts.append("<tr>")
+		parts.append(f"{cell_open}{stickers[index]}</td>")
+		if index + 1 < len(stickers):
+			parts.append(f"{cell_open_right}{stickers[index + 1]}</td>")
+		else:
+			parts.append(cell_empty)
+		parts.append("</tr>")
 	parts.append("</table>")
 	return "".join(parts)
+
+
+def _sticker_format_float(value):
+	return frappe.format(value, {"fieldtype": "Float"}) if value not in (None, "") else "-"
+
+
+def _sticker_format_length(value):
+	if value in (None, ""):
+		return "-"
+	text = str(value).strip()
+	if text.upper() == "C":
+		return "C"
+	return _sticker_format_float(value)
+
+
+def _ss_coil_sticker_company(doc):
+	company = frappe.defaults.get_global_default("company")
+	stock_entry = doc.get("stock_entry") if isinstance(doc, dict) else getattr(doc, "stock_entry", None)
+	if stock_entry and frappe.db.exists("Stock Entry", stock_entry):
+		company = frappe.db.get_value("Stock Entry", stock_entry, "company") or company
+	return company
+
+
+def _ss_coil_sticker_customer_name(doc, row):
+	customer_name = doc.get("customer_name") if isinstance(doc, dict) else getattr(doc, "customer_name", None)
+	if customer_name:
+		return customer_name
+	customer = row.get("customer") if isinstance(row, dict) else getattr(row, "customer", None)
+	if customer:
+		return frappe.get_cached_value("Customer", customer, "customer_name") or customer
+	return "-"
+
+
+def build_ss_coil_sticker_payload(doc, row):
+	if not isinstance(row, dict):
+		row = row.as_dict()
+	if not isinstance(doc, dict):
+		doc = doc.as_dict()
+
+	so_items = doc.get("so_item") or []
+	so_row = so_items[0].as_dict() if so_items and hasattr(so_items[0], "as_dict") else (so_items[0] if so_items else {})
+
+	qty = row.get("actual_qty")
+	if qty in (None, ""):
+		qty = row.get("estimated_qty")
+
+	coils = so_row.get("qty_of_coil") if so_row else None
+	if coils in (None, ""):
+		coils = 1
+
+	thickness = row.get("thickness") if row.get("thickness") not in (None, "") else so_row.get("thickness") or "-"
+	width = row.get("width") if row.get("width") not in (None, "") else so_row.get("width") or "-"
+	length_source = row.get("length") if row.get("length") not in (None, "") else so_row.get("length")
+
+	return {
+		"Tag No": row.get("tag_no") or "-",
+		"Customer": _ss_coil_sticker_customer_name(doc, row),
+		"Item Name": row.get("class") or "-",
+		"Specification": doc.get("specifications") or so_row.get("specification") or "-",
+		"Qty": _sticker_format_float(qty),
+		"No of Coils": _sticker_format_float(coils),
+		"Thickness": thickness,
+		"Width": width,
+		"Length": _sticker_format_length(length_source),
+		"Mill": doc.get("mill") or so_row.get("mill") or "-",
+		"Ref No": so_row.get("ref_no") or "-",
+	}
+
+
+def build_ss_coil_sticker_qr_payload(doc, row):
+	fields = dict(build_ss_coil_sticker_payload(doc, row))
+	if not isinstance(doc, dict):
+		doc = doc.as_dict()
+	fields["SS Coil"] = doc.get("name") or "-"
+	fields["Sales Order"] = doc.get("order_no") or "-"
+	company = _ss_coil_sticker_company(doc)
+	fields["Domain"] = frappe.get_cached_value("Company", company, "domain") or "-" if company else "-"
+	return "\n".join(f"{label}: {value}" for label, value in fields.items())
+
+
+def build_ss_coil_sticker_footer_html(doc):
+	if not isinstance(doc, dict):
+		doc = doc.as_dict()
+	date_value = frappe.format(frappe.utils.today(), {"fieldtype": "Date"})
+	if doc.get("creation"):
+		date_value = frappe.format(frappe.utils.getdate(doc.get("creation")), {"fieldtype": "Date"})
+	if doc.get("order_no") and frappe.db.exists("Sales Order", doc.order_no):
+		so_date = frappe.db.get_value("Sales Order", doc.order_no, "transaction_date")
+		if so_date:
+			date_value = frappe.format(so_date, {"fieldtype": "Date"})
+	return build_sticker_footer_html(doc.get("name") or "-", date_value, _ss_coil_sticker_company(doc))
+
+
+def build_ss_coil_sticker_html(doc, row):
+	if isinstance(doc, str):
+		doc = frappe.parse_json(doc)
+	if isinstance(row, str):
+		row = frappe.parse_json(row)
+	if not isinstance(doc, dict):
+		doc = doc.as_dict()
+	if not isinstance(row, dict):
+		row = row.as_dict()
+
+	fields = build_ss_coil_sticker_payload(doc, row)
+	qr_html = _build_qr_html(build_ss_coil_sticker_qr_payload(doc, row), plain=True, scale=4)
+	lines_html = build_stock_entry_sticker_body_html(fields)
+	combo_html = build_stock_entry_sticker_combo_html(fields)
+	footer_html = build_ss_coil_sticker_footer_html(doc)
+	return _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html)
+
+
+def _get_ss_coil_sticker_outputs(doc, output_names=None, filter_items=False):
+	rows = doc.job_output if hasattr(doc, "job_output") else doc.get("job_output") or []
+	rows = [row for row in rows if getattr(row, "tag_no", None) or (isinstance(row, dict) and row.get("tag_no"))]
+	if not filter_items:
+		return rows
+	if isinstance(output_names, str):
+		output_names = frappe.parse_json(output_names)
+	if not output_names:
+		return []
+	name_set = set(output_names)
+	return [row for row in rows if (getattr(row, "name", None) or row.get("name")) in name_set]
+
+
+def build_ss_coil_sticker_sheet_html(doc, output_names=None, layout="a4", filter_items=False):
+	rows = _get_ss_coil_sticker_outputs(doc, output_names=output_names, filter_items=filter_items)
+	stickers = [
+		build_ss_coil_sticker_html(doc, row.as_dict() if hasattr(row, "as_dict") else row) for row in rows
+	]
+	return _build_sticker_sheet_html(stickers, layout=layout)
 
 
 def prepare_stock_entry_sticker_print(doc, method=None, print_settings=None):
@@ -2282,6 +2455,19 @@ def prepare_stock_entry_sticker_print(doc, method=None, print_settings=None):
 	item_names, layout, has_filter = _get_sticker_print_options(print_format, print_settings)
 	html = build_stock_entry_sticker_sheet_html(
 		doc, item_names=item_names, layout=layout, filter_items=has_filter
+	)
+	doc.custom_sticker_print_html = html or ""
+
+
+def prepare_ss_coil_sticker_print(doc, method=None, print_settings=None):
+	"""Build sticker sheet HTML on SS Coil before printing (job_output tags only)."""
+	print_format = (getattr(frappe, "form_dict", None) or {}).get("format")
+	if print_format not in ("SS Coil Sticker", "SS Coil Sticker Thermal"):
+		return
+
+	output_names, layout, has_filter = _get_sticker_print_options(print_format, print_settings)
+	html = build_ss_coil_sticker_sheet_html(
+		doc, output_names=output_names, layout=layout, filter_items=has_filter
 	)
 	doc.custom_sticker_print_html = html or ""
 
@@ -2318,6 +2504,33 @@ def get_stock_entry_sticker_html(stock_entry, item_name):
 	if not row:
 		return ""
 	return build_stock_entry_sticker_html(doc, row)
+
+
+@frappe.whitelist()
+def get_ss_coil_sticker_qr_image(ss_coil, output_name):
+	"""Return QR SVG for one SS Coil job_output row sticker."""
+	doc = frappe.get_doc("SS Coil", ss_coil)
+	row = next((item for item in doc.job_output if item.name == output_name), None)
+	if not row:
+		frappe.throw(_("SS Coil output row not found"))
+	if not row.tag_no:
+		frappe.throw(_("Output row has no Tag No"))
+
+	payload_text = build_ss_coil_sticker_qr_payload(doc, row.as_dict())
+	if not pyqrcode:
+		frappe.local.response.filecontent = payload_text.encode()
+		frappe.local.response.type = "download"
+		frappe.local.response.filename = f"sticker-{output_name}.txt"
+		return
+
+	qr = pyqrcode.create(payload_text, error="M")
+	buffer = BytesIO()
+	qr.svg(buffer, scale=4)
+	svg = buffer.getvalue()
+	frappe.local.response.filecontent = svg
+	frappe.local.response.type = "download"
+	frappe.local.response.filename = f"sticker-{output_name}.svg"
+	frappe.local.response["content_type"] = "image/svg+xml"
 
 
 def _build_output_tag_cards_html(ss_coil_doc):
@@ -3995,6 +4208,19 @@ def setup_tag_origin_fields():
 				"label": "Sticker Print HTML",
 				"fieldtype": "Long Text",
 				"insert_after": "custom_create_tag_numbers",
+				"hidden": 1,
+				"read_only": 1,
+				"no_copy": 1,
+				"print_hide": 1,
+				"report_hide": 1,
+			},
+		],
+		"SS Coil": [
+			{
+				"fieldname": "custom_sticker_print_html",
+				"label": "Sticker Print HTML",
+				"fieldtype": "Long Text",
+				"insert_after": "stock_entry",
 				"hidden": 1,
 				"read_only": 1,
 				"no_copy": 1,

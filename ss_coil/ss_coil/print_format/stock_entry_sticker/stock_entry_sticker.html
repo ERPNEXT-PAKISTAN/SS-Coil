@@ -2,33 +2,48 @@
 	.print-format {
 		orientation: Portrait;
 		page-size: A4;
-		margin-top: 5mm;
-		margin-bottom: 5mm;
-		margin-left: 5mm;
-		margin-right: 5mm;
+		margin-top: 3mm;
+		margin-bottom: 3mm;
+		margin-left: 3mm;
+		margin-right: 3mm;
 		font-family: Inter, Arial, sans-serif;
 		color: #0f172a;
+		text-align: left;
+	}
+	.sticker-print-wrap {
+		text-align: left;
+		width: 100%;
 	}
 	.sticker-sheet {
 		width: 100%;
 		border-collapse: collapse;
 		table-layout: fixed;
+		text-align: left;
 	}
 	.sticker-sheet td {
-		width: 100%;
-		padding: 1.5mm;
 		vertical-align: top;
 		border: none;
+		text-align: left;
 	}
 	.sticker-card {
 		border: 1px solid #334155;
 		border-radius: 7px;
-		padding: 5px 8px;
-		height: auto;
+		padding: 4px 5px 3px 5px;
+		width: 3in;
+		height: 2in;
 		box-sizing: border-box;
 		background: #fff;
-		margin-bottom: 1.5mm;
+		margin: 0;
 		page-break-inside: avoid;
+		overflow: hidden;
+		text-align: left;
+		display: flex;
+		flex-direction: column;
+	}
+	.sticker-body-wrap {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow: hidden;
 	}
 	.sticker-inner {
 		width: 100%;
@@ -41,21 +56,27 @@
 	}
 	.sticker-fields {
 		width: 58%;
-		font-size: 11.5px;
+		font-size: 8.5px;
 		line-height: 1.2;
-		padding-right: 5px;
+		padding-right: 3px;
+		text-align: left;
+		vertical-align: top;
 	}
 	.sticker-qr {
 		width: 42%;
 		text-align: right;
-		vertical-align: middle;
+		vertical-align: top;
+		padding-right: 8px;
 	}
 	.sticker-qr .ss-coil-qr,
 	.sticker-qr .ss-coil-qr-fallback,
 	.sticker-qr img,
 	.sticker-qr svg {
-		width: 88px;
-		height: 88px;
+		width: 70px;
+		height: 70px;
+		display: block;
+		margin-left: auto;
+		margin-right: 0;
 	}
 	.sticker-line {
 		margin: 0 0 1px;
@@ -63,9 +84,10 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		text-align: left;
 	}
 	.sticker-tagno {
-		font-size: 15px;
+		font-size: 13px;
 		font-weight: 800;
 		line-height: 1.2;
 		margin: 0 0 2px;
@@ -75,22 +97,25 @@
 		width: 100%;
 		box-sizing: border-box;
 		text-align: center;
-		font-size: 14px;
+		font-size: 11px;
 		font-weight: 800;
 		color: #0f172a;
-		margin-top: 3px;
-		padding-top: 3px;
+		margin-top: 0;
+		padding-top: 1px;
 		border-top: 1px dashed #e2e8f0;
+		flex: 0 0 auto;
 	}
 	.sticker-triple-box {
 		border: 1px solid #e2e8f0;
 		border-radius: 5px;
-		padding: 3px 4px 1px;
-		margin: 1px 0;
+		padding: 2px 3px 1px 2px;
+		margin: 1px 0 0;
+		text-align: left;
 	}
 	.sticker-triple {
 		white-space: nowrap;
 		margin: 0;
+		text-align: left;
 	}
 	.sticker-triple-divider {
 		border-top: 1px solid #e2e8f0;
@@ -103,43 +128,42 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		padding: 0 3px 2px 0;
+		padding: 0 2px 2px 0;
 		box-sizing: border-box;
+		text-align: left;
 	}
 	.sticker-triple-col-wide {
-		width: 150px;
+		width: 98px;
 	}
 	.sticker-triple-col-narrow {
-		width: 50px;
+		width: 32px;
 	}
 	.sticker-triple-label {
-		font-size: 8.5px;
+		font-size: 7px;
 		font-weight: 500;
 		color: #64748b;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 	.sticker-triple-value {
-		font-size: 11px;
+		font-size: 9px;
 		font-weight: 700;
 		color: #0f172a;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 	.sticker-footer-line {
 		margin: 0;
 		padding: 0;
+		line-height: 1.05;
 		white-space: normal;
 		overflow: visible;
 		overflow-wrap: break-word;
+		text-align: left;
 	}
 	.sticker-company-name {
-		font-size: 13px;
+		font-size: 8.5px;
 		font-weight: 800;
 		color: #0f172a;
-		margin-top: 1px;
+		margin: 0;
+		padding: 0;
+		line-height: 1.05;
 	}
 	.sticker-label {
 		color: #64748b;
@@ -150,70 +174,87 @@
 		color: #0f172a;
 	}
 	.sticker-footer {
-		margin-top: 3px;
-		padding-top: 3px;
+		margin-top: 0;
+		padding-top: 1px;
 		border-top: 1px solid #cbd5e1;
-		font-size: 10px;
-		line-height: 1.2;
+		font-size: 7.5px;
+		line-height: 1.05;
 		text-align: left;
+		flex: 0 0 auto;
 	}
-	.sticker-footer:after {
-		content: "";
-		display: table;
-		clear: both;
+	.sticker-footer-table {
+		width: 100%;
+		border-collapse: collapse;
+		table-layout: fixed;
+	}
+	.sticker-footer-table td {
+		border: none;
+		vertical-align: bottom;
 	}
 	.sticker-logo-box {
-		float: right;
-		margin-left: 7px;
-		padding: 3px;
+		display: inline-block;
+		margin: 0;
+		padding: 1px 2px;
 		border: 1px solid #cbd5e1;
-		border-radius: 5px;
+		border-radius: 4px;
 		background: #fff;
+		line-height: 0;
 	}
 	.sticker-logo {
 		display: block;
-		height: 32px;
+		height: 24px;
 		width: auto;
-		max-width: 64px;
+		max-width: 52px;
 		object-fit: contain;
-	}
-	.sticker-footer-text {
-		text-align: left;
 	}
 </style>
 
 {% if sticker_print_html %}
-{{ sticker_print_html | safe }}
+<div class="sticker-print-wrap">{{ sticker_print_html | safe }}</div>
 {% else %}
 {% set site_url = frappe.utils.get_url() %}
-{% set ns = namespace(opened=false) %}
+{% set ns = namespace(col=0, opened=false) %}
 {% for row in doc.items %}
 {% if not filter_sticker_items or row.name in selected_item_names %}
 {% if not ns.opened %}
-<table class="sticker-sheet" cellspacing="0" cellpadding="0">
+<table class="sticker-sheet" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;table-layout:fixed;text-align:left;">
 {% set ns.opened = true %}
 {% endif %}
+{% if ns.col == 0 %}
 <tr>
-<td>
+<td style="width:50%;text-align:left;vertical-align:top;border:none;padding:0 2mm 3mm 0;">
+{% else %}
+<td style="width:50%;text-align:left;vertical-align:top;border:none;padding:0 0 3mm 0;">
+{% endif %}
 	{% set sticker_fields = build_stock_entry_sticker_payload(doc, row) %}
-	<div class="sticker-card">
+	<div class="sticker-card" style="width:3in;height:2in;box-sizing:border-box;margin:0;display:flex;flex-direction:column;">
+		<div class="sticker-body-wrap" style="flex:1 1 auto;min-height:0;overflow:hidden;">
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
 			<tr>
 				<td class="sticker-fields">
 					{{ build_stock_entry_sticker_body_html(sticker_fields) | safe }}
 				</td>
-				<td class="sticker-qr">
-					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR">
+				<td class="sticker-qr" style="padding-right:8px;">
+					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR" style="width:70px;height:70px;display:block;margin-left:auto;margin-right:0;">
 				</td>
 			</tr>
 		</table>
+		</div>
 		{{ build_stock_entry_sticker_combo_html(sticker_fields) | safe }}
 		{{ build_stock_entry_sticker_footer_html(doc) | safe }}
 	</div>
 </td>
+{% set ns.col = ns.col + 1 %}
+{% if ns.col == 2 %}
 </tr>
+{% set ns.col = 0 %}
+{% endif %}
 {% endif %}
 {% endfor %}
+{% if ns.col == 1 %}
+<td style="width:50%;border:none;"></td>
+</tr>
+{% endif %}
 {% if ns.opened %}
 </table>
 {% endif %}

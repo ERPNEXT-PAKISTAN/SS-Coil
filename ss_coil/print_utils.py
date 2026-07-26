@@ -8,14 +8,25 @@ render identically. See ARCHITECTURE.md > "Sticker / QR printing".
 import frappe
 from frappe.utils.pdf import pdf_body_html as fw_pdf_body_html
 
-from ss_coil.api import _get_sticker_print_options, build_stock_entry_sticker_sheet_html
+from ss_coil.api import (
+	_get_sticker_print_options,
+	build_ss_coil_sticker_sheet_html,
+	build_stock_entry_sticker_sheet_html,
+)
 from ss_coil.coil_print import DETAIL_PRINT_FORMATS, build_coil_detail_print_html
 from ss_coil.delivery_advise_print import (
 	DELIVERY_ADVISE_PRINT_FORMATS,
 	build_delivery_advise_print_html,
 )
 
-STICKER_PRINT_FORMATS = ("Stock Entry Sticker", "Stock Entry Sticker Thermal")
+STICKER_PRINT_FORMATS = (
+	"Stock Entry Sticker",
+	"Stock Entry Sticker Thermal",
+	"SS Coil Sticker",
+	"SS Coil Sticker Thermal",
+)
+STOCK_ENTRY_STICKER_FORMATS = frozenset({"Stock Entry Sticker", "Stock Entry Sticker Thermal"})
+SS_COIL_STICKER_FORMATS = frozenset({"SS Coil Sticker", "SS Coil Sticker Thermal"})
 DETAIL_PRINT_FORMAT_NAMES = frozenset(DETAIL_PRINT_FORMATS.values())
 DELIVERY_ADVISE_PRINT_FORMAT_NAMES = frozenset(DELIVERY_ADVISE_PRINT_FORMATS.values())
 
@@ -38,18 +49,31 @@ def _inject_sticker_print_html(print_format, args):
 		return
 
 	doc = args.get("doc")
-	if not doc or doc.doctype != "Stock Entry":
+	if not doc:
 		return
 
 	settings = frappe.parse_json(frappe.form_dict.get("settings") or "{}")
-	item_names, layout, has_filter = _get_sticker_print_options(print_format.name, settings)
-	html = build_stock_entry_sticker_sheet_html(
-		doc, item_names=item_names, layout=layout, filter_items=has_filter
-	)
+	row_names, layout, has_filter = _get_sticker_print_options(print_format.name, settings)
+
+	if print_format.name in STOCK_ENTRY_STICKER_FORMATS:
+		if doc.doctype != "Stock Entry":
+			return
+		html = build_stock_entry_sticker_sheet_html(
+			doc, item_names=row_names, layout=layout, filter_items=has_filter
+		)
+	elif print_format.name in SS_COIL_STICKER_FORMATS:
+		if doc.doctype != "SS Coil":
+			return
+		html = build_ss_coil_sticker_sheet_html(
+			doc, output_names=row_names, layout=layout, filter_items=has_filter
+		)
+	else:
+		return
+
 	args["sticker_print_html"] = html or ""
-	args["selected_item_names"] = item_names or []
+	args["selected_item_names"] = row_names or []
 	args["filter_sticker_items"] = has_filter
-	if html:
+	if html and hasattr(doc, "custom_sticker_print_html"):
 		doc.custom_sticker_print_html = html
 
 

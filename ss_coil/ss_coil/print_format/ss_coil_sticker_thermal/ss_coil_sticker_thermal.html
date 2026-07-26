@@ -198,10 +198,11 @@
 {% else %}
 {% set site_url = frappe.utils.get_url() %}
 <div class="sticker-thermal-sheet">
-{% for row in doc.items %}
+{% for row in doc.job_output %}
 {% if not filter_sticker_items or row.name in selected_item_names %}
+{% if row.tag_no %}
 <div class="sticker-thermal-item">
-	{% set sticker_fields = build_stock_entry_sticker_payload(doc, row) %}
+	{% set sticker_fields = build_ss_coil_sticker_payload(doc, row) %}
 	<div class="sticker-card" style="width:3in;height:2in;box-sizing:border-box;display:flex;flex-direction:column;">
 		<div class="sticker-body-wrap" style="flex:1 1 auto;min-height:0;overflow:hidden;">
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
@@ -210,15 +211,16 @@
 					{{ build_stock_entry_sticker_body_html(sticker_fields) | safe }}
 				</td>
 				<td class="sticker-qr" style="padding-right:8px;">
-					<img src="{{ site_url }}/api/method/ss_coil.api.get_stock_entry_sticker_qr_image?stock_entry={{ doc.name }}&item_name={{ row.name }}" alt="QR" style="width:70px;height:70px;display:block;margin-left:auto;margin-right:0;">
+					<img src="{{ site_url }}/api/method/ss_coil.api.get_ss_coil_sticker_qr_image?ss_coil={{ doc.name }}&output_name={{ row.name }}" alt="QR" style="width:70px;height:70px;display:block;margin-left:auto;margin-right:0;">
 				</td>
 			</tr>
 		</table>
 		</div>
 		{{ build_stock_entry_sticker_combo_html(sticker_fields) | safe }}
-		{{ build_stock_entry_sticker_footer_html(doc) | safe }}
+		{{ build_ss_coil_sticker_footer_html(doc) | safe }}
 	</div>
 </div>
+{% endif %}
 {% endif %}
 {% endfor %}
 </div>

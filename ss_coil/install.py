@@ -18,6 +18,7 @@ def run_post_install_setup():
 	sync_coil_form_layouts()
 	sync_delivery_advise_print_formats()
 	sync_ss_coil_detail_print_format()
+	sync_stock_entry_sticker_print_formats()
 	frappe.db.commit()
 
 
@@ -77,3 +78,33 @@ def sync_ss_coil_detail_print_format():
 		},
 		update_modified=False,
 	)
+
+
+def sync_stock_entry_sticker_print_formats():
+	"""Push sticker print HTML from app files into Print Format (required for print/PDF)."""
+	import os
+
+	formats = {
+		"stock_entry_sticker": ("Stock Entry Sticker", {"margin_top": 3, "margin_bottom": 3, "margin_left": 3, "margin_right": 3}),
+		"stock_entry_sticker_thermal": (
+			"Stock Entry Sticker Thermal",
+			{"margin_top": 0, "margin_bottom": 0, "margin_left": 0, "margin_right": 0},
+		),
+		"ss_coil_sticker": ("SS Coil Sticker", {"margin_top": 3, "margin_bottom": 3, "margin_left": 3, "margin_right": 3}),
+		"ss_coil_sticker_thermal": (
+			"SS Coil Sticker Thermal",
+			{"margin_top": 0, "margin_bottom": 0, "margin_left": 0, "margin_right": 0},
+		),
+	}
+
+	for folder, (name, margins) in formats.items():
+		if not frappe.db.exists("Print Format", name):
+			continue
+
+		html_path = frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder, f"{folder}.html")
+		if os.path.exists(html_path):
+			with open(html_path) as handle:
+				html = handle.read().strip()
+			if html:
+				frappe.db.set_value("Print Format", name, "html", html, update_modified=False)
+		frappe.db.set_value("Print Format", name, margins, update_modified=False)

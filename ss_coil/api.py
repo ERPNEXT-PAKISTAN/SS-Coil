@@ -2210,6 +2210,38 @@ def build_stock_entry_sticker_footer_html(doc):
 	return build_sticker_footer_html(doc.get("name") or "-", date_value, doc.get("company"))
 
 
+def _normalize_sticker_row(row):
+	if row is None:
+		return {}
+	if isinstance(row, dict):
+		return row
+	as_dict = getattr(row, "as_dict", None)
+	if callable(as_dict):
+		return as_dict()
+	if hasattr(row, "items"):
+		try:
+			return frappe._dict(row)
+		except TypeError:
+			pass
+	return {}
+
+
+def _normalize_sticker_doc(doc):
+	if isinstance(doc, str):
+		return frappe.parse_json(doc)
+	if isinstance(doc, dict):
+		return doc
+	as_dict = getattr(doc, "as_dict", None)
+	if callable(as_dict):
+		return as_dict()
+	if hasattr(doc, "items"):
+		try:
+			return frappe._dict(doc)
+		except TypeError:
+			pass
+	return {}
+
+
 def _get_sticker_items(doc, item_names=None, filter_items=False):
 	if hasattr(doc, "items"):
 		items = doc.items or []
@@ -2256,14 +2288,8 @@ def _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html):
 
 def build_stock_entry_sticker_html(doc, row):
 	"""Return sticker HTML block with QR code and field text for one item row."""
-	if isinstance(doc, str):
-		doc = frappe.parse_json(doc)
-	if isinstance(row, str):
-		row = frappe.parse_json(row)
-	if not isinstance(doc, dict):
-		doc = doc.as_dict()
-	if not isinstance(row, dict):
-		row = row.as_dict()
+	doc = _normalize_sticker_doc(doc)
+	row = _normalize_sticker_row(row)
 
 	fields = build_stock_entry_sticker_payload(doc, row)
 	qr_html = _build_qr_html(build_stock_entry_sticker_qr_payload(doc, row), plain=True, scale=4)
@@ -2276,9 +2302,7 @@ def build_stock_entry_sticker_html(doc, row):
 def build_stock_entry_sticker_sheet_html(doc, item_names=None, layout="a4", filter_items=False):
 	"""Build sticker sheet HTML for selected item rows."""
 	rows = _get_sticker_items(doc, item_names=item_names, filter_items=filter_items)
-	stickers = [
-		build_stock_entry_sticker_html(doc, row.as_dict() if hasattr(row, "as_dict") else row) for row in rows
-	]
+	stickers = [build_stock_entry_sticker_html(doc, _normalize_sticker_row(row)) for row in rows]
 	return _build_sticker_sheet_html(stickers, layout=layout)
 
 
@@ -2348,13 +2372,11 @@ def _ss_coil_sticker_customer_name(doc, row):
 
 
 def build_ss_coil_sticker_payload(doc, row):
-	if not isinstance(row, dict):
-		row = row.as_dict()
-	if not isinstance(doc, dict):
-		doc = doc.as_dict()
+	doc = _normalize_sticker_doc(doc)
+	row = _normalize_sticker_row(row)
 
 	so_items = doc.get("so_item") or []
-	so_row = so_items[0].as_dict() if so_items and hasattr(so_items[0], "as_dict") else (so_items[0] if so_items else {})
+	so_row = _normalize_sticker_row(so_items[0]) if so_items else {}
 
 	qty = row.get("actual_qty")
 	if qty in (None, ""):
@@ -2385,8 +2407,7 @@ def build_ss_coil_sticker_payload(doc, row):
 
 def build_ss_coil_sticker_qr_payload(doc, row):
 	fields = dict(build_ss_coil_sticker_payload(doc, row))
-	if not isinstance(doc, dict):
-		doc = doc.as_dict()
+	doc = _normalize_sticker_doc(doc)
 	fields["SS Coil"] = doc.get("name") or "-"
 	fields["Sales Order"] = doc.get("order_no") or "-"
 	company = _ss_coil_sticker_company(doc)
@@ -2395,8 +2416,7 @@ def build_ss_coil_sticker_qr_payload(doc, row):
 
 
 def build_ss_coil_sticker_footer_html(doc):
-	if not isinstance(doc, dict):
-		doc = doc.as_dict()
+	doc = _normalize_sticker_doc(doc)
 	date_value = frappe.format(frappe.utils.today(), {"fieldtype": "Date"})
 	if doc.get("creation"):
 		date_value = frappe.format(frappe.utils.getdate(doc.get("creation")), {"fieldtype": "Date"})
@@ -2408,14 +2428,8 @@ def build_ss_coil_sticker_footer_html(doc):
 
 
 def build_ss_coil_sticker_html(doc, row):
-	if isinstance(doc, str):
-		doc = frappe.parse_json(doc)
-	if isinstance(row, str):
-		row = frappe.parse_json(row)
-	if not isinstance(doc, dict):
-		doc = doc.as_dict()
-	if not isinstance(row, dict):
-		row = row.as_dict()
+	doc = _normalize_sticker_doc(doc)
+	row = _normalize_sticker_row(row)
 
 	fields = build_ss_coil_sticker_payload(doc, row)
 	qr_html = _build_qr_html(build_ss_coil_sticker_qr_payload(doc, row), plain=True, scale=4)
@@ -2440,9 +2454,7 @@ def _get_ss_coil_sticker_outputs(doc, output_names=None, filter_items=False):
 
 def build_ss_coil_sticker_sheet_html(doc, output_names=None, layout="a4", filter_items=False):
 	rows = _get_ss_coil_sticker_outputs(doc, output_names=output_names, filter_items=filter_items)
-	stickers = [
-		build_ss_coil_sticker_html(doc, row.as_dict() if hasattr(row, "as_dict") else row) for row in rows
-	]
+	stickers = [build_ss_coil_sticker_html(doc, _normalize_sticker_row(row)) for row in rows]
 	return _build_sticker_sheet_html(stickers, layout=layout)
 
 
@@ -2452,6 +2464,8 @@ def prepare_stock_entry_sticker_print(doc, method=None, print_settings=None):
 	if print_format not in ("Stock Entry Sticker", "Stock Entry Sticker Thermal"):
 		return
 
+	if not isinstance(print_settings, dict):
+		print_settings = frappe.parse_json(frappe.form_dict.get("settings") or "{}")
 	item_names, layout, has_filter = _get_sticker_print_options(print_format, print_settings)
 	html = build_stock_entry_sticker_sheet_html(
 		doc, item_names=item_names, layout=layout, filter_items=has_filter
@@ -2465,6 +2479,8 @@ def prepare_ss_coil_sticker_print(doc, method=None, print_settings=None):
 	if print_format not in ("SS Coil Sticker", "SS Coil Sticker Thermal"):
 		return
 
+	if not isinstance(print_settings, dict):
+		print_settings = frappe.parse_json(frappe.form_dict.get("settings") or "{}")
 	output_names, layout, has_filter = _get_sticker_print_options(print_format, print_settings)
 	html = build_ss_coil_sticker_sheet_html(
 		doc, output_names=output_names, layout=layout, filter_items=has_filter
@@ -2516,7 +2532,7 @@ def get_ss_coil_sticker_qr_image(ss_coil, output_name):
 	if not row.tag_no:
 		frappe.throw(_("Output row has no Tag No"))
 
-	payload_text = build_ss_coil_sticker_qr_payload(doc, row.as_dict())
+	payload_text = build_ss_coil_sticker_qr_payload(doc, _normalize_sticker_row(row))
 	if not pyqrcode:
 		frappe.local.response.filecontent = payload_text.encode()
 		frappe.local.response.type = "download"
@@ -4536,7 +4552,11 @@ def _update_purchase_receipt_item_field_order():
 
 
 def _sync_workspace_query_report_links():
-	script_reports = ("Tag Registry Trace",)
+	script_reports = (
+		"Tag Registry Trace",
+		"Production Planning",
+		"Production Planning SS Coil",
+	)
 	for report_name in script_reports:
 		frappe.db.sql(
 			"""

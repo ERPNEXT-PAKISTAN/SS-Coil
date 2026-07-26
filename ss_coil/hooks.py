@@ -73,7 +73,6 @@ doctype_js = {
 	"Stock Entry": ["public/js/coil_detail_print.js", "public/js/stock_entry.js"],
 	"SS Coil": [
 		"public/js/coil_detail_print.js",
-		"public/js/ss_coil_sticker_print.js",
 	],
 	"Delivery Note": "public/js/delivery_note.js",
 	"Sales Invoice": "public/js/sales_invoice.js",

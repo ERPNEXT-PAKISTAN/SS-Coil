@@ -13,6 +13,7 @@ frappe.ui.form.on("Sales Order", {
 		render_sales_order_dashboard(frm);
 		render_packing_detail(frm);
 		render_cutting_scheme_report(frm);
+		add_production_planning_report_button(frm);
 	},
 	validate(frm) {
 		(frm.doc.items || []).forEach((row) => {
@@ -25,6 +26,21 @@ frappe.ui.form.on("Sales Order", {
 });
 
 const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
+
+function add_production_planning_report_button(frm) {
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		return;
+	}
+	frm.add_custom_button(
+		__("Production Planning"),
+		function () {
+			frappe.set_route("query-report", "Production Planning", {
+				sales_order: frm.doc.name,
+			});
+		},
+		__("Reports")
+	);
+}
 
 function apply_ss_coil_sales_order_header_defaults(frm) {
 	if (!frm.is_new()) {

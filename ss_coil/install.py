@@ -98,6 +98,10 @@ def sync_stock_entry_sticker_print_formats():
 	}
 
 	for folder, (name, margins) in formats.items():
+		json_path = frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder, f"{folder}.json")
+		if not frappe.db.exists("Print Format", name) and os.path.exists(json_path):
+			frappe.modules.import_file.import_file_by_path(json_path, force=True, ignore_links=True)
+
 		if not frappe.db.exists("Print Format", name):
 			continue
 

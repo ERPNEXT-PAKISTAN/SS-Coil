@@ -1,6 +1,21 @@
 // Copyright (c) 2026, Taimoor and contributors
 // For license information, please see license.txt
 
+function add_ss_coil_production_planning_report_button(frm) {
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		return;
+	}
+	frm.add_custom_button(
+		__("Production Planning"),
+		function () {
+			frappe.set_route("query-report", "Production Planning SS Coil", {
+				ss_coil: frm.doc.name,
+			});
+		},
+		__("Reports")
+	);
+}
+
 frappe.ui.form.on("SS Coil", {
 	setup(frm) {
 		frm.set_query("sales_order_item", function () {
@@ -32,6 +47,10 @@ frappe.ui.form.on("SS Coil", {
 		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
 			add_coil_detail_print_button(frm);
 		});
+		frappe.require("/assets/ss_coil/js/ss_coil_sticker_print.js", () => {
+			add_ss_coil_sticker_print_button(frm);
+		});
+		add_ss_coil_production_planning_report_button(frm);
 		add_ss_coil_tag_buttons(frm);
 		add_ss_coil_sales_order_buttons(frm);
 		add_process_action_buttons(frm);

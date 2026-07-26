@@ -2,8 +2,7 @@ function add_ss_coil_sticker_print_button(frm) {
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
 		return;
 	}
-	const tagged_rows = (frm.doc.job_output || []).filter((row) => row.tag_no);
-	if (!tagged_rows.length) {
+	if (!(frm.doc.job_output || []).length) {
 		return;
 	}
 
@@ -109,9 +108,3 @@ function show_ss_coil_sticker_print_dialog(frm) {
 	});
 	dialog.show();
 }
-
-frappe.ui.form.on("SS Coil", {
-	refresh(frm) {
-		add_ss_coil_sticker_print_button(frm);
-	},
-});

@@ -352,6 +352,27 @@ def build_sales_order_production_planning(filters):
 	return data
 
 
+def _doc_field(doc, fieldname, default=None):
+	if isinstance(doc, dict):
+		return doc.get(fieldname, default)
+	if hasattr(doc, "get"):
+		return doc.get(fieldname, default)
+	return getattr(doc, fieldname, default)
+
+
+def _ss_coil_header_thickness(doc):
+	for row in _normalize_child_rows(_doc_field(doc, "so_item") or []):
+		if row.get("thickness") not in (None, ""):
+			return row.get("thickness")
+	for row in _normalize_child_rows(_doc_field(doc, "input_coil") or []):
+		if row.get("thickness") not in (None, ""):
+			return row.get("thickness")
+	for row in _normalize_child_rows(_doc_field(doc, "job_output") or []):
+		if row.get("thickness") not in (None, ""):
+			return row.get("thickness")
+	return None
+
+
 def build_ss_coil_production_planning(filters):
 	filters = filters or {}
 	ss_coil = filters.get("ss_coil") or filters.get("name")
@@ -365,25 +386,25 @@ def build_ss_coil_production_planning(filters):
 	_append_kv_rows(
 		data,
 		[
-			(_("Operation"), doc.operation),
-			(_("Order Status"), doc.order_status),
-			(_("Sales Order"), doc.order_no),
-			(_("Customer"), doc.customer_name),
-			(_("For Customer"), doc.for_customer),
-			(_("Sales Order Item"), doc.sales_order_item),
-			(_("Stock Entry"), doc.stock_entry),
-			(_("Machine"), doc.machine),
-			(_("Calc Ratio"), doc.calc_ratio),
-			(_("Actual Ratio"), doc.actual_ratio),
-			(_("Remaining Width"), doc.remaining_width),
-			(_("Grand Total Width"), doc.grand_total_width),
-			(_("Thickness"), doc.thickness),
-			(_("Width"), doc.width),
-			(_("Mill"), doc.mill),
-			(_("Specifications"), doc.specifications),
-			(_("Commodity"), doc.commodity),
-			(_("Special Instructions"), doc.special_instructions),
-			(_("Remarks"), doc.remarks),
+			(_("Operation"), _doc_field(doc, "operation")),
+			(_("Order Status"), _doc_field(doc, "order_status")),
+			(_("Sales Order"), _doc_field(doc, "order_no")),
+			(_("Customer"), _doc_field(doc, "customer_name")),
+			(_("For Customer"), _doc_field(doc, "for_customer")),
+			(_("Sales Order Item"), _doc_field(doc, "sales_order_item")),
+			(_("Stock Entry"), _doc_field(doc, "stock_entry")),
+			(_("Machine"), _doc_field(doc, "machine")),
+			(_("Calc Ratio"), _doc_field(doc, "calc_ratio")),
+			(_("Actual Ratio"), _doc_field(doc, "actual_ratio")),
+			(_("Remaining Width"), _doc_field(doc, "remaining_width")),
+			(_("Grand Total Width"), _doc_field(doc, "grand_total_width")),
+			(_("Thickness"), _ss_coil_header_thickness(doc)),
+			(_("Width"), _doc_field(doc, "width")),
+			(_("Mill"), _doc_field(doc, "mill")),
+			(_("Specifications"), _doc_field(doc, "specifications")),
+			(_("Commodity"), _doc_field(doc, "commodity")),
+			(_("Special Instructions"), _doc_field(doc, "special_instructions")),
+			(_("Remarks"), _doc_field(doc, "remarks")),
 		],
 	)
 	_append_blank(data)
@@ -391,16 +412,16 @@ def build_ss_coil_production_planning(filters):
 	_append_generic_table(
 		data,
 		_("Sales Order Item (Coil SO)"),
-		_normalize_child_rows(doc.so_item),
+		_normalize_child_rows(_doc_field(doc, "so_item") or []),
 		COIL_SO_FIELDS,
 	)
 	_append_blank(data)
 
-	cutting_rows = _normalize_child_rows(doc.cutting_detail)
-	if not cutting_rows and doc.sales_order_item:
+	cutting_rows = _normalize_child_rows(_doc_field(doc, "cutting_detail") or [])
+	if not cutting_rows and _doc_field(doc, "sales_order_item"):
 		from ss_coil.api import get_so_production_plan_rows
 
-		cutting_rows = get_so_production_plan_rows(doc.sales_order_item) or []
+		cutting_rows = get_so_production_plan_rows(_doc_field(doc, "sales_order_item")) or []
 
 	_append_cutting_scheme_table(data, cutting_rows, section_label=_("Cutting Scheme / Cutting Detail"))
 	_append_blank(data)
@@ -408,7 +429,7 @@ def build_ss_coil_production_planning(filters):
 	_append_generic_table(
 		data,
 		_("Input Coil"),
-		_normalize_child_rows(doc.input_coil),
+		_normalize_child_rows(_doc_field(doc, "input_coil") or []),
 		COIL_INPUT_FIELDS,
 	)
 	_append_blank(data)
@@ -416,7 +437,7 @@ def build_ss_coil_production_planning(filters):
 	_append_generic_table(
 		data,
 		_("Job Output"),
-		_normalize_child_rows(doc.job_output),
+		_normalize_child_rows(_doc_field(doc, "job_output") or []),
 		COIL_OUTPUT_FIELDS,
 	)
 

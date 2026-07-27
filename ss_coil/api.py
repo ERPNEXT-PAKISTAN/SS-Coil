@@ -248,24 +248,52 @@ def _extract_coil_inward_row_details(row):
 	return details
 
 
-def _link_origin_tag_to_sales_order_items(tag_no, item_code, sales_order, batch_no=None, source_doctype=None):
+def _link_origin_tag_to_sales_order_items(
+	tag_no,
+	item_code,
+	sales_order,
+	batch_no=None,
+	source_doctype=None,
+	stock_entry=None,
+	se_detail=None,
+):
 	if not tag_no or not item_code or not sales_order:
 		return
 	if not _has_field("Sales Order Item", "custom_raw_material_item"):
 		return
 
-	rows = frappe.get_all(
-		"Sales Order Item",
-		filters={
-			"parent": sales_order,
-			"custom_raw_material_item": item_code,
-			"custom_raw_material_tag_no": ["in", ["", None]],
-		},
-		fields=["name"],
-		order_by="idx asc",
-		limit=1,
-	)
-	if not rows:
+	so_item_name = None
+	if se_detail and frappe.db.exists("Stock Entry Detail", se_detail):
+		se_row = frappe.get_doc("Stock Entry Detail", se_detail)
+		so_item_name = _find_sales_order_item_for_stock_entry_row(sales_order, se_row, stock_entry or se_row.parent)
+	elif stock_entry:
+		for se_row in frappe.get_all(
+			"Stock Entry Detail",
+			filters={"parent": stock_entry, "item_code": item_code, "custom_tag_no": tag_no},
+			fields=["name", "parent", "item_code", "idx"],
+			order_by="idx asc",
+			limit=1,
+		):
+			so_item_name = _find_sales_order_item_for_stock_entry_row(
+				sales_order, frappe.get_doc("Stock Entry Detail", se_row.name), stock_entry
+			)
+			break
+
+	if not so_item_name:
+		rows = frappe.get_all(
+			"Sales Order Item",
+			filters={
+				"parent": sales_order,
+				"custom_raw_material_item": item_code,
+				"custom_raw_material_tag_no": ["in", ["", None]],
+			},
+			fields=["name"],
+			order_by="idx asc",
+			limit=1,
+		)
+		so_item_name = rows[0].name if rows else None
+
+	if not so_item_name:
 		return
 
 	values = {"custom_raw_material_tag_no": tag_no}
@@ -276,7 +304,88 @@ def _link_origin_tag_to_sales_order_items(tag_no, item_code, sales_order, batch_
 	stock_source = _stock_source_for_origin(source_doctype)
 	if stock_source and _has_field("Sales Order Item", "custom_stock_source_type"):
 		values["custom_stock_source_type"] = stock_source
-	frappe.db.set_value("Sales Order Item", rows[0].name, values, update_modified=False)
+	if stock_entry and _has_field("Sales Order Item", "custom_source_stock_entry"):
+		values["custom_source_stock_entry"] = stock_entry
+	if se_detail and _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
+		values["custom_source_stock_entry_detail"] = se_detail
+
+	so_row = frappe.get_doc("Sales Order Item", so_item_name)
+	if se_detail and frappe.db.exists("Stock Entry Detail", se_detail):
+		_apply_stock_entry_row_tags_to_sales_order_item(so_row, frappe.get_doc("Stock Entry Detail", se_detail))
+	else:
+		_apply_stock_entry_row_tags_to_sales_order_item(
+			so_row,
+			frappe._dict({"custom_tag_no": tag_no, "item_code": item_code, "batch_no": batch_no}),
+		)
+	for fieldname, value in values.items():
+		if value not in (None, ""):
+			so_row.set(fieldname, value)
+
+	persist = {key: so_row.get(key) for key in values.keys()}
+	for fieldname in ("custom_raw_material_tag_no", "custom_raw_material_batch_no", "custom_tag_no"):
+		if _has_field("Sales Order Item", fieldname):
+			persist[fieldname] = so_row.get(fieldname)
+	frappe.db.set_value("Sales Order Item", so_item_name, persist, update_modified=True)
+
+
+def _find_sales_order_item_for_stock_entry_row(sales_order, se_row, stock_entry_name):
+	"""Pick the Sales Order Item that should receive this Stock Entry Detail row.
+
+	When several SO lines share the same finish-good item code, match by explicit
+	custom_source_stock_entry_detail, then by row index among still-unassigned lines.
+	"""
+	if not sales_order or not se_row:
+		return None
+
+	se_detail = se_row.name
+	if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
+		linked = frappe.db.get_value(
+			"Sales Order Item",
+			{"parent": sales_order, "custom_source_stock_entry_detail": se_detail},
+			"name",
+		)
+		if linked:
+			return linked
+
+	finish_good = se_row.get("custom_finish_good_item") if _has_field(se_row.doctype, "custom_finish_good_item") else None
+	raw_item = se_row.get("item_code")
+
+	candidates = frappe.get_all(
+		"Sales Order Item",
+		filters={"parent": sales_order},
+		fields=["name", "idx", "item_code", "custom_raw_material_tag_no", "custom_source_stock_entry_detail"],
+		order_by="idx asc",
+	)
+
+	def is_pending(row):
+		if row.custom_raw_material_tag_no:
+			return False
+		if row.custom_source_stock_entry_detail and row.custom_source_stock_entry_detail != se_detail:
+			return False
+		if finish_good and row.item_code != finish_good:
+			return False
+		if not finish_good and raw_item and row.item_code != raw_item:
+			return False
+		return True
+
+	pending = [row for row in candidates if is_pending(row)]
+	if not pending:
+		return None
+
+	se_rows = frappe.get_all(
+		"Stock Entry Detail",
+		filters={"parent": stock_entry_name or se_row.parent},
+		pluck="name",
+		order_by="idx asc",
+	)
+	try:
+		position = se_rows.index(se_detail)
+	except ValueError:
+		position = 0
+
+	if position < len(pending):
+		return pending[position].name
+	return pending[0].name
 
 
 def sync_sales_order_item_child_tags(doc, method=None):
@@ -513,7 +622,15 @@ def _create_origin_tag(doc, row, source_doctype, sales_order=None, stock_entry=N
 		batch_no=batch_no,
 		status="Active",
 	)
-	_link_origin_tag_to_sales_order_items(tag_no, row.item_code, sales_order, batch_no, source_doctype)
+	_link_origin_tag_to_sales_order_items(
+		tag_no,
+		row.item_code,
+		sales_order,
+		batch_no,
+		source_doctype,
+		stock_entry=stock_entry or (doc.name if getattr(doc, "doctype", None) == "Stock Entry" else None),
+		se_detail=row.name,
+	)
 	return tag_no
 
 
@@ -1338,7 +1455,7 @@ def _find_purchase_invoice_item_tag(pi_detail=None, purchase_invoice=None, item_
 
 
 def _get_tag_trace_rows(tag_numbers):
-	tag_numbers = [t for t in tag_numbers if t]
+	tag_numbers = sorted(_expand_tag_tokens(*tag_numbers))
 	if not tag_numbers:
 		return {}
 
@@ -1462,6 +1579,38 @@ def _get_tag_trace_rows(tag_numbers):
 	for row in ss_coil_output_rows:
 		add_event(row.tag_no, "SS Coil Output", "SS Coil", row.parent, row.name, row.sc_date, None, row.item_name, row.qty, {"operation": row.operation})
 
+	ss_coil_input_rows = frappe.db.sql(
+		"""
+		select
+			ci.parent,
+			ci.name,
+			ci.tag_no,
+			ci.class as item_name,
+			sc.sc_date,
+			sc.operation,
+			sc.order_no as sales_order
+		from `tabCoil Input` ci
+		inner join `tabSS Coil` sc on sc.name = ci.parent
+		where ifnull(ci.tag_no, '') in %(tags)s
+		order by sc.sc_date asc, ci.idx asc
+		""",
+		{"tags": placeholders},
+		as_dict=True,
+	)
+	for row in ss_coil_input_rows:
+		add_event(
+			row.tag_no,
+			"SS Coil Input",
+			"SS Coil",
+			row.parent,
+			row.name,
+			row.sc_date,
+			None,
+			row.item_name,
+			None,
+			{"operation": row.operation, "sales_order": row.sales_order},
+		)
+
 	delivery_rows = frappe.db.sql(
 		"""
 		select dni.parent, dni.name, dni.item_code, dni.item_name, dni.qty, dni.custom_tag_no, dn.posting_date, dn.customer
@@ -1496,11 +1645,37 @@ def _get_tag_trace_rows(tag_numbers):
 	return traces
 
 
+def _expand_tag_tokens(*values):
+	tags = set()
+	for value in values:
+		if not value:
+			continue
+		text = str(value).strip()
+		if not text:
+			continue
+		for part in text.replace(";", ",").split(","):
+			token = part.strip()
+			if token:
+				tags.add(token)
+	return tags
+
+
+def _resolve_trace_root_tag(trace):
+	registry = trace.get("registry") or {}
+	root_tag = registry.get("root_tag_no")
+	if root_tag:
+		return root_tag
+	tag_no = trace.get("tag_no")
+	if not tag_no:
+		return None
+	return _root_tag_for(tag_no) or tag_no
+
+
 def _build_tag_tree(tag_trace_rows):
 	groups = {}
 	for trace in tag_trace_rows:
 		registry = trace.get("registry") or {}
-		root_tag = registry.get("root_tag_no") or trace.get("tag_no")
+		root_tag = _resolve_trace_root_tag(trace)
 		parent_tag = registry.get("parent_tag_no")
 		group = groups.setdefault(
 			root_tag,
@@ -1524,7 +1699,74 @@ def _build_tag_tree(tag_trace_rows):
 				"events": [],
 			}
 
+	for root_tag, group in groups.items():
+		group["hierarchy"] = _build_tag_hierarchy(root_tag)
+
 	return [groups[key] for key in sorted(groups.keys())]
+
+
+def _tags_under_root(root_tag_no):
+	if not root_tag_no:
+		return []
+	tags = {root_tag_no}
+	if frappe.db.exists("DocType", "Tag Registry"):
+		for tag_no in frappe.get_all("Tag Registry", filters={"root_tag_no": root_tag_no}, pluck="tag_no"):
+			if tag_no:
+				tags.add(tag_no)
+	return sorted(tags)
+
+
+def _collect_sales_order_tag_numbers(doc, sales_order, stock_entry_items, ss_coil_names):
+	tags = set()
+	for item in doc.items:
+		tags.update(
+			_expand_tag_tokens(
+				item.get("custom_tag_no"),
+				item.get("custom_child_tag_no"),
+				item.get("custom_raw_material_tag_no"),
+			)
+		)
+
+	for row in stock_entry_items or []:
+		tags.update(_expand_tag_tokens(row.get("custom_tag_no")))
+
+	if ss_coil_names:
+		for child_doctype in ("Coil Input", "Coil Output"):
+			if not frappe.db.exists("DocType", child_doctype):
+				continue
+			for tag_no in frappe.get_all(child_doctype, filters={"parent": ["in", ss_coil_names]}, pluck="tag_no"):
+				if tag_no:
+					tags.add(tag_no)
+
+	if frappe.db.exists("DocType", "Tag Registry"):
+		for row in frappe.get_all(
+			"Tag Registry",
+			filters={"sales_order": sales_order},
+			fields=["tag_no", "root_tag_no"],
+		):
+			if row.tag_no:
+				tags.add(row.tag_no)
+			if row.root_tag_no:
+				tags.update(_tags_under_root(row.root_tag_no))
+
+	expanded = set()
+	for tag_no in list(tags):
+		root = _root_tag_for(tag_no) or tag_no
+		expanded.update(_tags_under_root(root))
+		expanded.add(tag_no)
+	return sorted(expanded)
+
+
+def _sort_tag_trace_rows(trace_rows):
+	def sort_key(trace):
+		registry = trace.get("registry") or {}
+		return (
+			registry.get("root_tag_no") or trace.get("tag_no") or "",
+			registry.get("parent_tag_no") or "",
+			trace.get("tag_no") or "",
+		)
+
+	return sorted(trace_rows or [], key=sort_key)
 
 
 @frappe.whitelist()
@@ -1619,12 +1861,25 @@ def _get_linked_stock_entry_detail_row(so_row, stock_entry):
 	if detail_name and frappe.db.exists("Stock Entry Detail", detail_name):
 		return frappe.get_doc("Stock Entry Detail", detail_name)
 
-	filters = {"parent": stock_entry}
 	raw_item = so_row.get("custom_raw_material_item")
+	finish_good = so_row.get("item_code")
+	se_rows = frappe.get_all(
+		"Stock Entry Detail",
+		filters={"parent": stock_entry},
+		fields=["name", "item_code", "custom_finish_good_item", "idx"],
+		order_by="idx asc",
+	)
+	for se_row in se_rows:
+		if finish_good and se_row.get("custom_finish_good_item") == finish_good:
+			if raw_item and se_row.item_code != raw_item:
+				continue
+			return frappe.get_doc("Stock Entry Detail", se_row.name)
+
+	filters = {"parent": stock_entry}
 	if raw_item:
 		filters["item_code"] = raw_item
-	elif so_row.get("item_code"):
-		filters["item_code"] = so_row.item_code
+	elif finish_good:
+		filters["item_code"] = finish_good
 
 	detail_name = frappe.db.get_value("Stock Entry Detail", filters, "name")
 	if detail_name:
@@ -1657,8 +1912,31 @@ def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row):
 	):
 		so_row.custom_raw_material_batch_no = batch_no
 
-	if so_row.get("custom_tag_no") in (None, "", tag):
-		so_row.custom_tag_no = None
+	if tag and _has_field("Sales Order Item", "custom_tag_no") and not so_row.get("custom_tag_no"):
+		# Show inward mother-coil tag on Tag No until SS Coil assigns an output child tag.
+		so_row.custom_tag_no = tag
+
+
+def _sales_order_item_tag_sync_values(so_row):
+	"""DB values to persist after Stock Entry → Sales Order tag sync."""
+	updates = {}
+	for fieldname in (
+		"custom_raw_material_tag_no",
+		"custom_raw_material_batch_no",
+		"custom_raw_material_item",
+		"custom_stock_source_type",
+		"custom_source_stock_entry",
+		"custom_source_stock_entry_detail",
+		"custom_tag_no",
+	):
+		if not _has_field("Sales Order Item", fieldname):
+			continue
+		value = so_row.get(fieldname)
+		if value not in (None, ""):
+			updates[fieldname] = value
+		elif fieldname in ("custom_raw_material_tag_no", "custom_raw_material_batch_no", "custom_tag_no"):
+			updates[fieldname] = value or ""
+	return updates
 
 
 def sync_sales_order_item_tag_registry(doc, method=None):
@@ -3597,8 +3875,6 @@ def _apply_finish_good_to_sales_order_row(so_row, se_row):
 	parent_tag = se_row.get("custom_tag_no")
 	if parent_tag and _has_field("Sales Order Item", "custom_raw_material_tag_no"):
 		so_row.custom_raw_material_tag_no = parent_tag
-		if so_row.get("custom_tag_no") == parent_tag:
-			so_row.custom_tag_no = None
 
 	batch_no = se_row.get("batch_no") or parent_tag
 	if (
@@ -3861,6 +4137,63 @@ def create_ss_coil_from_sales_order(source_name, sales_order_item=None, operatio
 	return ss_coil
 
 
+def _ensure_sales_order_items_linked_to_stock_entry(sales_order_doc, stock_entry_doc):
+	"""Set custom_source_stock_entry(_detail) on SO lines that match SE rows."""
+	if not _has_field("Sales Order Item", "custom_source_stock_entry"):
+		return
+
+	used_details = set()
+	for so_row in sales_order_doc.items or []:
+		if so_row.get("custom_source_stock_entry_detail"):
+			used_details.add(so_row.custom_source_stock_entry_detail)
+
+	for se_row in stock_entry_doc.items or []:
+		if se_row.name in used_details:
+			continue
+		so_item_name = _find_sales_order_item_for_stock_entry_row(sales_order_doc.name, se_row, stock_entry_doc.name)
+		if not so_item_name:
+			continue
+		for so_row in sales_order_doc.items or []:
+			if so_row.name != so_item_name:
+				continue
+			so_row.custom_source_stock_entry = stock_entry_doc.name
+			if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
+				so_row.custom_source_stock_entry_detail = se_row.name
+			used_details.add(se_row.name)
+			break
+
+
+def _push_stock_entry_tags_to_sales_order(stock_entry_name, sales_order_name):
+	"""Apply Stock Entry line tags onto matching Sales Order items and persist."""
+	if not stock_entry_name or not sales_order_name:
+		return {}
+	if not frappe.db.exists("Stock Entry", stock_entry_name) or not frappe.db.exists("Sales Order", sales_order_name):
+		return {}
+
+	stock_entry = frappe.get_doc("Stock Entry", stock_entry_name)
+	sales_order = frappe.get_doc("Sales Order", sales_order_name)
+	_ensure_sales_order_items_linked_to_stock_entry(sales_order, stock_entry)
+	sync_sales_order_item_tags_from_stock_entry(sales_order)
+
+	item_updates = {}
+	for row in sales_order.items or []:
+		if row.get("custom_source_stock_entry") != stock_entry_name:
+			continue
+		updates = _sales_order_item_tag_sync_values(row)
+		if updates:
+			frappe.db.set_value("Sales Order Item", row.name, updates, update_modified=True)
+			item_updates[row.name] = updates
+			if updates.get("custom_raw_material_tag_no"):
+				frappe.db.set_value(
+					"Tag Registry",
+					{"tag_no": updates["custom_raw_material_tag_no"]},
+					"sales_order",
+					sales_order_name,
+					update_modified=False,
+				)
+	return item_updates
+
+
 @frappe.whitelist()
 def sync_sales_order_stock_entry_links(sales_order):
 	"""Manual "Sync" button on Sales Order: recompute
@@ -3876,10 +4209,12 @@ def sync_sales_order_stock_entry_links(sales_order):
 			row.custom_source_stock_entry for row in (doc.items or []) if row.get("custom_source_stock_entry")
 		)
 	)
+	item_updates = {}
 	for stock_entry_name in stock_entry_names:
 		_push_stock_entry_header_to_sales_order(stock_entry_name, sales_order)
 		if _has_field("Sales Order", "custom_igp_no"):
 			_push_sales_order_igp_to_stock_entry(sales_order, stock_entry_name)
+		item_updates.update(_push_stock_entry_tags_to_sales_order(stock_entry_name, sales_order) or {})
 
 	response = {}
 	if _has_field("Sales Order", "custom_source_stock_entries"):
@@ -3893,21 +4228,6 @@ def sync_sales_order_stock_entry_links(sales_order):
 		)
 	if _has_field("Sales Order", "custom_igp_no"):
 		response["custom_igp_no"] = frappe.db.get_value("Sales Order", sales_order, "custom_igp_no") or ""
-
-	item_updates = {}
-	for row in doc.items or []:
-		updates = {}
-		if _has_field(row.doctype, "custom_raw_material_tag_no"):
-			updates["custom_raw_material_tag_no"] = row.get("custom_raw_material_tag_no") or ""
-		if _has_field(row.doctype, "custom_raw_material_batch_no"):
-			updates["custom_raw_material_batch_no"] = row.get("custom_raw_material_batch_no") or ""
-		if _has_field(row.doctype, "custom_raw_material_item"):
-			updates["custom_raw_material_item"] = row.get("custom_raw_material_item") or ""
-		if _has_field(row.doctype, "custom_stock_source_type") and row.get("custom_stock_source_type"):
-			updates["custom_stock_source_type"] = row.custom_stock_source_type
-		if updates:
-			frappe.db.set_value("Sales Order Item", row.name, updates, update_modified=True)
-			item_updates[row.name] = updates
 
 	response["item_updates"] = item_updates
 
@@ -3943,14 +4263,20 @@ def sync_stock_entry_links_from_source(stock_entry):
 	if _has_field("Stock Entry", "custom_linked_sales_orders"):
 		link_updates = _apply_stock_entry_link_summary(stock_entry, sales_order_names)
 
+	item_updates_by_so = {}
 	for sales_order_name in sales_order_names:
 		_push_stock_entry_header_to_sales_order(stock_entry, sales_order_name)
+		updates = _push_stock_entry_tags_to_sales_order(stock_entry, sales_order_name) or {}
+		if updates:
+			item_updates_by_so[sales_order_name] = updates
 
 	frappe.db.commit()
 	return {
 		"custom_linked_sales_orders": link_updates.get("custom_linked_sales_orders", ""),
 		"custom_sales_order": link_updates.get("custom_sales_order", ""),
 		"custom_invoice__igp_no": frappe.db.get_value("Stock Entry", stock_entry, "custom_invoice__igp_no") or "",
+		"item_updates_by_sales_order": item_updates_by_so,
+		"sales_orders_updated": list(item_updates_by_so.keys()),
 	}
 
 
@@ -5398,6 +5724,9 @@ def get_sales_order_detail_dashboard(sales_order):
 				"calc_ratio_2": flt(item.get("custom_calc_ratio_2")),
 				"actual_ratio": flt(item.get("custom_actual_ratio")),
 				"remaining_width": flt(item.get("custom_remaining_width")),
+				"slitter": item.get("custom_slitter"),
+				"leveler": item.get("custom_leveler"),
+				"reshearing": item.get("custom_reshearing"),
 				"packing_type": item.get("custom_packing_type"),
 				"packing_weightsize": item.get("custom_packing_weightsize"),
 				"no_of_pack": item.get("custom_no_of_pack"),
@@ -5435,6 +5764,8 @@ def get_sales_order_detail_dashboard(sales_order):
 			"name",
 			"docstatus",
 			"machine",
+			"operation",
+			"order_status",
 			"sales_order_item",
 			"stock_entry",
 			"grand_estimated_wt",
@@ -5760,15 +6091,10 @@ def get_sales_order_detail_dashboard(sales_order):
 			}
 		)
 
-	tag_numbers = sorted(
-		{
-			item.get("custom_tag_no")
-			for item in doc.items
-			if item.get("custom_tag_no")
-		}
-	)
+	ss_coil_names = [row.name for row in ss_coil_docs]
+	tag_numbers = _collect_sales_order_tag_numbers(doc, sales_order, stock_entry_items, ss_coil_names)
 	tag_trace = _get_tag_trace_rows(tag_numbers)
-	tag_trace_rows = [tag_trace[tag] for tag in tag_numbers if tag in tag_trace]
+	tag_trace_rows = _sort_tag_trace_rows([tag_trace[tag] for tag in tag_numbers if tag in tag_trace])
 	tag_tree = _build_tag_tree(tag_trace_rows)
 
 	return {

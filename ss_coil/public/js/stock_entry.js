@@ -281,7 +281,18 @@ function add_stock_entry_create_sales_order_button(frm) {
 							frm.doc.custom_invoice__igp_no = msg.custom_invoice__igp_no;
 							frm.refresh_field("custom_invoice__igp_no");
 						}
-						frappe.show_alert({ message: __("Sales Order links synced"), indicator: "green" });
+						const updated = (msg.sales_orders_updated || []).length;
+						const tagLines = Object.values(msg.item_updates_by_sales_order || {}).reduce(
+							(n, rows) => n + Object.keys(rows || {}).length,
+							0,
+						);
+						let alert = __("Sales Order links synced");
+						if (tagLines) {
+							alert = __("Sales Order links and {0} item tag(s) synced", [tagLines]);
+						} else if (updated) {
+							alert = __("Sales Order links synced ({0} order(s))", [updated]);
+						}
+						frappe.show_alert({ message: alert, indicator: "green" });
 					},
 				});
 			},

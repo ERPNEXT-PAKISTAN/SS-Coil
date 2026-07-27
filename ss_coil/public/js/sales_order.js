@@ -194,7 +194,13 @@ function add_sales_order_create_stock_entry_button(frm) {
 							});
 						});
 						frm.refresh_field("items");
-						frappe.show_alert({ message: __("Stock Entry links synced"), indicator: "green" });
+						const lineCount = Object.keys(itemUpdates).length;
+						frappe.show_alert({
+							message: lineCount
+								? __("Stock Entry links and tags synced ({0} line(s))", [lineCount])
+								: __("Stock Entry links synced"),
+							indicator: "green",
+						});
 					},
 				});
 			},
@@ -1058,6 +1064,68 @@ function render_packing_detail(frm) {
 	});
 }
 
+function build_sales_order_planning_operations_html(items, ssCoilDocs) {
+	if (!items || !items.length) {
+		return `<div style="color:#64748b;font-size:13px;">No operations to show.</div>`;
+	}
+
+	const processDefs = [
+		{ key: "slitter", label: "Slitter" },
+		{ key: "leveler", label: "Leveler" },
+		{ key: "reshearing", label: "Reshearing" },
+	];
+
+	return items
+		.map((item) => {
+			const itemLabel = item.item_name || item.item_code || item.name || "-";
+			const planned = processDefs
+				.filter((proc) => item[proc.key])
+				.map((proc) => {
+					const value = item[proc.key];
+					const text = value === 1 || value === true ? proc.label : String(value);
+					return statusPill(text, "dark");
+				})
+				.join(" ");
+
+			const coils = (ssCoilDocs || []).filter((doc) => doc.sales_order_item === item.name);
+			const executionRows = coils.length
+				? coils
+						.map(
+							(doc) => `<tr>
+							<td>${docLink("ss-coil", doc.name)}</td>
+							<td>${escape_html(doc.operation || "-")}</td>
+							<td>${statusPill(doc.order_status || "-", ssCoilStatusTone(doc.order_status))}</td>
+							<td>${escape_html(doc.machine || "-")}</td>
+						</tr>`,
+						)
+						.join("")
+				: `<tr><td colspan="4" style="text-align:center;color:#64748b;">No SS Coil jobs started for this line yet.</td></tr>`;
+
+			return `<div style="background:#f8fbff;border:1px solid #d8e3f0;border-radius:14px;padding:14px 16px;margin-bottom:12px;">
+				<div style="font-size:15px;font-weight:800;color:#102a43;">${escape_html(itemLabel)}</div>
+				<div style="margin-top:10px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Planned Operations</div>
+				<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">${planned || `<span style="color:#64748b;font-size:13px;">No operations selected on this item.</span>`}</div>
+				<div style="margin-top:14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">SS Coil Execution</div>
+				<div style="overflow:auto;margin-top:8px;">
+					<table class="table table-bordered" style="margin-bottom:0;background:#fff;min-width:640px;">
+						<thead style="background:#eef4fb;color:#1f56d2;">
+							<tr><th>SS Coil</th><th>Operation</th><th>Status</th><th>Machine</th></tr>
+						</thead>
+						<tbody>${executionRows}</tbody>
+					</table>
+				</div>
+			</div>`;
+		})
+		.join("");
+}
+
+function ssCoilStatusTone(status) {
+	const normalized = (status || "").toLowerCase();
+	if (normalized.includes("complete")) return "success";
+	if (normalized.includes("process") || normalized.includes("start")) return "warning";
+	return "muted";
+}
+
 function build_sales_order_dashboard_html(data, cuttingGroups) {
 	const items = data.items || [];
 	const packingDetails = data.packing_details || [];
@@ -1094,13 +1162,17 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 				.map(
 					(item) => `
 						<tr>
-							<td><strong>${escape_html(item.item_name || item.item_code || item.name)}</strong><br><span style="color:#64748b;">${escape_html(item.item_code || item.name || "-")}</span></td>
+							<td>${escape_html(item.item_name || item.item_code || item.name || "-")}</td>
 							<td>${format_number(item.qty)}</td>
-							<td>${escape_html(item.tag_no || "-")}</td>
+							<td>${escape_html(item.tag_no || "-")}${
+								item.raw_material_tag_no
+									? `<br><span style="color:#64748b;font-size:11px;">Mother: ${escape_html(item.raw_material_tag_no)}</span>`
+									: ""
+							}</td>
 							<td>${escape_html(item.ref_no || "-")}</td>
 							<td>${escape_html(item.dimension || "-")}</td>
 							<td>${escape_html(item.specification || "-")}</td>
-							<td>${escape_html(item.machine || "-")}</td>
+							<td>${escape_html(item.raw_material_item || "-")}</td>
 							<td>${format_number(item.estimated_wt)}</td>
 							<td>${format_number(item.calc_ratio)}</td>
 							<td>${format_number(item.actual_ratio)}</td>
@@ -1109,6 +1181,8 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 				)
 				.join("")
 		: `<tr><td colspan="11" style="text-align:center; color:#64748b;">No Sales Order items found.</td></tr>`;
+
+	const planningOperationsHtml = build_sales_order_planning_operations_html(items, ssCoilDocs);
 
 	const ssCoilRows = ssCoilDocs.length
 		? ssCoilDocs
@@ -1336,7 +1410,7 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 					${flatInfoCard("Sales Order", data.sales_order || "-")}
 					${flatInfoCard("Customer", data.customer_name || data.customer || "-")}
 					${flatInfoCard("For Customer", data.for_customer || "-")}
-					${flatInfoCard("Items", items.map((item) => item.item_name || item.item_code).slice(0, 2).join(", ") || "-")}
+					${flatInfoCard("Items", items.map((item) => item.item_name || "-").filter((n) => n !== "-").slice(0, 2).join(", ") || "-")}
 				</div>
 				<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:12px;">
 					${dashboardCard("Links", "Status", data.status || "-", "#ffffff", "#0f2842", "18px")}
@@ -1358,7 +1432,7 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 								<th>Ref</th>
 								<th>Dimension</th>
 								<th>Specification</th>
-								<th>Machine</th>
+								<th>Mother Item</th>
 								<th>Est WT</th>
 								<th>Calc Ratio</th>
 								<th>Actual Ratio</th>
@@ -1368,9 +1442,21 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 						<tbody>${itemRows}</tbody>
 					</table>
 				</div>
+				<div style="margin-top:16px;">${planningOperationsHtml}</div>
 			`)}
 
 			${collapsibleSection("Cutting Scheme Report", "Item wise cutting scheme dashboard detail", "#1f8c3a", cuttingSchemeHtml)}
+
+			${collapsibleSection("Tag Traceability", "Mother coil from Stock Entry through Sales Order, plan, SS Coil operations, and finish goods", "#be185d", `
+				<div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:14px;">
+					${dashboardLinkButton(`/app/query-report/Tag%20Registry%20Trace?sales_order=${encodeURIComponent(data.sales_order || "")}`, "Tag Registry Trace Report", "#16324f", "#ffffff")}
+					${dashboardLinkButton(`/app/tag-registry?sales_order=${encodeURIComponent(data.sales_order || "")}`, "Tag Registry List", "#1f56d2", "#ffffff")}
+				</div>
+				<div style="color:#52657a; font-size:13px; margin-bottom:16px;">Trail order: <b>Purchase / Stock Entry (mother coil)</b> → <b>Sales Order</b> → <b>SS Coil Input / Output (operation)</b> → <b>Delivery / Invoice</b>. Each root tag below is one mother-coil lineage.</div>
+				${stackedDetailSection("Tag Tree", "Root parent tag, child / sub-child tags, and SS Coil operation flow", tagTreeHtml)}
+				<div style="height:14px;"></div>
+				${stackedDetailSection("Tag Trace", "Full document trail per tag (sorted by root → parent → tag)", tagTraceHtml)}
+			`)}
 
 			${collapsibleSection("Profit & Loss", "Commercial totals and order profitability snapshot", "#7b2cbf", `
 				<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px;">
@@ -1563,10 +1649,8 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 						${dashboardLinkButton(`/app/query-report/Tag%20Registry%20Trace?sales_order=${encodeURIComponent(data.sales_order || "")}`, "Open Tag Registry Trace", "#16324f", "#ffffff")}
 						${dashboardLinkButton(`/app/tag-registry?sales_order=${encodeURIComponent(data.sales_order || "")}`, "Open Tag Registry List", "#1f56d2", "#ffffff")}
 					</div>
-					<div style="color:#52657a; font-size:13px;">Use <b>Tag Registry Trace</b> to group parent tags and produced child tags, or open the registry list already filtered by this Sales Order.</div>
+					<div style="color:#52657a; font-size:13px;">Use the <b>Tag Traceability</b> section on this dashboard for the full tree and document trail.</div>
 				`)}
-				${stackedDetailSection("Tag Tree", "Parent tag with produced child tags and current status", tagTreeHtml)}
-				${stackedDetailSection("Tag Trace", "Unique tag journey across purchase, stock, sales, dispatch and invoice", tagTraceHtml)}
 			`)}
 
 			${collapsibleSection("Stock of this Order", "Current stock status tied to this order", "#0f766e", `
@@ -1948,7 +2032,7 @@ function build_tag_trace_html(tagTrace) {
 
 function build_tag_tree_html(tagTree) {
 	if (!tagTree || !tagTree.length) {
-		return `<div style="${panelStyle("#fbfdff", "#d7e5ef")}"><div style="color:#64748b;">No parent / child tag tree found yet.</div></div>`;
+		return `<div style="${panelStyle("#fbfdff", "#d7e5ef")}"><div style="color:#64748b;">No parent / child tag tree found yet. Link a Stock Entry mother coil or save SS Coil output tags for this order.</div></div>`;
 	}
 
 	return tagTree
@@ -1956,33 +2040,64 @@ function build_tag_tree_html(tagTree) {
 			const rootTrace = group.root_trace || {};
 			const rootRegistry = rootTrace.registry || {};
 			const children = group.children || [];
-			const childRows = children.length
-				? children
-						.map((child, index) => {
-							const reg = child.registry || {};
-							const latestEvent = (child.events || []).slice(-1)[0] || {};
+			const hierarchy = group.hierarchy || null;
+			const hierarchyDiagram = hierarchy ? build_so_tag_hierarchy_diagram(hierarchy) : "";
+			const hierarchyDetail = hierarchy ? build_so_tag_hierarchy_detail(hierarchy) : "";
+			const flatRows = hierarchy ? flatten_so_tag_hierarchy(hierarchy) : [];
+
+			const childRows = flatRows.length
+				? flatRows
+						.map((node, index) => {
+							const op =
+								(node.previous_docs && node.previous_docs[0] && node.previous_docs[0].operation) ||
+								(node.next_docs && node.next_docs[0] && node.next_docs[0].operation) ||
+								"-";
+							const ssCoilDoc =
+								(node.previous_docs && node.previous_docs[0] && node.previous_docs[0].name) ||
+								(node.next_docs && node.next_docs[0] && node.next_docs[0].name) ||
+								"";
+							const indent = "&nbsp;".repeat(Math.min((node.depth || 0) * 4, 24));
 							return `<tr>
+								<td>${index + 1}</td>
+								<td>${indent}${escape_html(node.tag_no || "-")}</td>
+								<td>${statusPill(node.status || "Active", node.depth ? "warning" : "success")}</td>
+								<td>${escape_html(node.item_name || node.item_code || "-")}</td>
+								<td>${escape_html(op)}</td>
+								<td>${ssCoilDoc ? docLink("ss-coil", ssCoilDoc, "dark") : "-"}</td>
+								<td>${escape_html([node.current_doctype, node.current_docname].filter(Boolean).join(" / ") || "-")}</td>
+							</tr>`;
+						})
+						.join("")
+				: children.length
+					? children
+							.map((child, index) => {
+								const reg = child.registry || {};
+								const ssCoilEvent = (child.events || []).find((e) => (e.stage || "").includes("SS Coil")) || {};
+								const latestEvent = (child.events || []).slice(-1)[0] || {};
+								const operation = (ssCoilEvent.extra || {}).operation || (latestEvent.extra || {}).operation || "-";
+								return `<tr>
 								<td>${index + 1}</td>
 								<td>${escape_html(child.tag_no || "-")}</td>
 								<td>${statusPill(reg.status || "Produced", "warning")}</td>
 								<td>${escape_html(reg.item_name || reg.item_code || latestEvent.item_name || "-")}</td>
-								<td>${latestEvent.doctype && latestEvent.docname ? docLink(routeForDoctype(latestEvent.doctype), latestEvent.docname, "dark") : "-"}</td>
-								<td>${escape_html(latestEvent.date || "-")}</td>
+								<td>${escape_html(operation)}</td>
+								<td>${ssCoilEvent.docname ? docLink("ss-coil", ssCoilEvent.docname, "dark") : "-"}</td>
+								<td>${escape_html([reg.current_doctype, reg.current_docname].filter(Boolean).join(" / ") || "-")}</td>
 							</tr>`;
-						})
-						.join("")
-				: `<tr><td colspan="6" style="text-align:center; color:#64748b;">No produced child tags yet.</td></tr>`;
+							})
+							.join("")
+					: `<tr><td colspan="7" style="text-align:center; color:#64748b;">No produced child tags yet.</td></tr>`;
 
 			return `<div style="border:1px solid #d8e3f0; border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 10px 22px rgba(15,23,42,.05); margin-top:12px;">
 				<div style="background:linear-gradient(90deg,#14532d 0%,#1f8c3a 100%); color:#fff; padding:14px 16px;">
 					<div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;">
 						<div>
-							<div style="font-size:18px; font-weight:800;">Parent Tag: ${escape_html(group.root_tag_no || "-")}</div>
+							<div style="font-size:18px; font-weight:800;">Root / Mother Tag: ${escape_html(group.root_tag_no || "-")}</div>
 							<div style="font-size:12px; color:#def7e3; margin-top:4px;">Source: ${escape_html(rootRegistry.source_doctype || "-")} / ${escape_html(rootRegistry.source_docname || "-")}</div>
 						</div>
 						<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; min-width:320px;">
-							${miniTraceCard("Parent Status", rootRegistry.status || "Active")}
-							${miniTraceCard("Child Tags", format_number(children.length))}
+							${miniTraceCard("Root Status", rootRegistry.status || "Active")}
+							${miniTraceCard("Tags in Tree", format_number(flatRows.length || children.length + 1))}
 							${miniTraceCard("Current", [rootRegistry.current_doctype, rootRegistry.current_docname].filter(Boolean).join(" / ") || "-")}
 						</div>
 					</div>
@@ -1997,10 +2112,18 @@ function build_tag_tree_html(tagTree) {
 							${flatInfoCard("Stock Entry", rootRegistry.stock_entry || "-")}
 						</div>
 					</div>
+					${hierarchyDiagram ? `<div style="background:#f8fbff;border:1px solid #dbe7f3;border-radius:14px;padding:14px 16px;">
+						<div style="font-size:14px;font-weight:800;color:#102a43;margin-bottom:10px;">Hierarchy Diagram</div>
+						${hierarchyDiagram}
+					</div>` : ""}
+					${hierarchyDetail ? `<div style="background:#fff;border:1px solid #dbe7f3;border-radius:14px;padding:14px 16px;">
+						<div style="font-size:14px;font-weight:800;color:#102a43;margin-bottom:8px;">Hierarchy Detail</div>
+						<div style="overflow:auto;">${hierarchyDetail}</div>
+					</div>` : ""}
 					<div style="overflow:auto;">
-						<table class="table table-bordered" style="margin-bottom:0; background:#fff; min-width:920px;">
+						<table class="table table-bordered" style="margin-bottom:0; background:#fff; min-width:980px;">
 							<thead style="background:#dfe9ff; color:#1f56d2;">
-								<tr><th>#</th><th>Child Tag</th><th>Status</th><th>Item</th><th>Current Document</th><th>Last Date</th></tr>
+								<tr><th>#</th><th>Tag</th><th>Status</th><th>Item</th><th>Operation</th><th>SS Coil</th><th>Current Document</th></tr>
 							</thead>
 							<tbody>${childRows}</tbody>
 						</table>
@@ -2009,6 +2132,55 @@ function build_tag_tree_html(tagTree) {
 			</div>`;
 		})
 		.join("");
+}
+
+function flatten_so_tag_hierarchy(node, depth = 0, rows = []) {
+	if (!node || !node.tag_no) return rows;
+	rows.push({ ...node, depth });
+	for (const child of node.children || []) {
+		flatten_so_tag_hierarchy(child, depth + 1, rows);
+	}
+	return rows;
+}
+
+function build_so_tag_hierarchy_diagram(node) {
+	if (!node || !node.tag_no) {
+		return `<div style="color:#64748b;font-size:13px;">No hierarchy diagram.</div>`;
+	}
+	const renderLevel = (current, depth = 0) => {
+		const kids = current.children || [];
+		const op =
+			(current.previous_docs && current.previous_docs[0] && current.previous_docs[0].operation) ||
+			(current.next_docs && current.next_docs[0] && current.next_docs[0].operation) ||
+			"";
+		return `
+			<div style="display:flex;flex-direction:column;align-items:center;gap:10px;min-width:max-content;">
+				<div style="background:${depth ? "#1d4ed8" : "#0f172a"};color:#fff;border-radius:14px;padding:12px 16px;min-width:200px;max-width:240px;text-align:center;">
+					<div style="font-size:15px;font-weight:800;">${escape_html(current.tag_no)}</div>
+					<div style="font-size:11px;opacity:.92;margin-top:4px;">${escape_html(op || current.status || "-")}</div>
+				</div>
+				${kids.length ? `
+					<div style="font-size:16px;font-weight:800;color:#2563eb;">↓</div>
+					<div style="display:flex;gap:12px;align-items:flex-start;justify-content:center;flex-wrap:wrap;">${kids.map((child) => renderLevel(child, depth + 1)).join("")}</div>
+				` : ""}
+			</div>`;
+	};
+	return `<div style="overflow:auto;padding:8px 0;"><div style="display:flex;justify-content:center;min-width:max-content;">${renderLevel(node)}</div></div>`;
+}
+
+function build_so_tag_hierarchy_detail(node, depth = 0) {
+	if (!node || !node.tag_no) return "";
+	const op =
+		(node.previous_docs && node.previous_docs[0] && node.previous_docs[0].operation) ||
+		(node.next_docs && node.next_docs[0] && node.next_docs[0].operation) ||
+		"-";
+	const pad = 12 + depth * 18;
+	const childHtml = (node.children || []).map((child) => build_so_tag_hierarchy_detail(child, depth + 1)).join("");
+	return `
+		<div style="margin-left:${pad}px;border-left:2px solid #dbe7f3;padding-left:12px;margin-bottom:8px;">
+			<div style="font-weight:800;color:#102a43;">${escape_html(node.tag_no)}</div>
+			<div style="font-size:12px;color:#64748b;margin-top:2px;">${escape_html(node.status || "-")} | Op: ${escape_html(op)} | ${escape_html(node.item_name || node.item_code || "-")}</div>
+		</div>${childHtml}`;
 }
 
 function routeForDoctype(doctype) {
@@ -2026,6 +2198,7 @@ function routeForDoctype(doctype) {
 
 function tagStageTone(stage) {
 	const normalized = (stage || "").toLowerCase();
+	if (normalized.includes("ss coil input")) return "dark";
 	if (normalized.includes("ss coil")) return "warning";
 	if (normalized.includes("invoice")) return "success";
 	if (normalized.includes("delivery")) return "warning";
@@ -2039,7 +2212,11 @@ function tagExtraText(extra) {
 	if (extra.supplier) return `Supplier: ${extra.supplier}`;
 	if (extra.customer) return `Customer: ${extra.customer}`;
 	if (extra.purpose) return `Purpose: ${extra.purpose}`;
-	if (extra.operation) return `Operation: ${extra.operation}`;
+	if (extra.operation) {
+		const parts = [`Operation: ${extra.operation}`];
+		if (extra.sales_order) parts.push(`SO: ${extra.sales_order}`);
+		return parts.join(" | ");
+	}
 	return "-";
 }
 

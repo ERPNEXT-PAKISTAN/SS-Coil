@@ -1064,59 +1064,47 @@ function render_packing_detail(frm) {
 	});
 }
 
-function build_sales_order_planning_operations_html(items, ssCoilDocs) {
-	if (!items || !items.length) {
-		return `<div style="color:#64748b;font-size:13px;">No operations to show.</div>`;
+function build_sales_order_planning_operations_html(items) {
+	const tableRows = [];
+	(items || []).forEach((item) => {
+		const itemLabel = item.item_name || item.item_code || item.name || "-";
+		const lineStatus = item.custom_status || "-";
+		(item.operation_rows || []).forEach((op) => {
+			tableRows.push(`
+				<tr>
+					<td>${escape_html(itemLabel)}</td>
+					<td>${statusPill(lineStatus, ssCoilStatusTone(lineStatus))}</td>
+					<td>${escape_html(op.operation || "-")}</td>
+					<td>${escape_html(op.planned || "-")}</td>
+					<td>${statusPill(op.line_status || "-", ssCoilStatusTone(op.line_status))}</td>
+					<td>${op.ss_coil ? docLink("ss-coil", op.ss_coil, "dark") : "-"}</td>
+					<td>${escape_html(op.machine || "-")}</td>
+					<td>${escape_html(op.source || "-")}</td>
+				</tr>`);
+		});
+	});
+
+	if (!tableRows.length) {
+		return `<div style="color:#64748b;font-size:13px;">No operations configured on Sales Order items (Slitter / Leveler / Reshearing).</div>`;
 	}
 
-	const processDefs = [
-		{ key: "slitter", label: "Slitter" },
-		{ key: "leveler", label: "Leveler" },
-		{ key: "reshearing", label: "Reshearing" },
-	];
-
-	return items
-		.map((item) => {
-			const itemLabel = item.item_name || item.item_code || item.name || "-";
-			const planned = processDefs
-				.filter((proc) => item[proc.key])
-				.map((proc) => {
-					const value = item[proc.key];
-					const text = value === 1 || value === true ? proc.label : String(value);
-					return statusPill(text, "dark");
-				})
-				.join(" ");
-
-			const coils = (ssCoilDocs || []).filter((doc) => doc.sales_order_item === item.name);
-			const executionRows = coils.length
-				? coils
-						.map(
-							(doc) => `<tr>
-							<td>${docLink("ss-coil", doc.name)}</td>
-							<td>${escape_html(doc.operation || "-")}</td>
-							<td>${statusPill(doc.order_status || "-", ssCoilStatusTone(doc.order_status))}</td>
-							<td>${escape_html(doc.machine || "-")}</td>
-						</tr>`,
-						)
-						.join("")
-				: `<tr><td colspan="4" style="text-align:center;color:#64748b;">No SS Coil jobs started for this line yet.</td></tr>`;
-
-			return `<div style="background:#f8fbff;border:1px solid #d8e3f0;border-radius:14px;padding:14px 16px;margin-bottom:12px;">
-				<div style="font-size:15px;font-weight:800;color:#102a43;">${escape_html(itemLabel)}</div>
-				<div style="margin-top:10px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Planned Operations</div>
-				<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">${planned || `<span style="color:#64748b;font-size:13px;">No operations selected on this item.</span>`}</div>
-				<div style="margin-top:14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">SS Coil Execution</div>
-				<div style="overflow:auto;margin-top:8px;">
-					<table class="table table-bordered" style="margin-bottom:0;background:#fff;min-width:640px;">
-						<thead style="background:#eef4fb;color:#1f56d2;">
-							<tr><th>SS Coil</th><th>Operation</th><th>Status</th><th>Machine</th></tr>
-						</thead>
-						<tbody>${executionRows}</tbody>
-					</table>
-				</div>
-			</div>`;
-		})
-		.join("");
+	return `<div style="overflow:auto;">
+		<table class="table table-bordered" style="margin-bottom:0;background:#fff;min-width:980px;">
+			<thead style="background:#eef4fb;color:#1f56d2;">
+				<tr>
+					<th>Item</th>
+					<th>SO Item Status</th>
+					<th>Operation</th>
+					<th>Planned (SO / Coil SO)</th>
+					<th>SS Coil Status</th>
+					<th>SS Coil</th>
+					<th>Machine</th>
+					<th>Source</th>
+				</tr>
+			</thead>
+			<tbody>${tableRows.join("")}</tbody>
+		</table>
+	</div>`;
 }
 
 function ssCoilStatusTone(status) {
@@ -1173,6 +1161,7 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 							<td>${escape_html(item.dimension || "-")}</td>
 							<td>${escape_html(item.specification || "-")}</td>
 							<td>${escape_html(item.raw_material_item || "-")}</td>
+							<td>${statusPill(item.custom_status || "-", ssCoilStatusTone(item.custom_status))}</td>
 							<td>${format_number(item.estimated_wt)}</td>
 							<td>${format_number(item.calc_ratio)}</td>
 							<td>${format_number(item.actual_ratio)}</td>
@@ -1180,9 +1169,9 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 						</tr>`,
 				)
 				.join("")
-		: `<tr><td colspan="11" style="text-align:center; color:#64748b;">No Sales Order items found.</td></tr>`;
+		: `<tr><td colspan="12" style="text-align:center; color:#64748b;">No Sales Order items found.</td></tr>`;
 
-	const planningOperationsHtml = build_sales_order_planning_operations_html(items, ssCoilDocs);
+	const planningOperationsHtml = build_sales_order_planning_operations_html(items);
 
 	const ssCoilRows = ssCoilDocs.length
 		? ssCoilDocs
@@ -1433,6 +1422,7 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 								<th>Dimension</th>
 								<th>Specification</th>
 								<th>Mother Item</th>
+								<th>Status</th>
 								<th>Est WT</th>
 								<th>Calc Ratio</th>
 								<th>Actual Ratio</th>
@@ -1442,7 +1432,10 @@ function build_sales_order_dashboard_html(data, cuttingGroups) {
 						<tbody>${itemRows}</tbody>
 					</table>
 				</div>
-				<div style="margin-top:16px;">${planningOperationsHtml}</div>
+				<div style="margin-top:16px;">
+					<div style="font-size:13px;font-weight:800;color:#102a43;margin-bottom:8px;">Operations (Slitter / Leveler / Reshearing)</div>
+					${planningOperationsHtml}
+				</div>
 			`)}
 
 			${collapsibleSection("Cutting Scheme Report", "Item wise cutting scheme dashboard detail", "#1f8c3a", cuttingSchemeHtml)}

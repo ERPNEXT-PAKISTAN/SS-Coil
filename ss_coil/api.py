@@ -2142,6 +2142,10 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 			value = so_item_doc.get(so_field)
 			if value not in (None, "") and not so_row.get(coil_field):
 				so_row.set(coil_field, value)
+		for proc in PROCESS_FIELDS:
+			value = so_item_doc.get(f"custom_{proc}")
+			if _truthy_process_value(value) and not _truthy_process_value(so_row.get(proc)):
+				so_row.set(proc, value)
 
 	if so_item_doc:
 		mill = so_item_doc.get("custom_mill")
@@ -2252,28 +2256,140 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 			output_index += 1
 
 
+def _map_ss_coil_status_to_so_item(order_status):
+	order_status = (order_status or "").strip()
+	if order_status == "Completed":
+		return "Completed"
+	if order_status == "Closed":
+		return "Closed"
+	if order_status in ("Not Started", "In Process", "Partially Completed", "Stopped", "Started"):
+		return "In Process"
+	return ""
+
+
+def _coil_so_process_source_for_sales_order_item(sales_order_item):
+	rows = frappe.db.sql(
+		"""
+		select cs.slitter, cs.leveler, cs.reshearing, sc.name as ss_coil
+		from `tabCoil SO` cs
+		inner join `tabSS Coil` sc on sc.name = cs.parent
+		where sc.sales_order_item = %s
+		order by sc.modified desc
+		limit 1
+		""",
+		(sales_order_item,),
+		as_dict=True,
+	)
+	return rows[0] if rows else None
+
+
+def _build_sales_order_item_operation_rows(sales_order_item):
+	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
+		return []
+
+	so_item = frappe.get_doc("Sales Order Item", sales_order_item)
+	configured_keys = _get_enabled_processes_from_row(so_item, custom=True)
+	planned_values = {key: so_item.get(f"custom_{key}") for key in configured_keys}
+	source_label = "Sales Order Item"
+
+	if not configured_keys:
+		coil_so = _coil_so_process_source_for_sales_order_item(sales_order_item)
+		if coil_so:
+			configured_keys = _get_enabled_processes_from_row(coil_so, custom=False)
+			planned_values = {key: coil_so.get(key) for key in configured_keys}
+			source_label = "SS Coil SO Item"
+
+	ss_coils = frappe.get_all(
+		"SS Coil",
+		filters={"sales_order_item": sales_order_item},
+		fields=["name", "operation", "order_status", "machine", "modified"],
+		order_by="modified desc",
+	)
+	by_operation = {}
+	for row in ss_coils:
+		op_key = (row.operation or "").strip().lower()
+		if op_key not in by_operation:
+			by_operation[op_key] = row
+
+	rows = []
+	for key in PROCESS_FIELDS:
+		planned = planned_values.get(key)
+		if key not in configured_keys and not _truthy_process_value(planned):
+			continue
+		label = PROCESS_LABELS[key]
+		match = by_operation.get(label.lower())
+		rows.append(
+			{
+				"process_key": key,
+				"operation": label,
+				"planned": _clean_text(planned) or label,
+				"line_status": (match.order_status if match else "Not Started"),
+				"ss_coil": match.name if match else None,
+				"machine": match.machine if match else None,
+				"source": source_label,
+			}
+		)
+	return rows
+
+
 def _update_sales_order_item_process_status(sales_order_item=None):
 	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
 		return
 	if not _has_field("Sales Order Item", "custom_status"):
 		return
 
+	so_item = frappe.get_doc("Sales Order Item", sales_order_item)
+	configured = _get_enabled_processes_from_row(so_item, custom=True)
+	if not configured:
+		coil_so = _coil_so_process_source_for_sales_order_item(sales_order_item)
+		if coil_so:
+			configured = _get_enabled_processes_from_row(coil_so, custom=False)
+
 	rows = frappe.get_all(
 		"SS Coil",
 		filters={"sales_order_item": sales_order_item},
-		fields=["name", "docstatus", "order_status"],
+		fields=["name", "operation", "order_status", "docstatus", "modified"],
 		order_by="modified desc",
 	)
 
+	if not rows:
+		frappe.db.set_value("Sales Order Item", sales_order_item, "custom_status", "", update_modified=False)
+		return
+
+	by_operation = {}
+	for row in rows:
+		op_key = (row.operation or "").strip().lower()
+		if op_key not in by_operation:
+			by_operation[op_key] = row
+
 	status = ""
-	if any((row.order_status or "") == "Completed" or row.docstatus == 1 for row in rows):
+	matched = []
+	if configured:
+		for key in configured:
+			label = PROCESS_LABELS[key].lower()
+			if label in by_operation:
+				matched.append(by_operation[label])
+		target_rows = matched or rows
+	else:
+		target_rows = rows
+
+	if configured and matched and all((r.order_status or "") in ("Completed", "Closed") for r in matched):
 		status = "Completed"
-	elif any((row.order_status or "") in ("Started", "In Process", "Partially Completed") for row in rows):
-		status = "In Process"
-	elif any((row.order_status or "") == "Not Started" for row in rows):
-		status = "Not Started"
-	elif rows:
+	elif any((r.order_status or "") == "Closed" for r in target_rows) and not any(
+		(r.order_status or "") not in ("Completed", "Closed") for r in target_rows
+	):
 		status = "Closed"
+	elif any(
+		(r.order_status or "")
+		in ("Started", "In Process", "Partially Completed", "Stopped", "Not Started", "Completed", "Closed")
+		for r in target_rows
+	):
+		if all((r.order_status or "") in ("Completed", "Closed") for r in target_rows):
+			status = "Completed"
+		else:
+			status = "In Process"
+	else:
+		status = _map_ss_coil_status_to_so_item(rows[0].order_status)
 
 	frappe.db.set_value("Sales Order Item", sales_order_item, "custom_status", status, update_modified=False)
 
@@ -5698,6 +5814,12 @@ def get_sales_order_detail_dashboard(sales_order):
 	items = []
 	packing_details = []
 	for item in doc.items:
+		if item.name:
+			_update_sales_order_item_process_status(item.name)
+		operation_rows = _build_sales_order_item_operation_rows(item.name)
+		item_status = item.get("custom_status")
+		if item.name:
+			item_status = frappe.db.get_value("Sales Order Item", item.name, "custom_status") or item_status
 		items.append(
 			{
 				"name": item.name,
@@ -5724,9 +5846,11 @@ def get_sales_order_detail_dashboard(sales_order):
 				"calc_ratio_2": flt(item.get("custom_calc_ratio_2")),
 				"actual_ratio": flt(item.get("custom_actual_ratio")),
 				"remaining_width": flt(item.get("custom_remaining_width")),
+				"custom_status": item_status,
 				"slitter": item.get("custom_slitter"),
 				"leveler": item.get("custom_leveler"),
 				"reshearing": item.get("custom_reshearing"),
+				"operation_rows": operation_rows,
 				"packing_type": item.get("custom_packing_type"),
 				"packing_weightsize": item.get("custom_packing_weightsize"),
 				"no_of_pack": item.get("custom_no_of_pack"),

@@ -126,28 +126,53 @@ def _ensure_stock_entry_detail_field_order():
 
 
 def ensure_sales_order_job_sheet_field_order():
-	"""Place Job Sheet tab on Sales Order after cutting scheme report."""
+	"""Job Sheet tab + HTML field only — always last on the form (nothing else on that tab)."""
 	ps_name = "Sales Order-main-field_order"
 	if not frappe.db.exists("Property Setter", ps_name):
 		return
 
+	meta = frappe.get_meta("Sales Order")
 	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
-	changed = False
-	for fieldname in ("custom_job_sheet_tab", "custom_job_sheet_report"):
-		if fieldname in order:
-			order.remove(fieldname)
-			changed = True
 
-	anchor = "custom_cutting_scheme_report"
-	if anchor not in order:
-		anchor = "custom_detail_status"
-	if anchor not in order:
+	job_sheet_names = (
+		"custom_job_sheet_tab",
+		"job_sheet_tab",
+		"custom_job_sheet_report",
+		"job_sheet_report",
+	)
+	for fieldname in job_sheet_names:
+		while fieldname in order:
+			order.remove(fieldname)
+
+	tab_field = None
+	for candidate in ("custom_job_sheet_tab", "job_sheet_tab"):
+		if meta.get_field(candidate) and not meta.get_field(candidate).hidden:
+			tab_field = candidate
+			break
+	if not tab_field:
+		for candidate in ("custom_job_sheet_tab", "job_sheet_tab"):
+			if meta.get_field(candidate):
+				tab_field = candidate
+				break
+
+	html_field = None
+	for candidate in ("custom_job_sheet_report", "job_sheet_report"):
+		if meta.get_field(candidate) and not meta.get_field(candidate).hidden:
+			html_field = candidate
+			break
+	if not html_field:
+		for candidate in ("custom_job_sheet_report", "job_sheet_report"):
+			if meta.get_field(candidate):
+				html_field = candidate
+				break
+
+	tail = []
+	if tab_field:
+		tail.append(tab_field)
+	if html_field:
+		tail.append(html_field)
+	if not tail:
 		return
 
-	insert_at = order.index(anchor) + 1
-	order.insert(insert_at, "custom_job_sheet_tab")
-	order.insert(insert_at + 1, "custom_job_sheet_report")
-	changed = True
-
-	if changed:
-		frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+	order.extend(tail)
+	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)

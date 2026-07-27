@@ -5159,8 +5159,6 @@ def stock_entry_item_query(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def setup_sales_order_cutting_scheme_fields():
-	from ss_coil.form_layout import ensure_sales_order_job_sheet_field_order
-
 	custom_fields = {
 		"Sales Order Item": [
 			{
@@ -5207,18 +5205,6 @@ def setup_sales_order_cutting_scheme_fields():
 				"fieldtype": "HTML",
 				"insert_after": "custom_cutting_scheme_report_section",
 			},
-			{
-				"fieldname": "custom_job_sheet_tab",
-				"label": "Job Sheet",
-				"fieldtype": "Tab Break",
-				"insert_after": "custom_cutting_scheme_report",
-			},
-			{
-				"fieldname": "custom_job_sheet_report",
-				"label": "Job Sheet Report",
-				"fieldtype": "HTML",
-				"insert_after": "custom_job_sheet_tab",
-			},
 		],
 	}
 	create_custom_fields(custom_fields, update=True)
@@ -5228,39 +5214,83 @@ def setup_sales_order_cutting_scheme_fields():
 		if frappe.db.exists("Custom Field", name):
 			frappe.db.set_value("Custom Field", name, "hidden", 1, update_modified=False)
 
-	ensure_sales_order_job_sheet_field_order()
 	frappe.clear_cache()
 	return {"status": "ok"}
 
 
 def setup_sales_order_job_sheet_fields():
-	"""Ensure Job Sheet tab exists on Sales Order (migrate / install)."""
+	"""Job Sheet tab last on SO; tab + HTML visible; create only if missing."""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 	from ss_coil.form_layout import ensure_sales_order_job_sheet_field_order
 
-	create_custom_fields(
-		{
-			"Sales Order": [
+	for fn in ("custom_job_sheet_tab", "custom_job_sheet_report", "job_sheet_tab", "job_sheet_report"):
+		name = f"Sales Order-{fn}"
+		if frappe.db.exists("Custom Field", name):
+			frappe.db.set_value("Custom Field", name, "hidden", 0, update_modified=False)
+
+	has_html = frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_report") or frappe.db.exists(
+		"Custom Field", "Sales Order-job_sheet_report"
+	)
+	has_tab = frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_tab") or frappe.db.exists(
+		"Custom Field", "Sales Order-job_sheet_tab"
+	)
+
+	if not has_html:
+		insert_after = "custom_detail_status"
+		if not frappe.db.exists("Custom Field", f"Sales Order-{insert_after}"):
+			insert_after = "connections_tab"
+
+		fields = []
+		if not has_tab:
+			fields.append(
 				{
 					"fieldname": "custom_job_sheet_tab",
 					"label": "Job Sheet",
 					"fieldtype": "Tab Break",
-					"insert_after": "custom_cutting_scheme_report",
-				},
-				{
-					"fieldname": "custom_job_sheet_report",
-					"label": "Job Sheet Report",
-					"fieldtype": "HTML",
-					"insert_after": "custom_job_sheet_tab",
-				},
-			],
-		},
-		update=True,
-	)
+					"insert_after": insert_after,
+				}
+			)
+		fields.append(
+			{
+				"fieldname": "custom_job_sheet_report",
+				"label": "Job Sheet Report",
+				"fieldtype": "HTML",
+				"insert_after": "custom_job_sheet_tab" if not has_tab else insert_after,
+			}
+		)
+		create_custom_fields({"Sales Order": fields}, update=True)
+	elif not has_tab:
+		create_custom_fields(
+			{
+				"Sales Order": [
+					{
+						"fieldname": "custom_job_sheet_tab",
+						"label": "Job Sheet",
+						"fieldtype": "Tab Break",
+						"insert_after": "custom_detail_status"
+						if frappe.db.exists("Custom Field", "Sales Order-custom_detail_status")
+						else "connections_tab",
+					}
+				]
+			},
+			update=True,
+		)
+
+	_hide_duplicate_sales_order_job_sheet_fields()
 	ensure_sales_order_job_sheet_field_order()
 	frappe.clear_cache(doctype="Sales Order")
 	return {"status": "ok"}
+
+
+def _hide_duplicate_sales_order_job_sheet_fields():
+	"""If site uses job_sheet_report, hide the extra app HTML/tab pair only."""
+	if not frappe.db.exists("Custom Field", "Sales Order-job_sheet_report"):
+		return
+	for fn in ("custom_job_sheet_tab", "custom_job_sheet_report"):
+		name = f"Sales Order-{fn}"
+		if frappe.db.exists("Custom Field", name):
+			frappe.db.set_value("Custom Field", name, "hidden", 1, update_modified=False)
 
 
 @frappe.whitelist()

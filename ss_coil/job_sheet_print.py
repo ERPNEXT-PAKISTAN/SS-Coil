@@ -517,36 +517,3 @@ def get_ss_coil_job_sheet_html(ss_coil):
 		frappe.throw(_("SS Coil not found"))
 	doc = frappe.get_doc("SS Coil", ss_coil)
 	return build_ss_coil_job_sheet_html(doc)
-
-
-@frappe.whitelist()
-def get_sales_order_job_sheet_coils(sales_order):
-	if not sales_order or not frappe.db.exists("Sales Order", sales_order):
-		frappe.throw(_("Sales Order not found"))
-	return frappe.get_all(
-		"SS Coil",
-		filters={"order_no": sales_order},
-		fields=["name", "operation", "sales_order_item", "job_sheet_no", "modified"],
-		order_by="modified desc",
-	)
-
-
-@frappe.whitelist()
-def get_sales_order_job_sheet_html(sales_order, ss_coil=None):
-	if not sales_order or not frappe.db.exists("Sales Order", sales_order):
-		frappe.throw(_("Sales Order not found"))
-
-	coils = frappe.get_all(
-		"SS Coil",
-		filters={"order_no": sales_order},
-		pluck="name",
-		order_by="modified desc",
-	)
-	if not coils:
-		return ""
-
-	target = ss_coil if ss_coil in coils else (coils[0] if len(coils) == 1 else None)
-	if not target:
-		frappe.throw(_("Select an SS Coil for this Sales Order."))
-
-	return build_ss_coil_job_sheet_html(frappe.get_doc("SS Coil", target))

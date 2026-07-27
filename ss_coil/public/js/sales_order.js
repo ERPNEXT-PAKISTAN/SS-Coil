@@ -8,10 +8,8 @@ frappe.ui.form.on("Sales Order", {
 		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
 			add_coil_detail_print_button(frm);
 		});
-		if (typeof ss_coil !== "undefined" && ss_coil.job_sheet) {
-			ss_coil.job_sheet.render_on_sales_order_form(frm);
-			ss_coil.job_sheet.add_print_button(frm, (f) => f.__ss_coil_job_sheet_selected);
-		}
+		render_sales_order_job_sheet_report(frm);
+		add_sales_order_job_sheet_print_button(frm);
 		add_sales_order_create_stock_entry_button(frm);
 		add_sales_order_create_ss_coil_button(frm);
 		render_sales_order_dashboard(frm);
@@ -30,6 +28,89 @@ frappe.ui.form.on("Sales Order", {
 });
 
 const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
+
+const SO_JOB_SHEET_HTML_FIELDS = ["custom_job_sheet_report", "job_sheet_report"];
+
+function get_sales_order_job_sheet_field(frm) {
+	for (const fieldname of SO_JOB_SHEET_HTML_FIELDS) {
+		const field = frm.fields_dict[fieldname];
+		if (field && field.$wrapper) {
+			return field;
+		}
+	}
+	return null;
+}
+
+function so_job_sheet_placeholder(message) {
+	return `<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:13px;background:#f8fafc;">${escape_html(
+		message || __("No job sheet to display.")
+	)}</div>`;
+}
+
+function render_sales_order_job_sheet_report(frm) {
+	const field = get_sales_order_job_sheet_field(frm);
+	if (!field) {
+		return;
+	}
+	frappe.require("/assets/ss_coil/css/job_sheet_report.css");
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		field.$wrapper.html(so_job_sheet_placeholder(__("Save the Sales Order to load the job sheet.")));
+		return;
+	}
+	frappe.call({
+		method: "ss_coil.sales_order_job_sheet_print.get_sales_order_job_sheet_html",
+		args: { sales_order: frm.doc.name },
+		callback(r) {
+			field.$wrapper.html(r.message || "");
+			field.$wrapper.find(".ss-coil-print-so-job-sheet").on("click", function () {
+				print_sales_order_job_sheet(frm);
+			});
+		},
+		error() {
+			field.$wrapper.html(so_job_sheet_placeholder(__("Could not load job sheet report.")));
+		},
+	});
+}
+
+function print_sales_order_job_sheet(frm) {
+	const field = get_sales_order_job_sheet_field(frm);
+	if (!field || !field.$wrapper || !field.$wrapper.html()) {
+		return;
+	}
+	const content = field.$wrapper.find(".ss-coil-so-job-sheet-root").length
+		? field.$wrapper.find(".ss-coil-so-job-sheet-root").parent().html()
+		: field.$wrapper.html();
+	const win = window.open("");
+	if (!win) {
+		frappe.msgprint(__("Please enable pop-ups to print the job sheet."));
+		return;
+	}
+	win.document.write(
+		`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escape_html(
+			frm.doc.name
+		)}</title>` +
+			`<link rel="stylesheet" href="${frappe.urllib.get_full_url("/assets/ss_coil/css/job_sheet_report.css")}">` +
+			`<style>@page{size:A4 landscape;margin:8mm;} body{margin:0;padding:12px;}</style></head><body>${content}` +
+			`<script>window.onload=function(){window.print();}<\/script></body></html>`
+	);
+	win.document.close();
+}
+
+function add_sales_order_job_sheet_print_button(frm) {
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+		return;
+	}
+	if (!get_sales_order_job_sheet_field(frm)) {
+		return;
+	}
+	frm.add_custom_button(
+		__("Job Sheet"),
+		function () {
+			print_sales_order_job_sheet(frm);
+		},
+		__("Print")
+	);
+}
 
 function add_production_planning_report_button(frm) {
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) {

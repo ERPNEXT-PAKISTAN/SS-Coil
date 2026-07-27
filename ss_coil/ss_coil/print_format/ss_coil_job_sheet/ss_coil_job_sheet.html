@@ -1,0 +1,50 @@
+<style>
+	@page { size: A4 landscape; margin: 2mm; }
+	html, body {
+		-webkit-print-color-adjust: exact !important;
+		print-color-adjust: exact !important;
+	}
+	.print-format {
+		font-family: Inter, "Segoe UI", Arial, sans-serif;
+		color: #0f172a;
+		padding: 0 !important;
+		margin: 0 !important;
+		max-width: 100% !important;
+		background: #fff !important;
+		-webkit-print-color-adjust: exact !important;
+		print-color-adjust: exact !important;
+	}
+	@media screen {
+		.print-format {
+			box-sizing: border-box;
+			width: 11.69in !important;
+			max-width: 11.69in !important;
+			min-height: 8.27in !important;
+			padding: 2mm !important;
+			margin: 30px auto !important;
+		}
+		.print-format-gutter {
+			overflow: visible;
+		}
+	}
+	@media print {
+		.print-format {
+			width: 100% !important;
+			max-width: none !important;
+			min-height: auto !important;
+			padding: 0 !important;
+			margin: 0 !important;
+		}
+	}
+	.print-format .page-break { display: none; }
+	.ss-coil-job-sheet-missing {
+		padding: 24px;
+		color: #64748b;
+		font-size: 14px;
+	}
+</style>
+{% if job_sheet_print_html %}
+{{ job_sheet_print_html | safe }}
+{% else %}
+<div class="ss-coil-job-sheet-missing">{{ _("Job sheet could not be loaded. Save the document and try again.") }}</div>
+{% endif %}

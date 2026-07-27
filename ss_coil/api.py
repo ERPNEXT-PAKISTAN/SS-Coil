@@ -5159,6 +5159,8 @@ def stock_entry_item_query(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def setup_sales_order_cutting_scheme_fields():
+	from ss_coil.form_layout import ensure_sales_order_job_sheet_field_order
+
 	custom_fields = {
 		"Sales Order Item": [
 			{
@@ -5205,6 +5207,18 @@ def setup_sales_order_cutting_scheme_fields():
 				"fieldtype": "HTML",
 				"insert_after": "custom_cutting_scheme_report_section",
 			},
+			{
+				"fieldname": "custom_job_sheet_tab",
+				"label": "Job Sheet",
+				"fieldtype": "Tab Break",
+				"insert_after": "custom_cutting_scheme_report",
+			},
+			{
+				"fieldname": "custom_job_sheet_report",
+				"label": "Job Sheet Report",
+				"fieldtype": "HTML",
+				"insert_after": "custom_job_sheet_tab",
+			},
 		],
 	}
 	create_custom_fields(custom_fields, update=True)
@@ -5214,7 +5228,38 @@ def setup_sales_order_cutting_scheme_fields():
 		if frappe.db.exists("Custom Field", name):
 			frappe.db.set_value("Custom Field", name, "hidden", 1, update_modified=False)
 
+	ensure_sales_order_job_sheet_field_order()
 	frappe.clear_cache()
+	return {"status": "ok"}
+
+
+def setup_sales_order_job_sheet_fields():
+	"""Ensure Job Sheet tab exists on Sales Order (migrate / install)."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	from ss_coil.form_layout import ensure_sales_order_job_sheet_field_order
+
+	create_custom_fields(
+		{
+			"Sales Order": [
+				{
+					"fieldname": "custom_job_sheet_tab",
+					"label": "Job Sheet",
+					"fieldtype": "Tab Break",
+					"insert_after": "custom_cutting_scheme_report",
+				},
+				{
+					"fieldname": "custom_job_sheet_report",
+					"label": "Job Sheet Report",
+					"fieldtype": "HTML",
+					"insert_after": "custom_job_sheet_tab",
+				},
+			],
+		},
+		update=True,
+	)
+	ensure_sales_order_job_sheet_field_order()
+	frappe.clear_cache(doctype="Sales Order")
 	return {"status": "ok"}
 
 

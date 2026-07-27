@@ -8,6 +8,10 @@ frappe.ui.form.on("Sales Order", {
 		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
 			add_coil_detail_print_button(frm);
 		});
+		if (typeof ss_coil !== "undefined" && ss_coil.job_sheet) {
+			ss_coil.job_sheet.render_on_sales_order_form(frm);
+			ss_coil.job_sheet.add_print_button(frm, (f) => f.__ss_coil_job_sheet_selected);
+		}
 		add_sales_order_create_stock_entry_button(frm);
 		add_sales_order_create_ss_coil_button(frm);
 		render_sales_order_dashboard(frm);

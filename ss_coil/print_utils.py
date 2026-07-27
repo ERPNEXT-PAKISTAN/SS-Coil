@@ -18,6 +18,7 @@ from ss_coil.delivery_advise_print import (
 	DELIVERY_ADVISE_PRINT_FORMATS,
 	build_delivery_advise_print_html,
 )
+from ss_coil.job_sheet_print import build_ss_coil_job_sheet_html
 
 STICKER_PRINT_FORMATS = (
 	"Stock Entry Sticker",
@@ -29,18 +30,23 @@ STOCK_ENTRY_STICKER_FORMATS = frozenset({"Stock Entry Sticker", "Stock Entry Sti
 SS_COIL_STICKER_FORMATS = frozenset({"SS Coil Sticker", "SS Coil Sticker Thermal"})
 DETAIL_PRINT_FORMAT_NAMES = frozenset(DETAIL_PRINT_FORMATS.values())
 DELIVERY_ADVISE_PRINT_FORMAT_NAMES = frozenset(DELIVERY_ADVISE_PRINT_FORMATS.values())
+SS_COIL_JOB_SHEET_FORMAT = "SS Coil Job Sheet"
 
 
 def pdf_body_html(jenv, template, print_format, args):
 	_inject_sticker_print_html(print_format, args)
 	_inject_coil_detail_print_html(print_format, args)
 	_inject_delivery_advise_print_html(print_format, args)
+	_inject_job_sheet_print_html(print_format, args)
+
+	if print_format and print_format.name == SS_COIL_JOB_SHEET_FORMAT:
+		return fw_pdf_body_html(template, args)
 
 	try:
 		from print_designer.print_designer.pdf import pdf_body_html as pd_pdf_body_html
 
 		return pd_pdf_body_html(print_format=print_format, jenv=jenv, args=args, template=template)
-	except ImportError:
+	except (ImportError, ModuleNotFoundError):
 		return fw_pdf_body_html(template, args)
 
 
@@ -99,3 +105,19 @@ def _inject_delivery_advise_print_html(print_format, args):
 
 	html = build_delivery_advise_print_html(doc)
 	args["delivery_advise_print_html"] = html or ""
+
+
+def _inject_job_sheet_print_html(print_format, args):
+	if not print_format or print_format.name != SS_COIL_JOB_SHEET_FORMAT:
+		return
+
+	doc = args.get("doc")
+	if not doc or doc.doctype != "SS Coil":
+		return
+
+	try:
+		html = build_ss_coil_job_sheet_html(doc) or ""
+	except Exception:
+		frappe.log_error(title="SS Coil Job Sheet print failed")
+		html = ""
+	args["job_sheet_print_html"] = html

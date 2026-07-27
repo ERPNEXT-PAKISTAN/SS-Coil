@@ -16,6 +16,14 @@ function add_ss_coil_production_planning_report_button(frm) {
 	);
 }
 
+function add_ss_coil_job_sheet_print_button(frm) {
+	ss_coil.job_sheet.add_print_button(frm, (f) => f.doc.name);
+}
+
+function render_ss_coil_job_sheet_report(frm) {
+	ss_coil.job_sheet.render_on_ss_coil_form(frm);
+}
+
 frappe.ui.form.on("SS Coil", {
 	setup(frm) {
 		frm.set_query("sales_order_item", function () {
@@ -51,6 +59,7 @@ frappe.ui.form.on("SS Coil", {
 			add_ss_coil_sticker_print_button(frm);
 		});
 		add_ss_coil_production_planning_report_button(frm);
+		add_ss_coil_job_sheet_print_button(frm);
 		add_ss_coil_tag_buttons(frm);
 		add_ss_coil_sales_order_buttons(frm);
 		add_process_action_buttons(frm);
@@ -63,6 +72,7 @@ frappe.ui.form.on("SS Coil", {
 		rebuild_job_output_if_needed(frm);
 		render_job_output_qr_fields(frm);
 		load_ss_coil_flow_and_dashboards(frm);
+		render_ss_coil_job_sheet_report(frm);
 		sync_linked_stock_entry_field(frm);
 		apply_sales_order_item_link_title(frm);
 	},

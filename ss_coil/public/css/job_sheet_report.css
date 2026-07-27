@@ -1,0 +1,28 @@
+/* SS Coil Job Sheet tab preview — header matches operation title */
+.ss-coil-job-sheet-root .ss-coil-job-sheet-company,
+.ss-coil-job-sheet-root .ss-coil-job-sheet-operation {
+	font-size: 24px !important;
+	font-weight: 900 !important;
+	line-height: 1.1 !important;
+	letter-spacing: 0.02em !important;
+	color: #1e3a5f !important;
+	text-transform: uppercase !important;
+}
+
+.ss-coil-job-sheet-root .ss-coil-job-sheet-company {
+	white-space: nowrap !important;
+	word-break: keep-all !important;
+}
+
+.ss-coil-job-sheet-root .ss-coil-job-sheet-header-logo-img {
+	height: 24px !important;
+	max-height: 24px !important;
+	width: auto !important;
+	max-width: 140px !important;
+	object-fit: contain !important;
+}
+
+.ss-coil-job-sheet-root .ss-coil-job-sheet-brand-name-cell,
+.ss-coil-job-sheet-root .ss-coil-job-sheet-brand-logo-cell {
+	vertical-align: middle !important;
+}

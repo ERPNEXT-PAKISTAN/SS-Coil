@@ -10,7 +10,7 @@ app_description = "Silver Sheet Coil"
 app_email = "taimoor986@gmail.com"
 app_license = "mit"
 app_logo_url = "/assets/ss_coil/images/ss-coil-logo.svg"
-app_home = "/app/ss-coil-space"
+app_home = "/desk/ss-coil-space"
 
 fixtures = [
 	{
@@ -69,10 +69,11 @@ app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=8"
 
 # include js in doctype views
 doctype_js = {
-	"Sales Order": ["public/js/coil_detail_print.js", "public/js/sales_order.js", "public/js/sales_order_manufacture.js"],
+	"Sales Order": ["public/js/coil_detail_print.js", "public/js/sales_order.js", "public/js/sales_order_manufacture.js", "public/js/job_sheet_report.js"],
 	"Stock Entry": ["public/js/coil_detail_print.js", "public/js/stock_entry.js"],
 	"SS Coil": [
 		"public/js/coil_detail_print.js",
+		"public/js/job_sheet_report.js",
 	],
 	"Delivery Note": "public/js/delivery_note.js",
 	"Sales Invoice": "public/js/sales_invoice.js",

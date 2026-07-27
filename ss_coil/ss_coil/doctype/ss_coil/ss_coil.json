@@ -84,7 +84,9 @@
   "dashboard_tab",
   "order_status_report",
   "daigrams_tab",
-  "daigrams_view"
+  "daigrams_view",
+  "job_sheet_tab",
+  "job_sheet_report"
  ],
  "fields": [
   {
@@ -473,13 +475,23 @@
    "fieldname": "daigrams_view",
    "fieldtype": "HTML",
    "label": "Daigrams View"
+  },
+  {
+   "fieldname": "job_sheet_tab",
+   "fieldtype": "Tab Break",
+   "label": "Job Sheet"
+  },
+  {
+   "fieldname": "job_sheet_report",
+   "fieldtype": "HTML",
+   "label": "Job Sheet Report"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-08 00:35:53.760029",
- "modified_by": "Administrator",
+ "modified": "2026-07-27 01:05:25.371102",
+ "modified_by": "techcraft986@gmail.com",
  "module": "SS Coil",
  "name": "SS Coil",
  "naming_rule": "Expression (old style)",

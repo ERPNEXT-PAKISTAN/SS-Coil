@@ -18,10 +18,12 @@ from ss_coil.api import (
 )
 from ss_coil.coil_print import build_coil_detail_print_html
 from ss_coil.delivery_advise_print import build_delivery_advise_print_html
+from ss_coil.job_sheet_print import build_ss_coil_job_sheet_html
 
 __all__ = [
 	"build_coil_detail_print_html",
 	"build_delivery_advise_print_html",
+	"build_ss_coil_job_sheet_html",
 	"build_ss_coil_sticker_footer_html",
 	"build_ss_coil_sticker_payload",
 	"build_stock_entry_sticker_body_html",

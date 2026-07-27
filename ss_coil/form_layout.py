@@ -20,6 +20,7 @@ def sync_coil_form_layouts():
 	_apply_fixture_property_setters()
 	_sync_stock_entry_job_purpose_field()
 	_ensure_stock_entry_detail_field_order()
+	ensure_sales_order_job_sheet_field_order()
 	frappe.clear_cache(doctype="Stock Entry")
 	frappe.clear_cache(doctype="Stock Entry Detail")
 	frappe.clear_cache(doctype="Sales Order")
@@ -119,6 +120,34 @@ def _ensure_stock_entry_detail_field_order():
 			order.insert(insert_at, fieldname)
 			insert_at += 1
 			changed = True
+
+	if changed:
+		frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+
+
+def ensure_sales_order_job_sheet_field_order():
+	"""Place Job Sheet tab on Sales Order after cutting scheme report."""
+	ps_name = "Sales Order-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	changed = False
+	for fieldname in ("custom_job_sheet_tab", "custom_job_sheet_report"):
+		if fieldname in order:
+			order.remove(fieldname)
+			changed = True
+
+	anchor = "custom_cutting_scheme_report"
+	if anchor not in order:
+		anchor = "custom_detail_status"
+	if anchor not in order:
+		return
+
+	insert_at = order.index(anchor) + 1
+	order.insert(insert_at, "custom_job_sheet_tab")
+	order.insert(insert_at + 1, "custom_job_sheet_report")
+	changed = True
 
 	if changed:
 		frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)

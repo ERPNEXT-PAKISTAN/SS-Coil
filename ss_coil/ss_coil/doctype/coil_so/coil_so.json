@@ -16,6 +16,7 @@
   "specification",
   "thickness",
   "remarks",
+  "mother_coil",
   "column_break_qfzv",
   "qty",
   "width",
@@ -175,14 +176,19 @@
    "fieldname": "mill",
    "fieldtype": "Data",
    "label": "Mill"
+  },
+  {
+   "fieldname": "mother_coil",
+   "fieldtype": "Data",
+   "label": "Mother Coil"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-19 19:24:43.806069",
- "modified_by": "Administrator",
+ "modified": "2026-07-28 14:20:48.399489",
+ "modified_by": "techcraft986@gmail.com",
  "module": "SS Coil",
  "name": "Coil SO",
  "owner": "techcraft986@gmail.com",

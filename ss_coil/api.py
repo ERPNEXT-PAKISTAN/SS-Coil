@@ -353,16 +353,29 @@ def _find_sales_order_item_for_stock_entry_row(sales_order, se_row, stock_entry_
 	candidates = frappe.get_all(
 		"Sales Order Item",
 		filters={"parent": sales_order},
-		fields=["name", "idx", "item_code", "custom_raw_material_tag_no", "custom_source_stock_entry_detail"],
+		fields=[
+			"name",
+			"idx",
+			"item_code",
+			"custom_raw_material_item",
+			"custom_raw_material_tag_no",
+			"custom_source_stock_entry",
+			"custom_source_stock_entry_detail",
+		],
 		order_by="idx asc",
 	)
 
 	def is_pending(row):
-		if row.custom_raw_material_tag_no:
-			return False
+		if row.custom_source_stock_entry_detail == se_detail:
+			return True
 		if row.custom_source_stock_entry_detail and row.custom_source_stock_entry_detail != se_detail:
 			return False
+		if row.custom_raw_material_tag_no:
+			return False
 		if finish_good and row.item_code != finish_good:
+			rm = row.custom_raw_material_item or row.item_code
+			if raw_item and rm == raw_item:
+				return True
 			return False
 		if not finish_good and raw_item and row.item_code != raw_item:
 			return False
@@ -1854,6 +1867,7 @@ def sync_sales_order_item_tags_from_stock_entry(doc, method=None):
 		if not se_row:
 			continue
 		_apply_stock_entry_row_tags_to_sales_order_item(row, se_row)
+		_apply_finish_good_to_sales_order_row(row, se_row)
 
 
 def _get_linked_stock_entry_detail_row(so_row, stock_entry):
@@ -1918,9 +1932,13 @@ def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row):
 
 
 def _sales_order_item_tag_sync_values(so_row):
-	"""DB values to persist after Stock Entry → Sales Order tag sync."""
+	"""DB values to persist after Stock Entry → Sales Order tag / finish-good sync."""
 	updates = {}
 	for fieldname in (
+		"item_code",
+		"item_name",
+		"stock_uom",
+		"uom",
 		"custom_raw_material_tag_no",
 		"custom_raw_material_batch_no",
 		"custom_raw_material_item",
@@ -2142,6 +2160,9 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 			value = so_item_doc.get(so_field)
 			if value not in (None, "") and not so_row.get(coil_field):
 				so_row.set(coil_field, value)
+		raw_material = so_item_doc.get("custom_raw_material_item")
+		if raw_material not in (None, ""):
+			so_row.set("mother_coil", raw_material)
 		for proc in PROCESS_FIELDS:
 			value = so_item_doc.get(f"custom_{proc}")
 			if _truthy_process_value(value) and not _truthy_process_value(so_row.get(proc)):
@@ -4090,6 +4111,8 @@ def _coil_so_row_from_sales_order_item(so_item, order_no):
 			row[fieldname] = so_item.get("custom_dimension") or so_item.get("custom_dimensin") or ""
 		elif fieldname == "tag_no":
 			row[fieldname] = so_item.get("custom_child_tag_no") or so_item.get("custom_tag_no") or ""
+		elif fieldname == "mother_coil":
+			row[fieldname] = so_item.get("custom_raw_material_item") or ""
 		else:
 			value = so_item.get(fieldname)
 			if value in (None, ""):
@@ -4416,6 +4439,32 @@ def sync_stock_entry_links_from_source(stock_entry):
 		"item_updates_by_sales_order": item_updates_by_so,
 		"sales_orders_updated": list(item_updates_by_so.keys()),
 	}
+
+
+def sync_stock_entry_finish_good_to_sales_orders(doc, method=None):
+	"""After a submitted Stock Entry is updated, push finish-good / tag fields to linked Sales Orders."""
+	if doc.doctype != "Stock Entry" or doc.docstatus != 1:
+		return
+	if not _has_field("Stock Entry Detail", "custom_finish_good_item"):
+		return
+
+	sales_order_names = []
+	if _has_field("Sales Order Item", "custom_source_stock_entry"):
+		sales_order_names = frappe.get_all(
+			"Sales Order Item",
+			filters={"custom_source_stock_entry": doc.name},
+			pluck="parent",
+			distinct=True,
+		)
+	if not sales_order_names and _has_field("Stock Entry", "custom_sales_order"):
+		manual_so = doc.get("custom_sales_order")
+		if manual_so and frappe.db.exists("Sales Order", manual_so):
+			sales_order_names = [manual_so]
+	if not sales_order_names:
+		return
+
+	for sales_order_name in sales_order_names:
+		_push_stock_entry_tags_to_sales_order(doc.name, sales_order_name)
 
 
 def sync_stock_entry_sales_order_links(doc, method=None):
@@ -4792,9 +4841,39 @@ def setup_tag_origin_fields():
 	_migrate_legacy_stock_source_values()
 	_sync_workspace_query_report_links()
 	setup_stock_entry_sales_order_link_fields()
+	setup_updatable_stock_entry_sales_order_property_setters()
 
 	frappe.clear_cache()
 	return {"status": "ok"}
+
+
+def setup_updatable_stock_entry_sales_order_property_setters():
+	"""Submitted Stock Entry / Sales Order: allow Finish Good and SO line item corrections + sync."""
+	specs = (
+		("Stock Entry Detail", "custom_finish_good_item", "allow_on_submit", "Check", "1"),
+		("Sales Order Item", "item_code", "allow_on_submit", "Check", "1"),
+		("Sales Order Item", "item_name", "allow_on_submit", "Check", "1"),
+		("Sales Order Item", "uom", "allow_on_submit", "Check", "1"),
+		("Sales Order Item", "stock_uom", "allow_on_submit", "Check", "1"),
+		("Sales Order Item", "custom_raw_material_item", "allow_on_submit", "Check", "1"),
+	)
+	for doc_type, field_name, property, property_type, value in specs:
+		ps_name = f"{doc_type}-{field_name}-{property}"
+		if frappe.db.exists("Property Setter", ps_name):
+			frappe.db.set_value("Property Setter", ps_name, "value", value, update_modified=False)
+			continue
+		frappe.make_property_setter(
+			{
+				"doctype": doc_type,
+				"fieldname": field_name,
+				"property": property,
+				"property_type": property_type,
+				"value": value,
+				"doctype_or_field": "DocField",
+			},
+			validate_fields_for_doctype=False,
+			is_system_generated=False,
+		)
 
 
 def setup_stock_entry_sales_order_link_fields():

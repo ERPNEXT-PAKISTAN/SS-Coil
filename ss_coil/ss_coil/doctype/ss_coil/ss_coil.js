@@ -211,6 +211,11 @@ frappe.ui.form.on("SS Coil", {
 						return;
 					}
 
+					if (fieldname === "mother_coil") {
+						row.mother_coil = item.custom_raw_material_item || "";
+						return;
+					}
+
 					const direct_value = item[fieldname];
 					const custom_value = item[`custom_${fieldname}`];
 

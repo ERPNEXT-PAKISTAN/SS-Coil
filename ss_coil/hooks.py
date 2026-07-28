@@ -134,6 +134,7 @@ doc_events = {
 	"Stock Entry": {
 		"before_validate": "ss_coil.api.prepare_stock_entry_links",
 		"before_save": "ss_coil.api.prepare_stock_entry_links",
+		"on_update": "ss_coil.api.sync_stock_entry_finish_good_to_sales_orders",
 		"before_print": "ss_coil.api.prepare_stock_entry_sticker_print",
 	},
 	"Delivery Note": {"before_validate": "ss_coil.api.assign_delivery_note_item_tags"},

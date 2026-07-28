@@ -288,7 +288,7 @@ function add_stock_entry_create_sales_order_button(frm) {
 						);
 						let alert = __("Sales Order links synced");
 						if (tagLines) {
-							alert = __("Sales Order links and {0} item tag(s) synced", [tagLines]);
+							alert = __("Sales Order links and {0} item field(s) synced", [tagLines]);
 						} else if (updated) {
 							alert = __("Sales Order links synced ({0} order(s))", [updated]);
 						}

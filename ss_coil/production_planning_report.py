@@ -314,21 +314,28 @@ def build_sales_order_production_planning(filters):
 		_append_field_rows(data, item, SO_ITEM_PRODUCT_FIELDS)
 		_append_blank(data)
 
-		plan_name = frappe.db.get_value(
+		plan_fields = ["name", "process_key"] if frappe.db.has_column("SO Production Plan", "process_key") else ["name"]
+		plan_rows = frappe.get_all(
 			"SO Production Plan",
-			{"sales_order": sales_order, "sales_order_item": item.name},
-			"name",
+			filters={"sales_order": sales_order, "sales_order_item": item.name},
+			fields=plan_fields,
+			order_by="creation asc",
 		)
-		scheme_rows = []
-		if plan_name:
-			plan = frappe.get_doc("SO Production Plan", plan_name)
-			scheme_rows = _normalize_child_rows(plan.cutting_scheme)
-
-		_append_cutting_scheme_table(
-			data,
-			scheme_rows,
-			section_label=_("Cutting Scheme — {0}").format(item.item_name or item.item_code),
-		)
+		if not plan_rows:
+			_append_cutting_scheme_table(
+				data,
+				[],
+				section_label=_("Cutting Scheme — {0}").format(item.item_name or item.item_code),
+			)
+		else:
+			for plan_row in plan_rows:
+				plan = frappe.get_doc("SO Production Plan", plan_row.name)
+				pk = plan.get("process_key") or "slitter"
+				label = _("Cutting Scheme — {0} ({1})").format(
+					item.item_name or item.item_code,
+					pk.title(),
+				)
+				_append_cutting_scheme_table(data, _normalize_child_rows(plan.cutting_scheme), section_label=label)
 		_append_blank(data)
 
 		ss_coils = frappe.get_all(

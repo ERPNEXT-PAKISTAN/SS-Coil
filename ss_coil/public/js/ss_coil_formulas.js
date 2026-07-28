@@ -131,13 +131,88 @@ ss_coil.formulas.build_html = function (frm) {
 	const grand_wt = flt(frm.doc.grand_estimated_wt != null ? frm.doc.grand_estimated_wt : grand_estimated_wt);
 	const input_estimated_wt = flt(input_row?.estimated_wt);
 	const calc_ratio_computed = ss_coil.formulas.calc_ratio_value(frm);
-	const coil_length = ss_coil.formulas.input_coil_length(so_row);
+	const processKey = ss_coil.process.resolveProcessKey(frm);
+	const processLabel = ss_coil.process.processLabel(processKey);
+	const usesNumericLength = ss_coil.process.usesNumericLength(processKey);
+	const coil_length = ss_coil.process.effectiveInputCoilLength(frm);
+	const weight_formula_length = ss_coil.process.weightFormulaLength(so_row);
+	const slitter_dim = ss_coil.process.buildDimensionString(
+		ss_coil.process.dimensionPartsFromSoRow(so_row, "slitter"),
+	);
+	const numeric_dim = ss_coil.process.buildDimensionString(
+		ss_coil.process.dimensionPartsFromSoRow(so_row, "leveler"),
+	);
+	const active_dim = ss_coil.process.buildDimensionString(
+		ss_coil.process.dimensionPartsFromSoRow(so_row, processKey),
+	);
 
 	const blocks = [];
 	const chip = ss_coil.formulas.val_chip;
 	const op = ss_coil.formulas.op;
 	const cst = ss_coil.formulas.const_chip;
 	const line = ss_coil.formulas.calc_line;
+
+	blocks.push(
+		ss_coil.formulas.formula_block({
+			title: __("Dimension — Slitter (Length C)"),
+			syntax: "dimension = thickness × width × length_c  (length_c defaults to C)",
+			calc_html: so_row
+				? line([
+						chip(ss_coil.process.soRowField(so_row, "thickness")),
+						op("×"),
+						chip(ss_coil.process.soRowField(so_row, "width")),
+						op("×"),
+						cst(String(ss_coil.process.soRowField(so_row, "length_c") || "C")),
+					])
+				: `<span style="color:#78716c;font-size:13px;">${__("SO item row required")}</span>`,
+			result_text: slitter_dim || "-",
+			note: __(
+				"Sales Order / Stock Entry keep custom_dimension as this C-style string. SS Coil Coil SO row updates to match when operation is Slitter.",
+			),
+			accent: "#0369a1",
+		}),
+	);
+
+	blocks.push(
+		ss_coil.formulas.formula_block({
+			title: __("Dimension — Leveler / Reshearing (Length)"),
+			syntax: "dimension = thickness × width × length  (numeric custom_length / length)",
+			calc_html: so_row
+				? line([
+						chip(ss_coil.process.soRowField(so_row, "thickness")),
+						op("×"),
+						chip(ss_coil.process.soRowField(so_row, "width")),
+						op("×"),
+						chip(ss_coil.process.numericLengthFromSoRow(so_row)),
+					])
+				: `<span style="color:#78716c;font-size:13px;">${__("SO item row required")}</span>`,
+			result_text: numeric_dim || "-",
+			note: __("No separate custom_dimension_calc field on SO — computed here and on Coil SO for display."),
+			accent: "#0f766e",
+		}),
+	);
+
+	blocks.push(
+		ss_coil.formulas.formula_block({
+			title: __("Active dimension (current operation)"),
+			syntax: `operation → ${processLabel} → ${usesNumericLength ? "numeric length" : "length_c (C)"}`,
+			calc_html: so_row
+				? `<div style="font-size:13px;color:#334155;margin-bottom:8px;">${ss_coil.formulas.esc(
+						frm.doc.operation || processLabel,
+					)}</div>${line([
+						chip(ss_coil.process.soRowField(so_row, "thickness")),
+						op("×"),
+						chip(ss_coil.process.soRowField(so_row, "width")),
+						op("×"),
+						usesNumericLength
+							? chip(ss_coil.process.numericLengthFromSoRow(so_row))
+							: cst(String(ss_coil.process.soRowField(so_row, "length_c") || "C")),
+					])}`
+				: `<span style="color:#78716c;font-size:13px;">${__("SO item row required")}</span>`,
+			result_text: active_dim || "-",
+			accent: "#4338ca",
+		}),
+	);
 
 	if (cutting_rows.length) {
 		const calc_html = cutting_rows
@@ -232,24 +307,33 @@ ss_coil.formulas.build_html = function (frm) {
 
 	blocks.push(
 		ss_coil.formulas.formula_block({
-			title: "Input Coil — Length",
-			syntax: "length = qty ÷ (thickness × width × 0.00000785 × 1000)",
+			title: usesNumericLength ? __("Input Coil — Length (from SO Length)") : __("Input Coil — Length (weight formula)"),
+			syntax: usesNumericLength
+				? "length = so_item.length (from custom_length on Sales Order)"
+				: "length = qty ÷ (thickness × width × 0.00000785 × 1000)",
 			calc_html: so_row
-				? line([
-						chip(so_row.qty),
-						op("÷"),
-						cst("("),
-						chip(so_row.thickness),
-						op("×"),
-						chip(so_row.width),
-						op("×"),
-						cst("0.00000785"),
-						op("×"),
-						chip(1000, 0),
-						cst(")"),
-					])
+				? usesNumericLength
+					? line([cst("length"), op("="), chip(ss_coil.process.numericLengthFromSoRow(so_row))])
+					: line([
+							chip(so_row.qty),
+							op("÷"),
+							cst("("),
+							chip(so_row.thickness),
+							op("×"),
+							chip(so_row.width),
+							op("×"),
+							cst("0.00000785"),
+							op("×"),
+							chip(1000, 0),
+							cst(")"),
+						])
 				: `<span style="color:#78716c;font-size:13px;">${__("SO item row required")}</span>`,
 			result_text: ss_coil.formulas.num(length_result),
+			note: usesNumericLength
+				? __("Leveler / Reshearing use entered length; Slitter would use weight formula → {0}", [
+						ss_coil.formulas.num(weight_formula_length),
+					])
+				: __("Leveler / Reshearing would use SO Length when set."),
 			accent: "#0891b2",
 		}),
 	);

@@ -12,6 +12,8 @@
   "column_break_vpwy",
   "strip",
   "column_break_fcmf",
+  "length",
+  "column_break_len2",
   "lengthcut",
   "column_break_rtuo",
   "total_width",
@@ -59,6 +61,17 @@
   {
    "allow_on_submit": 1,
    "fieldname": "column_break_fcmf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "length",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length"
+  },
+  {
+   "fieldname": "column_break_len2",
    "fieldtype": "Column Break"
   },
   {

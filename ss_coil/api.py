@@ -922,6 +922,67 @@ def _process_key_for_operation(value, so_item=None):
 	return None
 
 
+def _uses_numeric_length_for_process(process_key):
+	return process_key in ("leveler", "reshearing")
+
+
+def _coil_metric_from_so_item(so_item, fieldname):
+	value = so_item.get(fieldname)
+	if value not in (None, ""):
+		return value
+	return so_item.get(f"custom_{fieldname}")
+
+
+def _weight_formula_length_from_so_item(so_item):
+	qty = flt(_coil_metric_from_so_item(so_item, "qty"))
+	thickness = flt(_coil_metric_from_so_item(so_item, "thickness"))
+	width = flt(_coil_metric_from_so_item(so_item, "width"))
+	denominator = thickness * width * 0.00000785 * 1000
+	return qty / denominator if denominator else 0
+
+
+def _effective_input_coil_length(so_item, operation=None):
+	process_key = _process_key_for_operation(operation, so_item) or "slitter"
+	if _uses_numeric_length_for_process(process_key):
+		length = flt(_coil_metric_from_so_item(so_item, "length"))
+		return length
+	return _weight_formula_length_from_so_item(so_item)
+
+
+def _format_dimension_part(value):
+	if value in (None, ""):
+		return ""
+	text = str(value).strip()
+	if not text:
+		return ""
+	try:
+		num = float(text)
+		if num == int(num):
+			return str(int(num))
+		return str(num)
+	except (TypeError, ValueError):
+		return text
+
+
+def _build_dimension_string(parts):
+	formatted = [_format_dimension_part(part) for part in (parts or [])]
+	return " x ".join(part for part in formatted if part)
+
+
+def _dimension_parts_for_process(so_item, process_key):
+	thickness = _coil_metric_from_so_item(so_item, "thickness")
+	width = _coil_metric_from_so_item(so_item, "width")
+	if _uses_numeric_length_for_process(process_key):
+		return [thickness, width, flt(_coil_metric_from_so_item(so_item, "length"))]
+	length_c = _coil_metric_from_so_item(so_item, "length_c") or DEFAULT_LENGTH_C
+	return [thickness, width, length_c]
+
+
+def _ss_coil_display_dimension(so_item, operation=None):
+	process_key = _process_key_for_operation(operation, so_item) or "slitter"
+	return _build_dimension_string(_dimension_parts_for_process(so_item, process_key))
+
+
 def _coerce_operation_link(value):
 	"""Return value only if it is a valid Operation name (Link target)."""
 	if value in (None, ""):
@@ -3663,6 +3724,22 @@ def create_next_ss_coil_entry(source_name):
 		)
 
 		target_doc.flags.skip_auto_job_output = True
+
+		so_item = frappe.get_doc("Sales Order Item", source_doc.sales_order_item)
+		op_link, machine = _operation_and_machine_from_sales_order_item(so_item.as_dict(), next_operation)
+		if op_link:
+			target_doc.operation = op_link
+		if machine:
+			target_doc.machine = machine
+
+		_append_cutting_scheme_to_ss_coil(
+			target_doc,
+			source_doc.sales_order_item,
+			operation=next_operation,
+		)
+		if target_doc.cutting_detail:
+			_sync_job_output_rows_from_cutting_detail(target_doc)
+
 		target_doc.insert(ignore_permissions=True)
 		created_docs.append(
 			{
@@ -4421,7 +4498,7 @@ def _child_table_fieldnames(doctype):
 	]
 
 
-def _coil_so_row_from_sales_order_item(so_item, order_no):
+def _coil_so_row_from_sales_order_item(so_item, order_no, operation=None):
 	"""Mirror ss_coil.js sales_order_item handler: one Coil SO row from SO Item."""
 	row = {}
 	for fieldname in _child_table_fieldnames("Coil SO"):
@@ -4430,7 +4507,12 @@ def _coil_so_row_from_sales_order_item(so_item, order_no):
 		elif fieldname == "length_c":
 			row[fieldname] = so_item.get("custom_length_c") or DEFAULT_LENGTH_C
 		elif fieldname == "dimension":
-			row[fieldname] = so_item.get("custom_dimension") or so_item.get("custom_dimensin") or ""
+			row[fieldname] = (
+				_ss_coil_display_dimension(so_item, operation)
+				or so_item.get("custom_dimension")
+				or so_item.get("custom_dimensin")
+				or ""
+			)
 		elif fieldname == "tag_no":
 			row[fieldname] = so_item.get("custom_child_tag_no") or so_item.get("custom_tag_no") or ""
 		elif fieldname == "mother_coil":
@@ -4446,7 +4528,7 @@ def _coil_so_row_from_sales_order_item(so_item, order_no):
 	return row
 
 
-def _input_coil_row_from_sales_order_item(so_item):
+def _input_coil_row_from_sales_order_item(so_item, operation=None):
 	"""Mirror load_input_coil_from_sales_order_item() on the SS Coil form."""
 	parent_tag = so_item.get("custom_raw_material_tag_no")
 	details = get_raw_material_inward_details(parent_tag) if parent_tag else {}
@@ -4493,11 +4575,15 @@ def _input_coil_row_from_sales_order_item(so_item):
 		value = details.get(fieldname)
 		if value not in (None, ""):
 			row[fieldname] = value
+	effective_length = _effective_input_coil_length(so_item, operation)
+	if effective_length:
+		row["length"] = effective_length
 	return row
 
 
-def _cutting_scheme_rows_for_sales_order_item(sales_order_item):
-	plan_name = frappe.db.get_value("SO Production Plan", {"sales_order_item": sales_order_item}, "name")
+def _cutting_scheme_rows_for_sales_order_item(sales_order_item, operation=None, process_key=None, sales_order=None):
+	process_key = process_key or _process_key_for_operation(operation, _so_item_dict(sales_order_item)) or "slitter"
+	plan_name = _find_so_production_plan_name(sales_order, sales_order_item, process_key)
 	if not plan_name:
 		return []
 	doc = frappe.get_doc("SO Production Plan", plan_name)
@@ -4513,6 +4599,74 @@ def _cutting_scheme_rows_for_sales_order_item(sales_order_item):
 		if row:
 			rows.append(row)
 	return rows
+
+
+def _so_item_dict(sales_order_item):
+	if isinstance(sales_order_item, dict):
+		return sales_order_item
+	return frappe.get_doc("Sales Order Item", sales_order_item).as_dict()
+
+
+def _processes_for_so_item_row(so_item):
+	processes = _get_enabled_processes_from_row(so_item, custom=True)
+	return processes or ["slitter"]
+
+
+def _so_production_plan_process_key_enabled():
+	return frappe.db.has_column("SO Production Plan", "process_key")
+
+
+def _cutting_scheme_row_has_length():
+	return frappe.db.has_column("Cutting Scheme SO", "length")
+
+
+def _find_so_production_plan_name(sales_order, sales_order_item, process_key="slitter"):
+	process_key = (process_key or "slitter").strip().lower()
+	base_filters = {"sales_order_item": sales_order_item}
+	if sales_order:
+		base_filters["sales_order"] = sales_order
+
+	if not _so_production_plan_process_key_enabled():
+		if process_key != "slitter":
+			return None
+		return frappe.db.get_value("SO Production Plan", base_filters, "name")
+
+	name = frappe.db.get_value(
+		"SO Production Plan",
+		{**base_filters, "process_key": process_key},
+		"name",
+	)
+	if name:
+		return name
+	if process_key != "slitter":
+		return None
+
+	for row in frappe.get_all(
+		"SO Production Plan",
+		filters=base_filters,
+		fields=["name", "process_key"],
+		order_by="creation asc",
+	):
+		pk = (row.get("process_key") or "").strip().lower() or "slitter"
+		if pk == "slitter":
+			if not row.get("process_key"):
+				frappe.db.set_value("SO Production Plan", row.name, "process_key", "slitter", update_modified=False)
+			return row.name
+	return None
+
+
+def _append_cutting_scheme_to_ss_coil(ss_coil_doc, sales_order_item, operation=None, process_key=None):
+	rows = _cutting_scheme_rows_for_sales_order_item(
+		sales_order_item,
+		operation=operation,
+		process_key=process_key,
+		sales_order=ss_coil_doc.order_no,
+	)
+	for scheme_row in rows:
+		row = dict(scheme_row)
+		if ss_coil_doc.order_no:
+			row["so_no"] = ss_coil_doc.order_no
+		ss_coil_doc.append("cutting_detail", row)
 
 
 def _resolve_ss_coil_operation(so_item, operation=None):
@@ -4613,11 +4767,13 @@ def create_ss_coil_from_sales_order(source_name, sales_order_item=None, operatio
 	ss_coil.actual_ratio = flt(so_item.get("custom_actual_ratio"))
 	ss_coil.remaining_width = flt(so_item.get("custom_remaining_width"))
 
-	ss_coil.append("so_item", _coil_so_row_from_sales_order_item(so_item, source.name))
-	input_row = _input_coil_row_from_sales_order_item(so_item)
+	ss_coil.append("so_item", _coil_so_row_from_sales_order_item(so_item, source.name, operation))
+	input_row = _input_coil_row_from_sales_order_item(so_item, operation)
 	if input_row:
 		ss_coil.append("input_coil", input_row)
-	for scheme_row in _cutting_scheme_rows_for_sales_order_item(so_item.name):
+	for scheme_row in _cutting_scheme_rows_for_sales_order_item(
+		so_item.name, operation=operation, sales_order=source.name
+	):
 		ss_coil.append("cutting_detail", scheme_row)
 
 	sync_ss_coil_sales_order_item_fields(ss_coil)
@@ -6771,40 +6927,58 @@ def get_sales_order_detail_dashboard(sales_order):
 	}
 
 
-def _get_or_create_so_production_plan(sales_order, sales_order_item):
-	name = frappe.db.get_value(
-		"SO Production Plan",
-		{"sales_order": sales_order, "sales_order_item": sales_order_item},
-		"name",
-	)
+def _get_or_create_so_production_plan(sales_order, sales_order_item, process_key="slitter"):
+	process_key = (process_key or "slitter").strip().lower()
+	if not _so_production_plan_process_key_enabled() and process_key != "slitter":
+		frappe.throw(
+			_(
+				"Per-process cutting schemes need a site update. Run: bench --site {0} migrate"
+			).format(frappe.local.site)
+		)
+
+	name = _find_so_production_plan_name(sales_order, sales_order_item, process_key)
 	if name:
 		return frappe.get_doc("SO Production Plan", name)
 
-	doc = frappe.get_doc(
-		{
-			"doctype": "SO Production Plan",
-			"sales_order": sales_order,
-			"sales_order_item": sales_order_item,
-			"cutting_scheme": [],
-		}
-	)
+	doc_data = {
+		"doctype": "SO Production Plan",
+		"sales_order": sales_order,
+		"sales_order_item": sales_order_item,
+		"cutting_scheme": [],
+	}
+	if _so_production_plan_process_key_enabled():
+		doc_data["process_key"] = process_key
+	doc = frappe.get_doc(doc_data)
 	doc.insert(ignore_permissions=True)
 	return doc
 
 
-@frappe.whitelist()
-def get_so_production_plan(sales_order, sales_order_item):
-	doc = _get_or_create_so_production_plan(sales_order, sales_order_item)
-	return {
-		"name": doc.name,
-		"rows": [row.as_dict() for row in doc.cutting_scheme],
+def _cutting_scheme_child_row_from_input(row, idx):
+	row = frappe._dict(row)
+	width = flt(row.width)
+	strip = flt(row.strip)
+	total_width = width * strip if strip else width
+	child = {
+		"seq": idx,
+		"width": width,
+		"strip": strip,
+		"lengthcut": row.lengthcut,
+		"total_width": total_width,
+		"tolerance_plus": row.tolerance_plus,
+		"tolerance_minus": row.tolerance_minus,
+		"knife": row.knife,
 	}
+	if _cutting_scheme_row_has_length():
+		child["length"] = flt(row.length)
+	return child
 
 
-@frappe.whitelist()
-def save_so_production_plan(sales_order, sales_order_item, rows):
+def _save_so_production_plan_rows(sales_order, sales_order_item, process_key, rows):
 	rows = frappe.parse_json(rows) if isinstance(rows, str) else (rows or [])
-	doc = _get_or_create_so_production_plan(sales_order, sales_order_item)
+	process_key = (process_key or "slitter").strip().lower()
+	doc = _get_or_create_so_production_plan(sales_order, sales_order_item, process_key)
+	if _so_production_plan_process_key_enabled():
+		doc.process_key = process_key
 	doc.set("cutting_scheme", [])
 	total_popup_width = 0
 	total_total_width = 0
@@ -6815,60 +6989,127 @@ def save_so_production_plan(sales_order, sales_order_item, rows):
 		if not width:
 			continue
 		strip = flt(row.strip)
-		total_width = width * strip
+		total_width = width * strip if strip else width
 		total_popup_width += width
 		total_total_width += total_width
-		doc.append(
-			"cutting_scheme",
-			{
-				"seq": idx,
-				"width": width,
-				"strip": strip,
-				"lengthcut": row.lengthcut,
-				"total_width": total_width,
-				"tolerance_plus": row.tolerance_plus,
-				"tolerance_minus": row.tolerance_minus,
-				"knife": row.knife,
-			},
-		)
+		doc.append("cutting_scheme", _cutting_scheme_child_row_from_input(row, idx))
 
 	doc.save(ignore_permissions=True)
 
-	item = frappe.get_doc("Sales Order Item", sales_order_item)
-	parent_width = flt(item.get("custom_width"))
-	qty = flt(item.get("qty"))
-	calc_ratio = ((qty / parent_width) * total_popup_width) if parent_width else 0
-	remaining_width = parent_width - total_total_width
-	item.db_set("custom_calc_ratio", calc_ratio, update_modified=False)
-	item.db_set("custom_remaining_width", remaining_width, update_modified=False)
+	result = {"status": "ok", "name": doc.name, "process_key": process_key}
+	if process_key == "slitter":
+		item = frappe.get_doc("Sales Order Item", sales_order_item)
+		parent_width = flt(item.get("custom_width"))
+		qty = flt(item.get("qty"))
+		calc_ratio = ((qty / parent_width) * total_popup_width) if parent_width else 0
+		remaining_width = parent_width - total_total_width
+		item.db_set("custom_calc_ratio", calc_ratio, update_modified=False)
+		item.db_set("custom_remaining_width", remaining_width, update_modified=False)
+		result.update(
+			{
+				"custom_calc_ratio": calc_ratio,
+				"custom_remaining_width": remaining_width,
+			}
+		)
+	return result
 
+
+@frappe.whitelist()
+def get_so_production_plans_for_item(sales_order, sales_order_item):
+	"""All process-specific cutting schemes for one Sales Order Item."""
+	so_item = frappe.get_doc("Sales Order Item", sales_order_item)
+	processes = _processes_for_so_item_row(so_item)
+	plans = {}
+	multi_process = _so_production_plan_process_key_enabled()
+	for process_key in processes:
+		if not multi_process and process_key != "slitter":
+			plans[process_key] = {
+				"name": None,
+				"process_key": process_key,
+				"label": _label_for_process(process_key),
+				"rows": [],
+				"requires_migrate": True,
+			}
+			continue
+		doc = _get_or_create_so_production_plan(sales_order, sales_order_item, process_key)
+		plans[process_key] = {
+			"name": doc.name,
+			"process_key": process_key,
+			"label": _label_for_process(process_key),
+			"rows": [row.as_dict() for row in doc.cutting_scheme],
+		}
 	return {
-		"status": "ok",
-		"name": doc.name,
-		"custom_calc_ratio": calc_ratio,
-		"custom_remaining_width": remaining_width,
+		"processes": processes,
+		"plans": plans,
+		"process_key_enabled": multi_process,
 	}
 
 
 @frappe.whitelist()
-def get_so_production_plan_rows(sales_order_item):
-	name = frappe.db.get_value(
-		"SO Production Plan",
-		{"sales_order_item": sales_order_item},
-		"name",
+def get_so_production_plan(sales_order, sales_order_item, process_key="slitter"):
+	doc = _get_or_create_so_production_plan(sales_order, sales_order_item, process_key)
+	return {
+		"name": doc.name,
+		"process_key": doc.process_key or process_key,
+		"rows": [row.as_dict() for row in doc.cutting_scheme],
+	}
+
+
+@frappe.whitelist()
+def save_so_production_plan(sales_order, sales_order_item, rows, process_key="slitter"):
+	return _save_so_production_plan_rows(sales_order, sales_order_item, process_key, rows)
+
+
+@frappe.whitelist()
+def save_so_production_plans_for_item(sales_order, sales_order_item, plans):
+	"""Save multiple process cutting schemes from Manage Cutting Scheme dialog."""
+	plans = frappe.parse_json(plans) if isinstance(plans, str) else (plans or {})
+	summary = {"status": "ok", "saved": []}
+	if not _so_production_plan_process_key_enabled():
+		slitter_rows = plans.get("slitter") or []
+		result = _save_so_production_plan_rows(sales_order, sales_order_item, "slitter", slitter_rows)
+		summary["saved"] = ["slitter"]
+		if result.get("custom_calc_ratio") is not None:
+			summary["custom_calc_ratio"] = result.get("custom_calc_ratio")
+			summary["custom_remaining_width"] = result.get("custom_remaining_width")
+		if any(k for k in plans if k != "slitter" and plans.get(k)):
+			summary["migrate_required"] = True
+		return summary
+
+	for process_key, rows in plans.items():
+		result = _save_so_production_plan_rows(sales_order, sales_order_item, process_key, rows)
+		summary["saved"].append(process_key)
+		if process_key == "slitter" and result.get("custom_calc_ratio") is not None:
+			summary["custom_calc_ratio"] = result.get("custom_calc_ratio")
+			summary["custom_remaining_width"] = result.get("custom_remaining_width")
+	return summary
+
+
+@frappe.whitelist()
+def get_so_production_plan_rows(sales_order_item, operation=None, process_key=None, sales_order=None):
+	if not process_key and not operation:
+		# Backward compatible: slitter scheme only
+		process_key = "slitter"
+	if not process_key and operation:
+		so_item = _so_item_dict(sales_order_item)
+		process_key = _process_key_for_operation(operation, so_item) or "slitter"
+	return _cutting_scheme_rows_for_sales_order_item(
+		sales_order_item,
+		operation=operation,
+		process_key=process_key,
+		sales_order=sales_order,
 	)
-	if not name:
-		return []
-	doc = frappe.get_doc("SO Production Plan", name)
-	return [row.as_dict() for row in doc.cutting_scheme]
 
 
 @frappe.whitelist()
 def get_sales_order_cutting_scheme_report(sales_order):
+	plan_fields = ["name", "sales_order_item"]
+	if _so_production_plan_process_key_enabled():
+		plan_fields.append("process_key")
 	plans = frappe.get_all(
 		"SO Production Plan",
 		filters={"sales_order": sales_order},
-		fields=["name", "sales_order_item"],
+		fields=plan_fields,
 		order_by="modified asc",
 	)
 	if not plans:
@@ -6887,10 +7128,15 @@ def get_sales_order_cutting_scheme_report(sales_order):
 	for plan in plans:
 		doc = frappe.get_doc("SO Production Plan", plan.name)
 		item = item_meta.get(plan.sales_order_item, frappe._dict())
+		process_key = (plan.get("process_key") if _so_production_plan_process_key_enabled() else None) or doc.get(
+			"process_key"
+		) or "slitter"
 		result.append(
 			{
 				"plan_name": plan.name,
 				"sales_order_item": plan.sales_order_item,
+				"process_key": process_key,
+				"process_label": _label_for_process(process_key),
 				"item_label": item.get("item_name") or item.get("item_code") or plan.sales_order_item,
 				"qty": item.get("qty"),
 				"dimension": item.get("custom_dimension"),

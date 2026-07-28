@@ -762,6 +762,98 @@ function format_dimension_part(value) {
 	return text;
 }
 
+const SS_COIL_CUTTING_PROCESS_LABELS = {
+	slitter: __("Slitter"),
+	leveler: __("Leveler"),
+	reshearing: __("Reshearing"),
+};
+
+function cutting_scheme_table_fields(process_key) {
+	const is_slitter = process_key === "slitter";
+	if (is_slitter) {
+		return [
+			{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, read_only: 1, columns: 1 },
+			{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
+			{ fieldname: "strip", fieldtype: "Float", label: __("Strip"), in_list_view: 1, columns: 1 },
+			{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 2 },
+			{
+				fieldname: "total_width",
+				fieldtype: "Float",
+				label: __("Total Width"),
+				in_list_view: 1,
+				read_only: 1,
+				columns: 2,
+			},
+			{ fieldname: "tolerance_plus", fieldtype: "Float", label: "Tol (+)", in_list_view: 1, columns: 1 },
+			{ fieldname: "tolerance_minus", fieldtype: "Float", label: "Tol (-)", in_list_view: 1, columns: 1 },
+			{ fieldname: "knife", fieldtype: "Check", label: "Knife", in_list_view: 1, columns: 1 },
+		];
+	}
+	// Leveler / Reshearing — match production sheet: Width, Length, LengthCut, Total sheets, Tolerance
+	return [
+		{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, read_only: 1, columns: 1 },
+		{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
+		{ fieldname: "length", fieldtype: "Float", label: "Length", in_list_view: 1, columns: 2 },
+		{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 2 },
+		{
+			fieldname: "strip",
+			fieldtype: "Float",
+			label: __("Total sheets"),
+			in_list_view: 1,
+			columns: 2,
+		},
+		{ fieldname: "tolerance_plus", fieldtype: "Float", label: "Tol(+)", in_list_view: 1, columns: 1 },
+		{ fieldname: "tolerance_minus", fieldtype: "Float", label: "Tol(-)", in_list_view: 1, columns: 1 },
+	];
+}
+
+function default_cutting_scheme_row_for_process(so_item_row, process_key) {
+	if (process_key === "slitter" || !so_item_row) {
+		return null;
+	}
+	const width = flt(so_item_row.custom_width);
+	const length = flt(so_item_row.custom_length);
+	const total_sheets = flt(so_item_row.qty);
+	const lengthcut = 1;
+	return {
+		width: width || undefined,
+		length: length || undefined,
+		strip: total_sheets || undefined,
+		lengthcut,
+		tolerance_plus: length ? length + 1 : undefined,
+		tolerance_minus: length ? length - 1 : undefined,
+	};
+}
+
+function ensure_cutting_plan_defaults(plan_cache, processes, so_item_row) {
+	(processes || []).forEach((pk) => {
+		if (pk === "slitter") {
+			return;
+		}
+		if ((plan_cache[pk] || []).length) {
+			return;
+		}
+		const defaults = default_cutting_scheme_row_for_process(so_item_row, pk);
+		if (defaults) {
+			plan_cache[pk] = [defaults];
+		}
+	});
+}
+
+function map_cutting_scheme_row_from_server(d) {
+	return {
+		seq: d.seq,
+		width: d.width,
+		strip: d.strip,
+		length: d.length,
+		lengthcut: d.lengthcut,
+		total_width: d.total_width,
+		tolerance_plus: d.tolerance_plus,
+		tolerance_minus: d.tolerance_minus,
+		knife: d.knife,
+	};
+}
+
 function open_cutting_scheme_dialog(frm, cdt, cdn) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row || !frm.doc.name) return;
@@ -775,88 +867,96 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 	}
 
 	frappe.call({
-		method: "ss_coil.api.get_so_production_plan",
+		method: "ss_coil.api.get_so_production_plans_for_item",
 		args: {
 			sales_order: frm.doc.name,
 			sales_order_item: row.name,
 		},
 		callback: function (r) {
-			const data = r.message || {};
+			const payload = r.message || {};
+			const processes = payload.processes || ["slitter"];
+			const plans = payload.plans || {};
+			const plan_cache = {};
+			processes.forEach((pk) => {
+				plan_cache[pk] = (plans[pk]?.rows || []).map(map_cutting_scheme_row_from_server);
+			});
+			ensure_cutting_plan_defaults(plan_cache, processes, row);
+			let active_process = processes[0] || "slitter";
+
 			const dialog = new frappe.ui.Dialog({
 				title: __("Cutting Scheme: {0}", [row.item_name || row.item_code || row.name]),
 				size: "extra-large",
 				fields: [
-					{
-						fieldname: "item_meta_html",
-						fieldtype: "HTML",
-					},
+					{ fieldname: "item_meta_html", fieldtype: "HTML" },
+					{ fieldname: "process_tabs_html", fieldtype: "HTML" },
 					{
 						fieldname: "cutting_rows",
 						fieldtype: "Table",
-						label: "Cutting Scheme Rows",
+						label: __("Cutting Scheme Rows"),
 						in_place_edit: true,
 						cannot_add_rows: false,
-						data: (data.rows || []).map((d) => ({
-							seq: d.seq,
-							width: d.width,
-							strip: d.strip,
-							lengthcut: d.lengthcut,
-							total_width: d.total_width,
-							tolerance_plus: d.tolerance_plus,
-							tolerance_minus: d.tolerance_minus,
-							knife: d.knife,
-						})),
-						fields: [
-							{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, read_only: 1, columns: 1 },
-							{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
-							{ fieldname: "strip", fieldtype: "Float", label: "Strip", in_list_view: 1, columns: 1 },
-							{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 2 },
-							{ fieldname: "total_width", fieldtype: "Float", label: "Total Width", in_list_view: 1, read_only: 1, columns: 2 },
-							{ fieldname: "tolerance_plus", fieldtype: "Float", label: "Tol (+)", in_list_view: 1, columns: 1 },
-							{ fieldname: "tolerance_minus", fieldtype: "Float", label: "Tol (-)", in_list_view: 1, columns: 1 },
-							{ fieldname: "knife", fieldtype: "Check", label: "Knife", in_list_view: 1, columns: 1 },
-						],
+						data: normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process),
+						fields: cutting_scheme_table_fields(active_process),
 					},
-					{
-						fieldname: "totals_html",
-						fieldtype: "HTML",
-					},
+					{ fieldname: "totals_html", fieldtype: "HTML" },
 				],
-				primary_action_label: __("Save"),
-				primary_action(values) {
-					const rows = normalize_cutting_scheme_rows(values.cutting_rows || []);
-					if (rows.some((d) => !flt(d.width))) {
-						frappe.msgprint(__("Width is mandatory in each saved row."));
-						return;
+				primary_action_label: __("Save All Processes"),
+				primary_action() {
+					sync_cutting_dialog_grid_to_cache(dialog, plan_cache, active_process);
+					const plans_to_save = {};
+					processes.forEach((pk) => {
+						plans_to_save[pk] = normalize_cutting_scheme_rows(plan_cache[pk] || [], pk);
+					});
+					for (const pk of processes) {
+						if ((plans_to_save[pk] || []).some((d) => !flt(d.width))) {
+							frappe.msgprint(
+								__("Width is mandatory in each saved row for {0}.", [
+									SS_COIL_CUTTING_PROCESS_LABELS[pk] || pk,
+								]),
+							);
+							return;
+						}
 					}
 
 					frappe.call({
-						method: "ss_coil.api.save_so_production_plan",
+						method: "ss_coil.api.save_so_production_plans_for_item",
 						args: {
 							sales_order: frm.doc.name,
 							sales_order_item: row.name,
-							rows,
+							plans: plans_to_save,
 						},
 						freeze: true,
-						freeze_message: __("Saving Cutting Scheme..."),
-						callback: function (r) {
+						freeze_message: __("Saving Cutting Schemes..."),
+						callback: function (save_r) {
 							dialog.hide();
-							if (r.message) {
-								const item_row = locals[cdt] && locals[cdt][cdn];
-								if (item_row) {
-									item_row.custom_calc_ratio = flt(r.message.custom_calc_ratio);
-									item_row.custom_remaining_width = flt(r.message.custom_remaining_width);
-								}
-								frappe.model.set_value(cdt, cdn, "custom_calc_ratio", flt(r.message.custom_calc_ratio));
-								frappe.model.set_value(cdt, cdn, "custom_remaining_width", flt(r.message.custom_remaining_width));
+							if (save_r.message?.migrate_required) {
+								frappe.msgprint({
+									title: __("Migrate required"),
+									message: __(
+										"Only the Slitter tab was saved. Run <code>bench --site {0} migrate</code> then save again to store Leveler / Reshearing schemes on the Sales Order.",
+										[frappe.boot.sitename || ""],
+									),
+									indicator: "orange",
+								});
+							}
+							if (save_r.message) {
+								frappe.model.set_value(
+									cdt,
+									cdn,
+									"custom_calc_ratio",
+									flt(save_r.message.custom_calc_ratio),
+								);
+								frappe.model.set_value(
+									cdt,
+									cdn,
+									"custom_remaining_width",
+									flt(save_r.message.custom_remaining_width),
+								);
 								frm.refresh_field("items");
 							}
 							render_item_cutting_scheme_preview(frm, cdt, cdn);
 							render_cutting_scheme_report(frm);
-							frappe.show_alert({
-								message: __("Cutting Scheme saved"),
-								indicator: "green",
-							});
+							frappe.show_alert({ message: __("Cutting schemes saved"), indicator: "green" });
 						},
 					});
 				},
@@ -865,30 +965,93 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 			dialog.show();
 			dialog.__so_item_qty = row.qty;
 			dialog.__so_item_width = row.custom_width;
+			dialog.__so_item_row = row;
+			dialog.__processes = processes;
+			dialog.__active_process = active_process;
+			dialog.__plan_cache = plan_cache;
+			if (payload.process_key_enabled === false && processes.length > 1) {
+				frappe.show_alert({
+					message: __(
+						"Slitter scheme works now. Run bench migrate on the site to save separate Leveler / Reshearing schemes on this order.",
+					),
+					indicator: "orange",
+				});
+			}
 			render_cutting_scheme_item_meta(dialog, row);
+			const switchProcess = (next_process) => {
+				sync_cutting_dialog_grid_to_cache(dialog, plan_cache, active_process);
+				active_process = next_process;
+				dialog.__active_process = active_process;
+				const field = dialog.fields_dict.cutting_rows;
+				field.df.fields = cutting_scheme_table_fields(active_process);
+				field.df.data = normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process);
+				if (!(plan_cache[active_process] || []).length && active_process !== "slitter") {
+					ensure_cutting_plan_defaults(plan_cache, [active_process], dialog.__so_item_row);
+					field.df.data = normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process);
+				}
+				field.grid.refresh();
+				render_cutting_scheme_process_tabs(dialog, processes, active_process, switchProcess);
+				prepare_cutting_scheme_dialog(dialog);
+			};
+			render_cutting_scheme_process_tabs(dialog, processes, active_process, switchProcess);
 			prepare_cutting_scheme_dialog(dialog);
 		},
+	});
+}
+
+function sync_cutting_dialog_grid_to_cache(dialog, plan_cache, process_key) {
+	const field = dialog.fields_dict.cutting_rows;
+	if (!field || !field.grid) return;
+	plan_cache[process_key] = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+}
+
+function render_cutting_scheme_process_tabs(dialog, processes, active_process, on_select) {
+	const html_field = dialog.fields_dict.process_tabs_html;
+	if (!html_field) return;
+	const tabs = processes
+		.map((pk) => {
+			const active = pk === active_process;
+			const style = active
+				? "background:#1d4ed8;color:#fff;border-color:#1d4ed8;"
+				: "background:#fff;color:#334155;border-color:#cbd5e1;";
+			return `<button type="button" class="btn btn-sm ss-coil-scheme-tab" data-process="${pk}" style="${style}border-radius:10px;font-weight:800;margin:0 6px 8px 0;padding:8px 14px;">${frappe.utils.escape_html(
+				SS_COIL_CUTTING_PROCESS_LABELS[pk] || pk,
+			)}</button>`;
+		})
+		.join("");
+	html_field.$wrapper.html(
+		`<div style="margin:0 0 12px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;">
+			<span style="font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b;margin-right:6px;">${__(
+				"Process",
+			)}</span>${tabs}
+		</div>`,
+	);
+	html_field.$wrapper.find(".ss-coil-scheme-tab").off("click").on("click", function () {
+		const pk = $(this).attr("data-process");
+		if (pk && pk !== active_process && typeof on_select === "function") {
+			on_select(pk);
+		}
 	});
 }
 
 function prepare_cutting_scheme_dialog(dialog) {
 	const field = dialog.fields_dict.cutting_rows;
 	if (!field || !field.grid) return;
+	const process_key = dialog.__active_process || "slitter";
 
-	field.grid.df.data = normalize_cutting_scheme_rows(field.grid.df.data || []);
+	field.grid.df.data = normalize_cutting_scheme_rows(field.grid.df.data || [], process_key);
 	field.grid.refresh();
 	field.grid.wrapper.css("overflow-x", "auto");
 	field.grid.wrapper.find(".grid-body").css("overflow-x", "auto");
-	field.grid.wrapper.find(".grid-heading-row, .rows").css("min-width", "1100px");
+	field.grid.wrapper.find(".grid-heading-row, .rows").css("min-width", "1200px");
 	update_cutting_scheme_totals(dialog);
 
-	// Keep the grid editable inside the dialog and avoid full refresh on each keystroke.
 	field.grid.wrapper.find(".grid-add-row, .grid-remove-rows").css("display", "");
 
 	field.grid.wrapper.off(".ss_coil_cutting_dialog");
 	field.grid.wrapper.on(
 		"input.ss_coil_cutting_dialog change.ss_coil_cutting_dialog",
-		'[data-fieldname="width"] input, [data-fieldname="strip"] input, [data-fieldname="lengthcut"] input, [data-fieldname="tolerance_plus"] input, [data-fieldname="tolerance_minus"] input',
+		'[data-fieldname="width"] input, [data-fieldname="strip"] input, [data-fieldname="length"] input, [data-fieldname="lengthcut"] input, [data-fieldname="tolerance_plus"] input, [data-fieldname="tolerance_minus"] input',
 		function () {
 			const row_name =
 				$(this).attr("data-name") || $(this).closest(".grid-row").attr("data-name");
@@ -896,7 +1059,7 @@ function prepare_cutting_scheme_dialog(dialog) {
 			const row = (locals["Dialog Table"] || {})[row_name];
 			if (!row) return;
 
-			row.total_width = flt(row.width) * flt(row.strip);
+			row.total_width = flt(row.width) * (flt(row.strip) || 1);
 			field.grid.refresh_row(row_name);
 			update_cutting_scheme_totals(dialog);
 		},
@@ -904,7 +1067,19 @@ function prepare_cutting_scheme_dialog(dialog) {
 
 	field.grid.wrapper.on("click.ss_coil_cutting_dialog", ".grid-add-row", function () {
 		setTimeout(() => {
-			const data = normalize_cutting_scheme_rows(field.grid.get_data() || []);
+			const data = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+			const so_row = dialog.__so_item_row;
+			if (so_row && process_key !== "slitter" && data.length) {
+				const last = data[data.length - 1];
+				const defaults = default_cutting_scheme_row_for_process(so_row, process_key);
+				if (defaults) {
+					Object.keys(defaults).forEach((key) => {
+						if (last[key] === undefined || last[key] === null || last[key] === "") {
+							last[key] = defaults[key];
+						}
+					});
+				}
+			}
 			field.grid.df.data = data;
 			field.grid.refresh();
 			update_cutting_scheme_totals(dialog);
@@ -913,7 +1088,7 @@ function prepare_cutting_scheme_dialog(dialog) {
 
 	field.grid.wrapper.on("click.ss_coil_cutting_dialog", ".grid-remove-rows, .grid-delete-row", function () {
 		setTimeout(() => {
-			const data = normalize_cutting_scheme_rows(field.grid.get_data() || []);
+			const data = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
 			field.grid.df.data = data;
 			field.grid.refresh();
 			update_cutting_scheme_totals(dialog);
@@ -921,13 +1096,14 @@ function prepare_cutting_scheme_dialog(dialog) {
 	});
 }
 
-function normalize_cutting_scheme_rows(rows) {
+function normalize_cutting_scheme_rows(rows, process_key = "slitter") {
 	return (rows || [])
 		.filter((d) =>
 			[
 				d.seq,
 				d.width,
 				d.strip,
+				d.length,
 				d.lengthcut,
 				d.tolerance_plus,
 				d.tolerance_minus,
@@ -937,7 +1113,7 @@ function normalize_cutting_scheme_rows(rows) {
 		.map((d, idx) => ({
 			...d,
 			seq: idx + 1,
-			total_width: flt(d.width) * flt(d.strip),
+			total_width: flt(d.width) * (flt(d.strip) || (process_key === "slitter" ? 0 : 1)),
 		}));
 }
 
@@ -946,7 +1122,8 @@ function update_cutting_scheme_totals(dialog) {
 	const html_field = dialog.fields_dict.totals_html;
 	if (!field || !html_field) return;
 
-	const rows = normalize_cutting_scheme_rows(field.grid.get_data() || []);
+	const process_key = dialog.__active_process || "slitter";
+	const rows = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
 	const total_width = rows.reduce((sum, row) => sum + flt(row.total_width), 0);
 	const total_strips = rows.reduce((sum, row) => sum + flt(row.strip), 0);
 	const total_plain_width = rows.reduce((sum, row) => sum + flt(row.width), 0);
@@ -955,6 +1132,25 @@ function update_cutting_scheme_totals(dialog) {
 	const item_width = flt(dialog.__so_item_width);
 	const calc_ratio = item_width ? (qty / item_width) * total_plain_width : 0;
 	const remaining_width = item_width - total_width;
+
+	if (process_key !== "slitter") {
+		html_field.$wrapper.html(`
+		<div style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap;">
+			<div style="background:#16324f; color:#fff; padding:10px 14px; border-radius:10px; min-width:140px;">
+				<div style="font-size:11px; opacity:.8; text-transform:uppercase;">Rows</div>
+				<div style="font-size:20px; font-weight:700;">${row_count}</div>
+			</div>
+			<div style="background:#edf9f2; color:#1c6b3f; padding:10px 14px; border-radius:10px; min-width:160px; border:1px solid #cbe8d7;">
+				<div style="font-size:11px; opacity:.8; text-transform:uppercase;">${__("Total Sheet")}</div>
+				<div style="font-size:20px; font-weight:700;">${format_number(total_strips)}</div>
+			</div>
+			<div style="font-size:12px;color:#64748b;padding:10px 14px;max-width:420px;line-height:1.5;">${__(
+				"Leveler / Reshearing scheme: Width, Length, LengthCut, Total Sheet (Strip), tolerances. Calc ratio on SO item is updated from Slitter tab only.",
+			)}</div>
+		</div>
+	`);
+		return;
+	}
 
 	html_field.$wrapper.html(`
 		<div style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap;">
@@ -1875,12 +2071,14 @@ function build_cutting_scheme_report_html(groups) {
 
 	return groups
 		.map((group) => {
+			const process_label = group.process_label || group.process_key || "Slitter";
 			const rows = (group.rows || [])
 				.map(
 					(row) => `
 						<tr>
 							<td>${row.seq || ""}</td>
 							<td>${row.width || ""}</td>
+							<td>${row.length || ""}</td>
 							<td>${row.strip || ""}</td>
 							<td>${row.lengthcut || ""}</td>
 							<td>${row.total_width || ""}</td>
@@ -1897,6 +2095,7 @@ function build_cutting_scheme_report_html(groups) {
 						<div style="flex:0 0 290px; background:linear-gradient(180deg,#203549 0%,#314e68 100%); color:#f7fbff; padding:18px;">
 							<div style="font-size:11px; text-transform:uppercase; letter-spacing:.1em; opacity:.72;">Cutting Item</div>
 							<div style="font-size:20px; font-weight:800; margin-top:8px;">${escape_html(group.item_label || group.sales_order_item)}</div>
+							<div style="margin-top:8px;font-size:12px;font-weight:700;color:#93c5fd;">${escape_html(process_label)}</div>
 							<div style="margin-top:14px; display:grid; gap:8px; font-size:12px; color:#d9e7f4;">
 								<div><strong>Qty:</strong> ${group.qty || "-"}</div>
 								<div><strong>Tag:</strong> ${escape_html(group.tag_no || "-")}</div>
@@ -1910,7 +2109,8 @@ function build_cutting_scheme_report_html(groups) {
 										<tr>
 											<th>SEQ</th>
 											<th>Width</th>
-											<th>Strip</th>
+											<th>Length</th>
+											<th>Strip/Sheet</th>
 											<th>LengthCut</th>
 											<th>Total Width</th>
 											<th>Tol (+)</th>
@@ -2321,51 +2521,52 @@ function render_item_cutting_scheme_preview(frm, cdt, cdn) {
 	if (!wrapper) return;
 
 	frappe.call({
-		method: "ss_coil.api.get_so_production_plan_rows",
+		method: "ss_coil.api.get_so_production_plans_for_item",
 		args: {
+			sales_order: frm.doc.name,
 			sales_order_item: row.name,
 		},
 		callback: function (r) {
-			const rows = r.message || [];
-			if (!rows.length) {
-				wrapper.html("<div class='text-muted'>No cutting scheme rows saved for this item.</div>");
+			const payload = r.message || {};
+			const processes = payload.processes || ["slitter"];
+			const plans = payload.plans || {};
+			if (!processes.length) {
+				wrapper.html("<div class='text-muted'>No processes configured on this item.</div>");
 				return;
 			}
-
-			const body = rows
-				.map(
-					(d) => `<tr>
+			const sections = processes
+				.map((pk) => {
+					const rows = (plans[pk]?.rows || []).map(map_cutting_scheme_row_from_server);
+					if (!rows.length) {
+						return `<div style="margin-bottom:8px;"><strong>${frappe.utils.escape_html(
+							SS_COIL_CUTTING_PROCESS_LABELS[pk] || pk,
+						)}:</strong> <span class="text-muted">${__("No rows")}</span></div>`;
+					}
+					const body = rows
+						.map(
+							(d) => `<tr>
 						<td>${d.seq || ""}</td>
 						<td>${d.width || ""}</td>
-						<td>${d.strip || ""}</td>
+						<td>${d.length || ""}</td>
 						<td>${d.lengthcut || ""}</td>
-						<td>${d.total_width || ""}</td>
+						<td>${d.strip || ""}</td>
 						<td>${d.tolerance_plus || ""}</td>
 						<td>${d.tolerance_minus || ""}</td>
-						<td>${d.knife ? "Yes" : "No"}</td>
 					</tr>`,
-				)
+						)
+						.join("");
+					return `<div style="margin-bottom:12px;">
+						<div style="font-weight:700;margin-bottom:4px;">${frappe.utils.escape_html(
+							SS_COIL_CUTTING_PROCESS_LABELS[pk] || pk,
+						)}</div>
+						<table class="table table-bordered table-sm" style="margin:0;font-size:11px;">
+							<thead><tr><th>Seq</th><th>Width</th><th>Length</th><th>LengthCut</th><th>Total sheets</th><th>Tol+</th><th>Tol-</th></tr></thead>
+							<tbody>${body}</tbody>
+						</table>
+					</div>`;
+				})
 				.join("");
-
-			wrapper.html(`
-				<div style="border:1px solid #dbe6f1; border-radius:10px; overflow:hidden; margin-top:8px;">
-					<table class="table table-bordered" style="margin-bottom:0; background:#fff;">
-						<thead style="background:#edf4fb; color:#16324f;">
-							<tr>
-								<th>SEQ</th>
-								<th>Width</th>
-								<th>Strip</th>
-								<th>LengthCut</th>
-								<th>Total Width</th>
-								<th>Tol (+)</th>
-								<th>Tol (-)</th>
-								<th>Knife</th>
-							</tr>
-						</thead>
-						<tbody>${body}</tbody>
-					</table>
-				</div>
-			`);
+			wrapper.html(sections || "<div class='text-muted'>No cutting scheme rows saved for this item.</div>");
 		},
 	});
 }

@@ -9,6 +9,7 @@
   "sales_order",
   "column_break_gqms",
   "sales_order_item",
+  "process_key",
   "section_break_qclz",
   "cutting_scheme"
  ],
@@ -31,6 +32,15 @@
    "in_list_view": 1,
    "label": "Sales Order Item",
    "options": "Sales Order Item",
+   "reqd": 1
+  },
+  {
+   "default": "slitter",
+   "fieldname": "process_key",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Process",
+   "options": "slitter\nleveler\nreshearing",
    "reqd": 1
   },
   {

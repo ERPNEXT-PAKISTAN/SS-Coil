@@ -74,6 +74,7 @@ frappe.ui.form.on("SS Coil", {
 		update_calc_ratio(frm);
 		update_remaining_width(frm);
 		update_input_coil_length(frm);
+		ss_coil.process.syncSoItemDisplayDimension(frm);
 		sync_cutting_detail_so_no(frm, false);
 		rebuild_job_output_if_needed(frm);
 		render_job_output_qr_fields(frm);
@@ -86,6 +87,9 @@ frappe.ui.form.on("SS Coil", {
 	operation(frm) {
 		sync_process_preview(frm);
 		syncMachineFromSalesOrderOperation(frm);
+		ss_coil.process.syncSoItemDisplayDimension(frm);
+		update_input_coil_length(frm);
+		render_ss_coil_formulas(frm);
 		load_ss_coil_flow_and_dashboards(frm);
 	},
 	process_control_enabled(frm) {
@@ -236,6 +240,7 @@ frappe.ui.form.on("SS Coil", {
 
 				frm._last_sales_order_item = item;
 				applyOperationAndMachineFromSalesOrderItem(frm, item);
+				ss_coil.process.syncSoItemDisplayDimension(frm);
 
 				frm.set_value("calc_ratio_2", flt(item.custom_calc_ratio_2));
 				frm.set_value("actual_ratio", flt(item.custom_actual_ratio));
@@ -255,6 +260,8 @@ frappe.ui.form.on("SS Coil", {
 					method: "ss_coil.api.get_so_production_plan_rows",
 					args: {
 						sales_order_item: item.name,
+						operation: frm.doc.operation,
+						sales_order: frm.doc.order_no,
 					},
 					callback: function (scheme_response) {
 						load_cutting_scheme_from_so_item(frm, scheme_response.message || []);
@@ -1666,6 +1673,16 @@ frappe.ui.form.on("Coil SO", {
 		update_input_coil_length(frm);
 		refreshAllJobOutputEstimatedWt(frm);
 	},
+	length(frm) {
+		ss_coil.process.syncSoItemDisplayDimension(frm);
+		update_input_coil_length(frm);
+		render_ss_coil_formulas(frm);
+	},
+	length_c(frm) {
+		ss_coil.process.syncSoItemDisplayDimension(frm);
+		update_input_coil_length(frm);
+		render_ss_coil_formulas(frm);
+	},
 });
 
 frappe.ui.form.on("Coil Input", {
@@ -1732,11 +1749,7 @@ function update_input_coil_length(frm, target_row = null) {
 	const so_row = (frm.doc.so_item || [])[0];
 	if (!so_row) return;
 
-	const qty = flt(so_row.qty);
-	const thickness = flt(so_row.thickness);
-	const width = flt(so_row.width);
-	const denominator = thickness * width * 0.00000785 * 1000;
-	const length = denominator ? qty / denominator : 0;
+	const length = ss_coil.process.effectiveInputCoilLength(frm);
 
 	const rows = target_row ? [target_row] : frm.doc.input_coil || [];
 	rows.forEach((row) => {

@@ -147,6 +147,7 @@
   {
    "fieldname": "length_c",
    "fieldtype": "Data",
+   "default": "C",
    "in_list_view": 1,
    "label": "Length C"
   },

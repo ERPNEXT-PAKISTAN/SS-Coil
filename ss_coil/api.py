@@ -59,6 +59,9 @@ def _length_value_is_numeric(value):
 	return bool(re.fullmatch(r"-?\d+(\.\d+)?", str(value).strip()))
 
 
+DEFAULT_LENGTH_C = "C"
+
+
 def migrate_length_and_length_c_field_values():
 	"""Move mistaken values: text C → custom_length_c, numeric length → custom_length (Float)."""
 	for doctype in ("Sales Order Item", "Stock Entry Detail"):
@@ -157,15 +160,41 @@ def _apply_custom_field_definition(dt, fieldname, props):
 	if not frappe.db.exists("Custom Field", cf_name):
 		return
 	frappe.db.set_value("Custom Field", cf_name, props, update_modified=False)
-	if props.get("fieldtype") or props.get("label"):
+	updates = []
+	params = []
+	if props.get("fieldtype"):
+		updates.append("fieldtype = %s")
+		params.append(props.get("fieldtype"))
+	if props.get("label"):
+		updates.append("label = %s")
+		params.append(props.get("label"))
+	if "default" in props:
+		updates.append("`default` = %s")
+		params.append(props.get("default"))
+	if updates:
+		params.extend([dt, fieldname])
 		frappe.db.sql(
-			"""
+			f"""
 			UPDATE `tabDocField`
-			SET fieldtype = COALESCE(%s, fieldtype),
-			    label = COALESCE(%s, label)
+			SET {", ".join(updates)}
 			WHERE parent = %s AND fieldname = %s
 			""",
-			(props.get("fieldtype"), props.get("label"), dt, fieldname),
+			tuple(params),
+		)
+
+
+def _backfill_empty_length_c_values():
+	for doctype in ("Sales Order Item", "Stock Entry Detail"):
+		if not frappe.db.has_column(doctype, "custom_length_c"):
+			continue
+		table = _table_name(doctype)
+		frappe.db.sql(
+			f"""
+			UPDATE `{table}`
+			SET custom_length_c = %s
+			WHERE custom_length_c IS NULL OR custom_length_c = ''
+			""",
+			(DEFAULT_LENGTH_C,),
 		)
 
 
@@ -179,6 +208,7 @@ def setup_length_c_and_length_fields():
 				"fieldname": "custom_length_c",
 				"fieldtype": "Data",
 				"label": "Length C",
+				"default": DEFAULT_LENGTH_C,
 				"insert_after": "custom_js_number",
 				"allow_on_submit": 1,
 				"description": "Shown in dimension (e.g. letter C). Not used for numeric length calculations.",
@@ -190,12 +220,22 @@ def setup_length_c_and_length_fields():
 		_ensure_length_columns_schema(doctype)
 
 	for dt, fieldname, props in [
-		("Sales Order Item", "custom_length_c", {"fieldtype": "Data", "label": "Length C", "precision": ""}),
+		(
+			"Sales Order Item",
+			"custom_length_c",
+			{"fieldtype": "Data", "label": "Length C", "precision": "", "default": DEFAULT_LENGTH_C},
+		),
 		("Sales Order Item", "custom_length", {"fieldtype": "Float", "label": "Length"}),
-		("Stock Entry Detail", "custom_length_c", {"fieldtype": "Data", "label": "Length C", "precision": ""}),
+		(
+			"Stock Entry Detail",
+			"custom_length_c",
+			{"fieldtype": "Data", "label": "Length C", "precision": "", "default": DEFAULT_LENGTH_C},
+		),
 		("Stock Entry Detail", "custom_length", {"fieldtype": "Float", "label": "Length"}),
 	]:
 		_apply_custom_field_definition(dt, fieldname, props)
+
+	_backfill_empty_length_c_values()
 
 	for doctype in ("Sales Order Item", "Stock Entry Detail", "Sales Order", "Stock Entry"):
 		frappe.clear_cache(doctype=doctype)
@@ -4357,7 +4397,7 @@ def _coil_so_row_from_sales_order_item(so_item, order_no):
 		if fieldname == "so_number":
 			row[fieldname] = order_no
 		elif fieldname == "length_c":
-			row[fieldname] = so_item.get("custom_length_c") or ""
+			row[fieldname] = so_item.get("custom_length_c") or DEFAULT_LENGTH_C
 		elif fieldname == "dimension":
 			row[fieldname] = so_item.get("custom_dimension") or so_item.get("custom_dimensin") or ""
 		elif fieldname == "tag_no":

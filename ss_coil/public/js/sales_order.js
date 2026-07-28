@@ -28,6 +28,7 @@ frappe.ui.form.on("Sales Order", {
 });
 
 const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
+const SS_COIL_DEFAULT_LENGTH_C = "C";
 
 const SO_JOB_SHEET_HTML_FIELDS = ["custom_job_sheet_report", "job_sheet_report"];
 
@@ -141,7 +142,14 @@ function apply_ss_coil_sales_order_header_defaults(frm) {
 
 function apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn) {
 	const row = locals[cdt] && locals[cdt][cdn];
-	if (!row || row.warehouse) {
+	if (!row) {
+		return;
+	}
+	if (row.custom_length_c === undefined || row.custom_length_c === null || row.custom_length_c === "") {
+		frappe.model.set_value(cdt, cdn, "custom_length_c", SS_COIL_DEFAULT_LENGTH_C);
+		set_custom_dimension_from_values(cdt, cdn);
+	}
+	if (row.warehouse) {
 		return;
 	}
 	frappe.model.set_value(

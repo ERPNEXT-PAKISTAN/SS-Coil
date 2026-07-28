@@ -8,6 +8,7 @@
 
 const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
 const SS_COIL_DEFAULT_QTY_OF_COIL = 1;
+const SS_COIL_DEFAULT_LENGTH_C = "C";
 
 frappe.ui.form.on("Stock Entry", {
 	setup(frm) {
@@ -128,6 +129,10 @@ function apply_ss_coil_stock_entry_row_defaults(frm, cdt, cdn) {
 	}
 	if (row.custom_qty_of_coil === undefined || row.custom_qty_of_coil === null || row.custom_qty_of_coil === "") {
 		frappe.model.set_value(cdt, cdn, "custom_qty_of_coil", SS_COIL_DEFAULT_QTY_OF_COIL);
+	}
+	if (row.custom_length_c === undefined || row.custom_length_c === null || row.custom_length_c === "") {
+		frappe.model.set_value(cdt, cdn, "custom_length_c", SS_COIL_DEFAULT_LENGTH_C);
+		set_stock_entry_dimension_from_values(cdt, cdn);
 	}
 	if (is_material_receipt_stock_entry(frm.doc)) {
 		if (!row.t_warehouse) {
@@ -643,6 +648,7 @@ function make_stock_entry_data_entry_item_row(existing) {
 			doctype: "Stock Entry Detail",
 			__islocal: 1,
 			custom_qty_of_coil: SS_COIL_DEFAULT_QTY_OF_COIL,
+			custom_length_c: SS_COIL_DEFAULT_LENGTH_C,
 		}
 	);
 }

@@ -199,7 +199,7 @@ frappe.ui.form.on("SS Coil", {
 					}
 
 					if (fieldname === "length_c") {
-						row.length_c = item.custom_length_c || "";
+						row.length_c = item.custom_length_c || "C";
 						return;
 					}
 

@@ -876,12 +876,14 @@ function show_cutting_scheme_process_tab(dialog, processes, active_process) {
 			return;
 		}
 		const show = pk === active_process;
-		field.df.hidden = show ? 0 : 1;
+		// Do not use df.hidden — Frappe skips rendering Table grids when hidden.
+		field.df.hidden = 0;
 		if (field.$wrapper) {
-			field.$wrapper.toggle(show);
+			field.$wrapper.css("display", show ? "block" : "none");
 		}
 		if (show && field.grid) {
 			apply_cutting_scheme_grid_process_mode(field.grid, pk);
+			field.grid.refresh();
 		}
 	});
 }
@@ -960,7 +962,6 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 					fieldname: cutting_scheme_fieldname(pk),
 					fieldtype: "Table",
 					label: __("Cutting Scheme Rows"),
-					hidden: pk !== active_process ? 1 : 0,
 					in_place_edit: true,
 					cannot_add_rows: false,
 					data: normalize_cutting_scheme_rows(plan_cache[pk] || [], pk),
@@ -1061,15 +1062,20 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 				show_cutting_scheme_process_tab(dialog, processes, next_process);
 				seed_cutting_scheme_grid_if_empty(dialog, next_process);
 				render_cutting_scheme_process_tabs(dialog, processes, next_process, switchProcess);
-				update_cutting_scheme_totals(dialog);
+				setTimeout(() => update_cutting_scheme_totals(dialog), 0);
 			};
 			render_cutting_scheme_process_tabs(dialog, processes, active_process, switchProcess);
 			setTimeout(() => {
 				show_cutting_scheme_process_tab(dialog, processes, active_process);
 				bind_cutting_scheme_dialog_events(dialog);
+				processes.forEach((pk) => {
+					if (pk !== active_process) {
+						seed_cutting_scheme_grid_if_empty(dialog, pk);
+					}
+				});
 				seed_cutting_scheme_grid_if_empty(dialog, active_process);
 				update_cutting_scheme_totals(dialog);
-			}, 50);
+			}, 200);
 		},
 	});
 }

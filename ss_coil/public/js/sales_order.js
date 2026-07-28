@@ -775,7 +775,8 @@ function cutting_scheme_dialog_table_fields() {
 		{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
 		{ fieldname: "length", fieldtype: "Float", label: "Length", in_list_view: 1, columns: 2 },
 		{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 2 },
-		{ fieldname: "strip", fieldtype: "Float", label: __("Total sheets"), in_list_view: 1, columns: 2 },
+		{ fieldname: "strip", fieldtype: "Float", label: __("Strip"), in_list_view: 1, columns: 2 },
+		{ fieldname: "total_sheets", fieldtype: "Float", label: __("Total sheets"), in_list_view: 1, columns: 2 },
 		{
 			fieldname: "total_width",
 			fieldtype: "Float",
@@ -798,7 +799,11 @@ function ensure_cutting_scheme_dialog_grid_styles() {
 	style.id = "ss-coil-scheme-grid-style";
 	style.textContent = `
 		.ss-coil-scheme-slitter .grid-heading-row [data-fieldname="length"],
-		.ss-coil-scheme-slitter .grid-row [data-fieldname="length"] { display: none !important; }
+		.ss-coil-scheme-slitter .grid-row [data-fieldname="length"],
+		.ss-coil-scheme-slitter .grid-heading-row [data-fieldname="total_sheets"],
+		.ss-coil-scheme-slitter .grid-row [data-fieldname="total_sheets"] { display: none !important; }
+		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="strip"],
+		.ss-coil-scheme-leveler .grid-row [data-fieldname="strip"],
 		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="total_width"],
 		.ss-coil-scheme-leveler .grid-row [data-fieldname="total_width"],
 		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="knife"],
@@ -816,8 +821,6 @@ function apply_cutting_scheme_grid_process_mode(grid, process_key) {
 	grid.wrapper
 		.toggleClass("ss-coil-scheme-slitter", is_slitter)
 		.toggleClass("ss-coil-scheme-leveler", !is_slitter);
-	const strip_label = is_slitter ? __("Strip") : __("Total sheets");
-	grid.wrapper.find(".grid-heading-row [data-fieldname='strip'] .static-area").text(strip_label);
 }
 
 function default_cutting_scheme_row_for_process(so_item_row, process_key) {
@@ -831,7 +834,8 @@ function default_cutting_scheme_row_for_process(so_item_row, process_key) {
 	return {
 		width: width || undefined,
 		length: length || undefined,
-		strip: total_sheets || undefined,
+		strip: 1,
+		total_sheets: total_sheets || undefined,
 		lengthcut,
 		tolerance_plus: length ? length + 1 : undefined,
 		tolerance_minus: length ? length - 1 : undefined,
@@ -915,6 +919,7 @@ function map_cutting_scheme_row_from_server(d) {
 		seq: d.seq,
 		width: d.width,
 		strip: d.strip,
+		total_sheets: d.total_sheets,
 		length: d.length,
 		lengthcut: d.lengthcut,
 		total_width: d.total_width,
@@ -1205,12 +1210,14 @@ function prepare_cutting_scheme_dialog(dialog) {
 }
 
 function normalize_cutting_scheme_rows(rows, process_key = "slitter") {
+	const is_slitter = process_key === "slitter";
 	return (rows || [])
 		.filter((d) =>
 			[
 				d.seq,
 				d.width,
 				d.strip,
+				d.total_sheets,
 				d.length,
 				d.lengthcut,
 				d.tolerance_plus,
@@ -1218,11 +1225,19 @@ function normalize_cutting_scheme_rows(rows, process_key = "slitter") {
 				d.knife,
 			].some((v) => v !== undefined && v !== null && String(v).trim() !== ""),
 		)
-		.map((d, idx) => ({
-			...d,
-			seq: idx + 1,
-			total_width: flt(d.width) * (flt(d.strip) || (process_key === "slitter" ? 0 : 1)),
-		}));
+		.map((d, idx) => {
+			const strip = is_slitter ? flt(d.strip) : flt(d.strip) || 1;
+			const total_sheets = is_slitter
+				? undefined
+				: flt(d.total_sheets) || (flt(d.strip) > 1 ? flt(d.strip) : undefined);
+			return {
+				...d,
+				seq: idx + 1,
+				strip,
+				total_sheets,
+				total_width: is_slitter ? flt(d.width) * (strip || 0) : flt(d.width),
+			};
+		});
 }
 
 function update_cutting_scheme_totals(dialog) {
@@ -2172,60 +2187,87 @@ function escape_html(value) {
 	return frappe.utils.escape_html(value == null ? "" : String(value));
 }
 
+function cutting_scheme_dimension_part(value) {
+	if (value == null || value === "") {
+		return "";
+	}
+	const num = flt(value);
+	if (!Number.isNaN(num) && String(value).trim() !== "" && /^-?\d+(\.\d+)?$/.test(String(value).trim())) {
+		return num % 1 === 0 ? String(parseInt(num, 10)) : String(num);
+	}
+	return String(value).trim();
+}
+
+function cutting_scheme_row_dimension(group, row) {
+	const t = cutting_scheme_dimension_part(group.thickness);
+	const w = cutting_scheme_dimension_part(row?.width ?? group.width);
+	const pk = group.process_key || "slitter";
+	if (pk === "slitter") {
+		const lc = group.length_c || "C";
+		return [t, w, lc].filter((p) => p !== "").join(" × ");
+	}
+	const len = cutting_scheme_dimension_part(row?.length ?? group.length);
+	return [t, w, len].filter((p) => p !== "").join(" × ");
+}
+
 function build_cutting_scheme_process_table_html(group) {
 	const process_key = group.process_key || "slitter";
 	const process_label = group.process_label || SS_COIL_CUTTING_PROCESS_LABELS[process_key] || process_key;
 	const is_slitter = process_key === "slitter";
 	const row_list = group.rows || [];
+	const cell = "padding:8px 10px; font-size:12px;";
 
 	const rows = row_list.length
 		? row_list
 				.map((row) => {
+					const dim = escape_html(cutting_scheme_row_dimension(group, row) || "-");
 					if (is_slitter) {
 						return `<tr>
-							<td>${row.seq || ""}</td>
-							<td>${row.width || ""}</td>
-							<td>${row.strip || ""}</td>
-							<td>${row.lengthcut || ""}</td>
-							<td>${row.total_width || ""}</td>
-							<td>${row.tolerance_plus || ""}</td>
-							<td>${row.tolerance_minus || ""}</td>
-							<td>${row.knife ? "Yes" : "No"}</td>
+							<td style="${cell}">${row.seq || ""}</td>
+							<td style="${cell}">${dim}</td>
+							<td style="${cell}">${row.width || ""}</td>
+							<td style="${cell}">${row.strip || ""}</td>
+							<td style="${cell}">${row.lengthcut || ""}</td>
+							<td style="${cell}">${row.total_width || ""}</td>
+							<td style="${cell}">${row.tolerance_plus || ""}</td>
+							<td style="${cell}">${row.tolerance_minus || ""}</td>
+							<td style="${cell}">${row.knife ? "Yes" : "No"}</td>
 						</tr>`;
 					}
 					return `<tr>
-						<td>${row.seq || ""}</td>
-						<td>${row.width || ""}</td>
-						<td>${row.length || ""}</td>
-						<td>${row.lengthcut || ""}</td>
-						<td>${row.strip || ""}</td>
-						<td>${row.tolerance_plus || ""}</td>
-						<td>${row.tolerance_minus || ""}</td>
+						<td style="${cell}">${row.seq || ""}</td>
+						<td style="${cell}">${dim}</td>
+						<td style="${cell}">${row.width || ""}</td>
+						<td style="${cell}">${row.length || ""}</td>
+						<td style="${cell}">${row.lengthcut || ""}</td>
+						<td style="${cell}">${row.total_sheets ?? (flt(row.strip) > 1 ? row.strip : "") || ""}</td>
+						<td style="${cell}">${row.tolerance_plus || ""}</td>
+						<td style="${cell}">${row.tolerance_minus || ""}</td>
 					</tr>`;
 				})
 				.join("")
-		: `<tr><td colspan="${is_slitter ? 8 : 7}" style="color:#64748b;text-align:center;padding:10px;">${__(
+		: `<tr><td colspan="${is_slitter ? 9 : 8}" style="color:#64748b;text-align:center;padding:12px;">${__(
 				"No rows saved",
 			)}</td></tr>`;
 
 	const thead = is_slitter
 		? `<tr>
-			<th>SEQ</th><th>Width</th><th>Strip</th><th>LengthCut</th>
-			<th>Total Width</th><th>Tol (+)</th><th>Tol (-)</th><th>Knife</th>
+			<th style="${cell}">SEQ</th><th style="${cell}">${__("Dimension")}</th><th style="${cell}">Width</th><th style="${cell}">Strip</th><th style="${cell}">LengthCut</th>
+			<th style="${cell}">Total Width</th><th style="${cell}">Tol (+)</th><th style="${cell}">Tol (-)</th><th style="${cell}">Knife</th>
 		</tr>`
 		: `<tr>
-			<th>SEQ</th><th>Width</th><th>Length</th><th>LengthCut</th>
-			<th>Total sheets</th><th>Tol(+)</th><th>Tol(-)</th>
+			<th style="${cell}">SEQ</th><th style="${cell}">${__("Dimension")}</th><th style="${cell}">Width</th><th style="${cell}">Length</th><th style="${cell}">LengthCut</th>
+			<th style="${cell}">Total sheets</th><th style="${cell}">Tol(+)</th><th style="${cell}">Tol(-)</th>
 		</tr>`;
 
 	return `
-		<div style="margin-bottom:14px;">
+		<div style="margin-bottom:12px;">
 			<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-				<span style="display:inline-block;background:#1d4ed8;color:#fff;font-size:11px;font-weight:800;padding:4px 12px;border-radius:8px;">${escape_html(process_label)}</span>
-				<span style="font-size:11px;color:#64748b;">${row_list.length ? `${row_list.length} ${__("row(s)")}` : __("Not saved")}</span>
+				<span style="display:inline-block;background:#1d4ed8;color:#fff;font-size:12px;font-weight:800;padding:5px 14px;border-radius:8px;">${escape_html(process_label)}</span>
+				<span style="font-size:12px;color:#64748b;">${row_list.length ? `${row_list.length} ${__("row(s)")}` : __("Not saved")}</span>
 			</div>
 			<div style="overflow:auto;">
-				<table class="table table-bordered table-sm" style="margin-bottom:0; background:#fffefb; min-width:640px;">
+				<table class="table table-bordered" style="margin-bottom:0; background:#fffefb; min-width:${is_slitter ? 780 : 720}px;">
 					<thead style="background:#22384d; color:#f8fbff;">${thead}</thead>
 					<tbody>${rows}</tbody>
 				</table>
@@ -2239,9 +2281,22 @@ function group_cutting_scheme_report_by_item(groups) {
 	(groups || []).forEach((group) => {
 		const key = group.sales_order_item || group.item_label || group.plan_name || "";
 		if (!by_item.has(key)) {
-			by_item.set(key, { meta: group, processes: [] });
+			by_item.set(key, { meta: { ...group }, processes: [] });
 		}
-		by_item.get(key).processes.push(group);
+		const entry = by_item.get(key);
+		if (!entry.meta.dimension_numeric && group.dimension_numeric) {
+			entry.meta.dimension_numeric = group.dimension_numeric;
+		}
+		if (!entry.meta.thickness && group.thickness) {
+			entry.meta.thickness = group.thickness;
+		}
+		if (!entry.meta.length_c && group.length_c) {
+			entry.meta.length_c = group.length_c;
+		}
+		if (!entry.meta.length && group.length) {
+			entry.meta.length = group.length;
+		}
+		entry.processes.push(group);
 	});
 	return Array.from(by_item.values()).map((entry) => {
 		entry.processes.sort(
@@ -2268,25 +2323,35 @@ function build_cutting_scheme_report_html(groups) {
 				.join("");
 			const process_tables = processes.map((p) => build_cutting_scheme_process_table_html(p)).join("");
 
+			const dim_c = meta.dimension || "-";
+			const dim_l =
+				meta.dimension_numeric ||
+				cutting_scheme_row_dimension(
+					{ ...meta, process_key: "leveler", length: meta.length, width: meta.width },
+					{},
+				) ||
+				"-";
+
 			return `
 				<div style="border:1px solid #ddd6bf; border-radius:18px; overflow:hidden; background:linear-gradient(180deg,#fffdfa 0%,#f7f2e8 100%); box-shadow:0 10px 28px rgba(70,53,20,.06); margin-bottom:16px;">
 					<div style="display:flex; gap:0; align-items:stretch; flex-wrap:wrap;">
-						<div style="flex:0 0 260px; background:linear-gradient(180deg,#203549 0%,#314e68 100%); color:#f7fbff; padding:18px;">
-							<div style="font-size:11px; text-transform:uppercase; letter-spacing:.1em; opacity:.72;">Cutting Item</div>
-							<div style="font-size:18px; font-weight:800; margin-top:8px;line-height:1.3;">${escape_html(meta.item_label || meta.sales_order_item)}</div>
-							<div style="margin-top:12px; display:grid; gap:8px; font-size:12px; color:#d9e7f4;">
+						<div style="flex:0 0 240px; background:linear-gradient(180deg,#203549 0%,#314e68 100%); color:#f7fbff; padding:14px 16px;">
+							<div style="font-size:10px; text-transform:uppercase; letter-spacing:.1em; opacity:.72;">Cutting Item</div>
+							<div style="font-size:17px; font-weight:800; margin-top:6px;line-height:1.3;">${escape_html(meta.item_label || meta.sales_order_item)}</div>
+							<div style="margin-top:10px; display:grid; gap:6px; font-size:11px; color:#d9e7f4;">
 								<div><strong>Qty:</strong> ${meta.qty || "-"}</div>
 								<div><strong>Tag:</strong> ${escape_html(meta.tag_no || "-")}</div>
-								<div><strong>Dimension:</strong> ${escape_html(meta.dimension || "-")}</div>
+								<div><strong>Dim (C):</strong> ${escape_html(dim_c)}</div>
+								<div><strong>Dim (L):</strong> ${escape_html(dim_l)}</div>
 							</div>
-							<div style="margin-top:14px;">
-								<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.75;margin-bottom:6px;">${__(
+							<div style="margin-top:10px;">
+								<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.75;margin-bottom:4px;">${__(
 									"Processes",
 								)}</div>
 								<div style="display:flex;flex-wrap:wrap;">${process_chips}</div>
 							</div>
 						</div>
-						<div style="flex:1; min-width:420px; padding:16px 16px 6px;">
+						<div style="flex:1; min-width:420px; padding:12px 12px 8px;">
 							${process_tables}
 						</div>
 					</div>

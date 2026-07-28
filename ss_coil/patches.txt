@@ -9,3 +9,4 @@ ss_coil.patches.v1_0.reapply_length_c_and_custom_length_schema
 ss_coil.patches.v1_0.set_length_c_display_labels
 ss_coil.patches.v1_0.set_default_custom_length_c
 ss_coil.patches.v1_0.migrate_so_production_plan_process_key
+ss_coil.patches.v1_0.migrate_leveler_strip_to_total_sheets

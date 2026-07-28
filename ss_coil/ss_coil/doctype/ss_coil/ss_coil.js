@@ -76,7 +76,9 @@ frappe.ui.form.on("SS Coil", {
 		update_input_coil_length(frm);
 		ss_coil.process.syncSoItemDisplayDimension(frm);
 		sync_cutting_detail_so_no(frm, false);
+		apply_ss_coil_cutting_detail_grid_mode(frm);
 		rebuild_job_output_if_needed(frm);
+		ensure_cutting_detail_from_so_plan(frm);
 		render_job_output_qr_fields(frm);
 		load_ss_coil_flow_and_dashboards(frm);
 		render_ss_coil_job_sheet_report(frm);
@@ -89,6 +91,7 @@ frappe.ui.form.on("SS Coil", {
 		syncMachineFromSalesOrderOperation(frm);
 		ss_coil.process.syncSoItemDisplayDimension(frm);
 		update_input_coil_length(frm);
+		apply_ss_coil_cutting_detail_grid_mode(frm);
 		render_ss_coil_formulas(frm);
 		load_ss_coil_flow_and_dashboards(frm);
 	},
@@ -1605,12 +1608,18 @@ function createNextProcessEntries(frm, silentIfSkipped) {
 
 frappe.ui.form.on("Cutting Scheme", {
 	width(frm, cdt, cdn) {
-		update_cutting_total_width(cdt, cdn);
+		update_cutting_total_width(cdt, cdn, frm);
 		rebuild_job_output_from_input(frm);
 	},
 	strip(frm, cdt, cdn) {
-		update_cutting_total_width(cdt, cdn);
+		update_cutting_total_width(cdt, cdn, frm);
 		rebuild_job_output_from_input(frm);
+	},
+	total_sheets(frm, cdt, cdn) {
+		const row = locals[cdt] && locals[cdt][cdn];
+		if (row && ss_coil.process.usesNumericLength(ss_coil.process.resolveProcessKey(frm))) {
+			frappe.model.set_value(cdt, cdn, "strip", 1);
+		}
 	},
 	total_width(frm) {
 		update_grand_totals(frm);
@@ -1723,11 +1732,54 @@ function update_grand_totals(frm) {
 	render_ss_coil_formulas(frm);
 }
 
-function update_cutting_total_width(cdt, cdn) {
+function update_cutting_total_width(cdt, cdn, frm) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row) return;
 
+	const processKey = frm ? ss_coil.process.resolveProcessKey(frm) : "slitter";
+	if (ss_coil.process.usesNumericLength(processKey)) {
+		frappe.model.set_value(cdt, cdn, "total_width", flt(row.width));
+		return;
+	}
 	frappe.model.set_value(cdt, cdn, "total_width", flt(row.width) * flt(row.strip));
+}
+
+function apply_ss_coil_cutting_detail_grid_mode(frm) {
+	const grid_field = frm.fields_dict.cutting_detail;
+	if (!grid_field || !grid_field.grid) {
+		return;
+	}
+	if (typeof ensure_cutting_scheme_dialog_grid_styles === "function") {
+		ensure_cutting_scheme_dialog_grid_styles();
+	} else {
+		ensure_ss_coil_cutting_detail_grid_styles();
+	}
+	const processKey = ss_coil.process.resolveProcessKey(frm);
+	const is_slitter = processKey === "slitter";
+	grid_field.grid.wrapper
+		.toggleClass("ss-coil-scheme-slitter", is_slitter)
+		.toggleClass("ss-coil-scheme-leveler", !is_slitter);
+}
+
+function ensure_ss_coil_cutting_detail_grid_styles() {
+	if (document.getElementById("ss-coil-scheme-grid-style")) {
+		return;
+	}
+	const style = document.createElement("style");
+	style.id = "ss-coil-scheme-grid-style";
+	style.textContent = `
+		.ss-coil-scheme-slitter .grid-heading-row [data-fieldname="length"],
+		.ss-coil-scheme-slitter .grid-row [data-fieldname="length"],
+		.ss-coil-scheme-slitter .grid-heading-row [data-fieldname="total_sheets"],
+		.ss-coil-scheme-slitter .grid-row [data-fieldname="total_sheets"] { display: none !important; }
+		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="strip"],
+		.ss-coil-scheme-leveler .grid-row [data-fieldname="strip"],
+		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="total_width"],
+		.ss-coil-scheme-leveler .grid-row [data-fieldname="total_width"],
+		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="knife"],
+		.ss-coil-scheme-leveler .grid-row [data-fieldname="knife"] { display: none !important; }
+	`;
+	document.head.appendChild(style);
 }
 
 function update_calc_ratio(frm) {
@@ -1986,11 +2038,23 @@ function getNextProcessLabelFromOutputs(frm) {
 
 function getExpectedOutputCount(frm) {
 	const cutting_rows = frm.doc.cutting_detail || [];
-	const totalPieces = cutting_rows.reduce((sum, row) => sum + Math.max(0, cint(row.strip)), 0);
-	if (!cutting_rows.length || !totalPieces) {
+	if (!cutting_rows.length) {
 		return (frm.doc.input_coil || []).length ? 1 : 0;
 	}
-	return totalPieces;
+	const processKey = ss_coil.process.resolveProcessKey(frm);
+	if (ss_coil.process.usesNumericLength(processKey)) {
+		return cutting_rows.length;
+	}
+	const totalPieces = cutting_rows.reduce((sum, row) => sum + Math.max(0, cint(row.strip)), 0);
+	return totalPieces || 1;
+}
+
+function repeatCountForCuttingRow(frm, cuttingRow) {
+	const processKey = ss_coil.process.resolveProcessKey(frm);
+	if (ss_coil.process.usesNumericLength(processKey)) {
+		return 1;
+	}
+	return Math.max(0, cint(cuttingRow.strip));
 }
 
 function rebuild_job_output_if_needed(frm) {
@@ -2005,14 +2069,42 @@ function rebuild_job_output_if_needed(frm) {
 	}
 }
 
+function ensure_cutting_detail_from_so_plan(frm) {
+	if (frm.is_new()) {
+		return;
+	}
+	if ((frm.doc.cutting_detail || []).length) {
+		return;
+	}
+	if (!frm.doc.name || !frm.doc.sales_order_item || !frm.doc.operation) {
+		return;
+	}
+	if (frm._cutting_detail_backfill_pending) {
+		return;
+	}
+	frm._cutting_detail_backfill_pending = true;
+	frappe.call({
+		method: "ss_coil.api.backfill_ss_coil_cutting_detail",
+		args: { ss_coil: frm.doc.name },
+		callback(r) {
+			frm._cutting_detail_backfill_pending = false;
+			if (r.message && r.message.updated) {
+				frm.reload_doc();
+			}
+		},
+		error() {
+			frm._cutting_detail_backfill_pending = false;
+		},
+	});
+}
+
 function rebuild_job_output_from_input(frm) {
 	const input_rows = frm.doc.input_coil || [];
 	const so_row = (frm.doc.so_item || [])[0] || {};
 	const existing_rows = frm.doc.job_output || [];
 	const cutting_rows = frm.doc.cutting_detail || [];
 	const input_row = input_rows[0];
-	const target_fields = get_mappable_fieldnames("Coil Output");
-	const totalPieces = cutting_rows.reduce((sum, row) => sum + Math.max(0, cint(row.strip)), 0);
+	const totalPieces = getExpectedOutputCount(frm);
 
 	frm.clear_table("job_output");
 
@@ -2028,7 +2120,7 @@ function rebuild_job_output_from_input(frm) {
 	} else {
 		let outputIndex = 0;
 		cutting_rows.forEach((cuttingRow) => {
-			const stripCount = Math.max(0, cint(cuttingRow.strip));
+			const stripCount = repeatCountForCuttingRow(frm, cuttingRow);
 			for (let i = 0; i < stripCount; i += 1) {
 				const row = frm.add_child("job_output");
 				apply_job_output_values(

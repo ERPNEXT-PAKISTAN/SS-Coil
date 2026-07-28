@@ -926,6 +926,26 @@ def _uses_numeric_length_for_process(process_key):
 	return process_key in ("leveler", "reshearing")
 
 
+def _ss_coil_process_key_for_doc(doc):
+	so_item = _ss_coil_sales_order_item_doc(doc)
+	so_dict = so_item.as_dict() if so_item else None
+	return _process_key_for_operation(getattr(doc, "operation", None), so_dict) or "slitter"
+
+
+def _total_job_output_pieces_for_cutting(doc, cutting_rows):
+	if not cutting_rows:
+		return 0
+	if _uses_numeric_length_for_process(_ss_coil_process_key_for_doc(doc)):
+		return len(cutting_rows)
+	return sum(max(0, cint(getattr(row, "strip", 0))) for row in cutting_rows)
+
+
+def _repeat_count_for_cutting_row(doc, cutting_row):
+	if _uses_numeric_length_for_process(_ss_coil_process_key_for_doc(doc)):
+		return 1
+	return max(0, cint(getattr(cutting_row, "strip", 0)))
+
+
 def _coil_metric_from_so_item(so_item, fieldname):
 	value = so_item.get(fieldname)
 	if value not in (None, ""):
@@ -2560,7 +2580,7 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 
 	existing_rows = list(doc.job_output or [])
 	cutting_rows = doc.cutting_detail or []
-	total_pieces = sum(max(0, cint(getattr(row, "strip", 0))) for row in cutting_rows)
+	total_pieces = _total_job_output_pieces_for_cutting(doc, cutting_rows)
 	target_fields = _get_coil_output_target_fields()
 
 	def resolve_parent_tag_base():
@@ -2639,7 +2659,7 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 
 	output_index = 0
 	for cutting_row in cutting_rows:
-		strip_count = max(0, cint(getattr(cutting_row, "strip", 0)))
+		strip_count = _repeat_count_for_cutting_row(doc, cutting_row)
 		for _ in range(strip_count):
 			existing_row = existing_rows[output_index] if output_index < len(existing_rows) else None
 			row = doc.append("job_output", {})
@@ -3648,12 +3668,25 @@ def create_next_ss_coil_entry(source_name):
 			continue
 		existing_name = _find_existing_next_process_doc(source_doc, next_operation, output_row.get("tag_no"))
 		if existing_name:
+			existing_doc = frappe.get_doc("SS Coil", existing_name)
+			if not existing_doc.cutting_detail:
+				_append_cutting_scheme_to_ss_coil(
+					existing_doc,
+					source_doc.sales_order_item,
+					operation=next_operation,
+					source_doc=source_doc,
+					output_row=output_row.as_dict(),
+				)
+				if existing_doc.cutting_detail:
+					_sync_ss_coil_cutting_detail_and_job_output(existing_doc)
+					existing_doc.save(ignore_permissions=True)
 			skipped_docs.append(
 				{
 					"name": existing_name,
 					"tag_no": output_row.get("tag_no"),
 					"operation": next_operation,
 					"order_status": frappe.db.get_value("SS Coil", existing_name, "order_status"),
+					"cutting_backfilled": bool(existing_doc.cutting_detail),
 				}
 			)
 			continue
@@ -3736,9 +3769,11 @@ def create_next_ss_coil_entry(source_name):
 			target_doc,
 			source_doc.sales_order_item,
 			operation=next_operation,
+			source_doc=source_doc,
+			output_row=output_row.as_dict(),
 		)
 		if target_doc.cutting_detail:
-			_sync_job_output_rows_from_cutting_detail(target_doc)
+			_sync_ss_coil_cutting_detail_and_job_output(target_doc)
 
 		target_doc.insert(ignore_permissions=True)
 		created_docs.append(
@@ -4597,6 +4632,8 @@ def _cutting_scheme_rows_for_sales_order_item(sales_order_item, operation=None, 
 			if value not in (None, ""):
 				row[fieldname] = value
 		if row:
+			if doc.sales_order and not row.get("so_no"):
+				row["so_no"] = doc.sales_order
 			rows.append(row)
 	return rows
 
@@ -4618,6 +4655,33 @@ def _so_production_plan_process_key_enabled():
 
 def _cutting_scheme_row_has_length():
 	return frappe.db.has_column("Cutting Scheme SO", "length")
+
+
+def _cutting_scheme_row_has_total_sheets():
+	return frappe.db.has_column("Cutting Scheme SO", "total_sheets")
+
+
+def _normalize_leveler_scheme_row(row, process_key):
+	row = frappe._dict(row)
+	if not _uses_numeric_length_for_process(process_key):
+		return row
+	sheets = flt(row.get("total_sheets"))
+	if not sheets and flt(row.get("strip")) > 1:
+		sheets = flt(row.strip)
+	if sheets:
+		row.total_sheets = sheets
+		row.strip = flt(row.strip) or 1
+	elif not flt(row.strip):
+		row.strip = 1
+	return row
+
+
+def _scheme_row_total_width(row, process_key):
+	width = flt(row.get("width") if isinstance(row, dict) else getattr(row, "width", None))
+	if _uses_numeric_length_for_process(process_key):
+		return width
+	strip = flt(row.get("strip") if isinstance(row, dict) else getattr(row, "strip", None))
+	return width * strip if strip else width
 
 
 def _find_so_production_plan_name(sales_order, sales_order_item, process_key="slitter"):
@@ -4655,18 +4719,134 @@ def _find_so_production_plan_name(sales_order, sales_order_item, process_key="sl
 	return None
 
 
-def _append_cutting_scheme_to_ss_coil(ss_coil_doc, sales_order_item, operation=None, process_key=None):
+def _cutting_detail_rows_from_source_ss_coil(source_doc, process_key, output_row=None):
+	"""Build next-process cutting rows from the completed coil's cutting_detail table."""
+	source_rows = list(source_doc.cutting_detail or [])
+	if not source_rows:
+		return []
+
+	so_item = _so_item_dict(source_doc.sales_order_item)
+	out_width = flt((output_row or {}).get("width"))
+	filtered = source_rows
+	if out_width:
+		matching = [r for r in source_rows if flt(r.width if hasattr(r, "width") else r.get("width")) == out_width]
+		if matching:
+			filtered = matching
+		elif len(source_rows) == 1:
+			filtered = source_rows
+
+	fieldnames = _child_table_fieldnames("Cutting Scheme")
+	rows = []
+	for idx, source_row in enumerate(filtered, start=1):
+		src = source_row.as_dict() if hasattr(source_row, "as_dict") else frappe._dict(source_row)
+		row = {}
+		for fieldname in fieldnames:
+			value = src.get(fieldname)
+			if value not in (None, ""):
+				row[fieldname] = value
+		row["seq"] = row.get("seq") or idx
+		if _uses_numeric_length_for_process(process_key):
+			length = flt(so_item.get("custom_length")) or flt(src.get("length"))
+			if length:
+				row["length"] = length
+				row.setdefault("tolerance_plus", length + 1)
+				row.setdefault("tolerance_minus", length - 1)
+			row.setdefault("lengthcut", flt(row.get("lengthcut")) or 1)
+			sheets = flt(src.get("total_sheets")) or (flt(src.get("strip")) if flt(src.get("strip")) > 1 else 0)
+			if output_row:
+				qty = flt(output_row.get("actual_qty")) or flt(output_row.get("estimated_qty"))
+				if qty and not sheets:
+					sheets = qty
+			if sheets:
+				row["total_sheets"] = sheets
+				row["strip"] = 1
+			elif output_row:
+				row["strip"] = row.get("strip") or 1
+		if row.get("width") and row.get("strip"):
+			row["total_width"] = flt(row["width"]) * flt(row["strip"])
+		if row:
+			rows.append(row)
+	return rows
+
+
+def _append_cutting_scheme_to_ss_coil(
+	ss_coil_doc,
+	sales_order_item,
+	operation=None,
+	process_key=None,
+	source_doc=None,
+	output_row=None,
+):
+	so_item = _so_item_dict(sales_order_item)
+	process_key = process_key or _process_key_for_operation(operation, so_item) or "slitter"
 	rows = _cutting_scheme_rows_for_sales_order_item(
 		sales_order_item,
 		operation=operation,
 		process_key=process_key,
 		sales_order=ss_coil_doc.order_no,
 	)
+	if not rows and source_doc:
+		rows = _cutting_detail_rows_from_source_ss_coil(source_doc, process_key, output_row)
 	for scheme_row in rows:
 		row = dict(scheme_row)
 		if ss_coil_doc.order_no:
 			row["so_no"] = ss_coil_doc.order_no
 		ss_coil_doc.append("cutting_detail", row)
+
+
+def _sync_ss_coil_cutting_detail_and_job_output(doc):
+	if not doc.cutting_detail:
+		return False
+	_sync_job_output_rows_from_cutting_detail(doc)
+	return True
+
+
+@frappe.whitelist()
+def backfill_ss_coil_cutting_detail(ss_coil):
+	"""Fill empty cutting_detail from SO plan (or previous coil's cutting table)."""
+	doc = frappe.get_doc("SS Coil", ss_coil)
+	if doc.cutting_detail:
+		return {"updated": False, "reason": "already_has_rows"}
+
+	source_doc = _find_previous_ss_coil_for_input(doc)
+	output_row = (doc.input_coil or [None])[0]
+	output_row = output_row.as_dict() if output_row else None
+
+	_append_cutting_scheme_to_ss_coil(
+		doc,
+		doc.sales_order_item,
+		operation=doc.operation,
+		source_doc=source_doc,
+		output_row=output_row,
+	)
+	if not doc.cutting_detail:
+		return {"updated": False, "reason": "no_scheme_rows"}
+
+	_sync_ss_coil_cutting_detail_and_job_output(doc)
+	doc.save(ignore_permissions=True)
+	return {"updated": True, "rows": len(doc.cutting_detail)}
+
+
+def _find_previous_ss_coil_for_input(doc):
+	input_row = (doc.input_coil or [None])[0]
+	if not input_row or not doc.order_no:
+		return None
+	tag_no = input_row.get("tag_no")
+	prev_operation = input_row.get("previous_job_order")
+	if not tag_no:
+		return None
+	filters = {"order_no": doc.order_no, "sales_order_item": doc.sales_order_item}
+	if prev_operation:
+		filters["operation"] = prev_operation
+	candidates = frappe.get_all("SS Coil", filters=filters, fields=["name"], order_by="modified desc")
+	for row in candidates:
+		source = frappe.get_doc("SS Coil", row.name)
+		for out in source.job_output or []:
+			if out.tag_no == tag_no:
+				return source
+		if (source.input_coil or [{}])[0].get("tag_no") == tag_no:
+			return source
+	return frappe.get_doc("SS Coil", candidates[0].name) if candidates else None
 
 
 def _resolve_ss_coil_operation(so_item, operation=None):
@@ -6953,11 +7133,11 @@ def _get_or_create_so_production_plan(sales_order, sales_order_item, process_key
 	return doc
 
 
-def _cutting_scheme_child_row_from_input(row, idx):
-	row = frappe._dict(row)
+def _cutting_scheme_child_row_from_input(row, idx, process_key="slitter", sales_order=None):
+	row = _normalize_leveler_scheme_row(row, process_key)
 	width = flt(row.width)
 	strip = flt(row.strip)
-	total_width = width * strip if strip else width
+	total_width = _scheme_row_total_width(row, process_key)
 	child = {
 		"seq": idx,
 		"width": width,
@@ -6968,8 +7148,12 @@ def _cutting_scheme_child_row_from_input(row, idx):
 		"tolerance_minus": row.tolerance_minus,
 		"knife": row.knife,
 	}
+	if sales_order:
+		child["so_no"] = sales_order
 	if _cutting_scheme_row_has_length():
 		child["length"] = flt(row.length)
+	if _cutting_scheme_row_has_total_sheets() and _uses_numeric_length_for_process(process_key):
+		child["total_sheets"] = flt(row.total_sheets)
 	return child
 
 
@@ -6988,11 +7172,16 @@ def _save_so_production_plan_rows(sales_order, sales_order_item, process_key, ro
 		width = flt(row.width)
 		if not width:
 			continue
-		strip = flt(row.strip)
-		total_width = width * strip if strip else width
+		row = _normalize_leveler_scheme_row(row, process_key)
+		total_width = _scheme_row_total_width(row, process_key)
 		total_popup_width += width
 		total_total_width += total_width
-		doc.append("cutting_scheme", _cutting_scheme_child_row_from_input(row, idx))
+		doc.append(
+			"cutting_scheme",
+			_cutting_scheme_child_row_from_input(
+				row, idx, process_key, sales_order=sales_order or doc.sales_order
+			),
+		)
 
 	doc.save(ignore_permissions=True)
 
@@ -7117,9 +7306,37 @@ def get_sales_order_cutting_scheme_report(sales_order):
 		for d in frappe.get_all(
 			"Sales Order Item",
 			filters={"parent": sales_order, "parenttype": "Sales Order", "parentfield": "items"},
-			fields=["name", "item_name", "item_code", "qty", "custom_dimension", "custom_tag_no"],
+			fields=[
+				"name",
+				"item_name",
+				"item_code",
+				"qty",
+				"custom_dimension",
+				"custom_tag_no",
+				"custom_thickness",
+				"custom_width",
+				"custom_length_c",
+				"custom_length",
+			],
 		)
 	}
+
+	def _report_group_item_fields(item):
+		thickness = item.get("custom_thickness")
+		width = item.get("custom_width")
+		length_c = item.get("custom_length_c") or DEFAULT_LENGTH_C
+		length = flt(item.get("custom_length"))
+		return {
+			"item_label": item.get("item_name") or item.get("item_code"),
+			"qty": item.get("qty"),
+			"dimension": item.get("custom_dimension"),
+			"tag_no": item.get("custom_tag_no"),
+			"thickness": thickness,
+			"width": width,
+			"length_c": length_c,
+			"length": length,
+			"dimension_numeric": _build_dimension_string([thickness, width, length]) if length else "",
+		}
 	if not plans and not item_meta:
 		return []
 
@@ -7138,10 +7355,8 @@ def get_sales_order_cutting_scheme_report(sales_order):
 				"sales_order_item": plan.sales_order_item,
 				"process_key": process_key,
 				"process_label": _label_for_process(process_key),
+				**_report_group_item_fields(item),
 				"item_label": item.get("item_name") or item.get("item_code") or plan.sales_order_item,
-				"qty": item.get("qty"),
-				"dimension": item.get("custom_dimension"),
-				"tag_no": item.get("custom_tag_no"),
 				"rows": [row.as_dict() for row in doc.cutting_scheme],
 			}
 		)
@@ -7158,10 +7373,8 @@ def get_sales_order_cutting_scheme_report(sales_order):
 						"sales_order_item": item_name,
 						"process_key": process_key,
 						"process_label": _label_for_process(process_key),
+						**_report_group_item_fields(item),
 						"item_label": item.get("item_name") or item.get("item_code") or item_name,
-						"qty": item.get("qty"),
-						"dimension": item.get("custom_dimension"),
-						"tag_no": item.get("custom_tag_no"),
 						"rows": [],
 					}
 				)

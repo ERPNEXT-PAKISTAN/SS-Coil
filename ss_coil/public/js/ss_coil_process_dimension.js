@@ -8,6 +8,17 @@ ss_coil.process.PROCESS_LABELS = {
 	reshearing: "Reshearing",
 };
 
+/** Leveler/Reshearing: total_sheets holds order qty; strip is 1 (one scheme line). */
+ss_coil.process.schemeSheetCount = function (row, processKey) {
+	if (!row) {
+		return 0;
+	}
+	if (ss_coil.process.usesNumericLength(processKey)) {
+		return flt(row.total_sheets) || (flt(row.strip) > 1 ? flt(row.strip) : 0);
+	}
+	return flt(row.strip);
+};
+
 /** Slitter uses length_c (C); leveler & reshearing use numeric custom_length / length. */
 ss_coil.process.usesNumericLength = function (processKey) {
 	return processKey === "leveler" || processKey === "reshearing";

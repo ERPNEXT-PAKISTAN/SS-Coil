@@ -124,6 +124,7 @@ doc_events = {
 		# update (Frappe fires on_update on both), so after_insert is
 		# redundant on top of it.
 		"before_validate": [
+			"ss_coil.api.normalize_ss_coil_machine_operation_link",
 			"ss_coil.api.sync_ss_coil_sales_order_item_fields",
 			"ss_coil.api.prepare_ss_coil_output_tags",
 			"ss_coil.api.sync_ss_coil_process_tracking",

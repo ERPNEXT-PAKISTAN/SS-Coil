@@ -11,11 +11,12 @@ def after_migrate():
 
 def run_post_install_setup():
 	"""Ensure tag-origin custom fields and form layouts exist after install or migrate."""
-	from ss_coil.api import setup_sales_order_job_sheet_fields, setup_tag_origin_fields
+	from ss_coil.api import setup_sales_order_job_sheet_fields, setup_ss_coil_machine_operation_link, setup_tag_origin_fields
 	from ss_coil.form_layout import sync_coil_form_layouts
 	from ss_coil.workspace_sync import sync_ss_coil_workspace
 
 	setup_tag_origin_fields()
+	setup_ss_coil_machine_operation_link()
 	setup_sales_order_job_sheet_fields()
 	sync_coil_form_layouts()
 	sync_delivery_advise_print_formats()

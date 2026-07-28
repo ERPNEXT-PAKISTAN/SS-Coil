@@ -4942,13 +4942,19 @@ def setup_tag_origin_fields():
 
 def setup_ss_coil_machine_operation_link():
 	"""SS Coil Machine links to Operation (same as SO Slitter/Leveler/Reshearing), not Workstation."""
-	frappe.db.set_value(
-		"DocField",
-		{"parent": "SS Coil", "fieldname": "machine"},
-		"options",
-		"Operation",
-		update_modified=False,
+	try:
+		frappe.reload_doc("ss_coil", "doctype", "ss_coil", force=True)
+	except Exception:
+		pass
+
+	docfield_name = frappe.db.get_value(
+		"DocField", {"parent": "SS Coil", "fieldname": "machine"}, "name"
 	)
+	if docfield_name:
+		frappe.db.set_value(
+			"DocField", docfield_name, "options", "Operation", update_modified=False
+		)
+
 	ps_name = "SS Coil-machine-options"
 	if frappe.db.exists("Property Setter", ps_name):
 		frappe.db.set_value("Property Setter", ps_name, "value", "Operation", update_modified=False)
@@ -4964,7 +4970,38 @@ def setup_ss_coil_machine_operation_link():
 			validate_fields_for_doctype=False,
 			is_system_generated=False,
 		)
+
 	frappe.clear_cache(doctype="SS Coil")
+	frappe.clear_cache(doctype="Property Setter")
+
+
+def normalize_ss_coil_machine_operation_link(doc, method=None):
+	"""After machine field points to Operation, fix stale Workstation names on save."""
+	if doc.doctype != "SS Coil":
+		return
+
+	machine_field = frappe.get_meta("SS Coil").get_field("machine")
+	if not machine_field or (machine_field.options or "") != "Operation":
+		return
+
+	machine = doc.get("machine")
+	if machine and frappe.db.exists("Operation", machine):
+		return
+
+	if doc.get("operation") and frappe.db.exists("Operation", doc.operation):
+		doc.machine = doc.operation
+		return
+
+	if doc.get("sales_order_item") and doc.get("operation"):
+		so_item = frappe.get_doc("Sales Order Item", doc.sales_order_item)
+		_op, machine = _operation_and_machine_from_sales_order_item(so_item, doc.operation)
+		if machine:
+			doc.machine = machine
+			if not doc.operation or not frappe.db.exists("Operation", doc.operation):
+				doc.operation = _op or doc.operation
+			return
+
+	doc.machine = ""
 
 
 def setup_updatable_stock_entry_sales_order_property_setters():

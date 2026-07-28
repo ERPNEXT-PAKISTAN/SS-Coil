@@ -1627,7 +1627,15 @@ frappe.ui.form.on("Coil Output", {
 
 frappe.ui.form.on("Coil SO", {
 	qty(frm) {
+		applySoItemQuantitiesToInputCoil(frm);
+		frm.refresh_field("input_coil");
+		rebuild_job_output_from_input(frm);
 		update_input_coil_length(frm);
+	},
+	qty_of_coil(frm) {
+		applySoItemQuantitiesToInputCoil(frm);
+		frm.refresh_field("input_coil");
+		rebuild_job_output_from_input(frm);
 	},
 	thickness(frm) {
 		update_input_coil_length(frm);
@@ -1818,6 +1826,27 @@ function get_mappable_fieldnames(doctype) {
 		.map((df) => df.fieldname);
 }
 
+function soItemTableQtyMetrics(so_row) {
+	if (!so_row) {
+		return { estimated_wt: 0, estimated_qty: 0, actual_qty: 0 };
+	}
+	const qty_of_coil = flt(so_row.qty_of_coil);
+	return {
+		estimated_wt: flt(so_row.qty),
+		estimated_qty: qty_of_coil,
+		actual_qty: qty_of_coil,
+	};
+}
+
+function applySoItemQuantitiesToInputCoil(frm) {
+	const metrics = soItemTableQtyMetrics((frm.doc.so_item || [])[0]);
+	(frm.doc.input_coil || []).forEach((row) => {
+		row.estimated_wt = metrics.estimated_wt;
+		row.estimated_qty = metrics.estimated_qty;
+		row.actual_qty = metrics.actual_qty;
+	});
+}
+
 function load_input_coil_from_sales_order_item(frm, item) {
 	const parent_tag = item.custom_raw_material_tag_no;
 	const apply_input = (details) => {
@@ -1844,6 +1873,7 @@ function load_input_coil_from_sales_order_item(frm, item) {
 			}
 		});
 
+		applySoItemQuantitiesToInputCoil(frm);
 		frm.refresh_field("input_coil");
 	};
 
@@ -1862,9 +1892,6 @@ function load_input_coil_from_sales_order_item(frm, item) {
 		class: item.custom_raw_material_item || item.item_name || item.item_code,
 		tag_no: "",
 		dimension: item.custom_dimension || "",
-		estimated_qty: item.qty,
-		estimated_wt: item.custom_estimated_wt,
-		actual_qty: item.qty,
 		length: item.custom_length || item.custom_length_c,
 		location: item.custom_location,
 		slitter: item.custom_slitter,
@@ -1951,8 +1978,9 @@ function rebuild_job_output_from_input(frm) {
 
 function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequenceNumber, outputWidth, totalPieces) {
 	const target_fields = get_mappable_fieldnames("Coil Output");
-	const estimatedQty = totalPieces ? flt(input_row.estimated_qty) / totalPieces : flt(input_row.estimated_qty);
-	const estimatedWt = totalPieces ? flt(input_row.estimated_wt) / totalPieces : flt(input_row.estimated_wt);
+	const soMetrics = soItemTableQtyMetrics(so_row);
+	const estimatedQty = totalPieces ? soMetrics.estimated_qty / totalPieces : soMetrics.estimated_qty;
+	const estimatedWt = totalPieces ? soMetrics.estimated_wt / totalPieces : soMetrics.estimated_wt;
 	const parentTag = input_row.tag_no || "";
 
 	target_fields.forEach((fieldname) => {

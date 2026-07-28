@@ -2144,6 +2144,21 @@ def _ss_coil_packing_type(doc, so_row=None):
 	return None
 
 
+def _coil_so_table_qty_metrics(so_row):
+	"""Coil SO (so_item) row drives input/job output qty: wt ← qty, qty fields ← qty_of_coil."""
+	if not so_row:
+		return {"estimated_wt": 0.0, "estimated_qty": 0.0, "actual_qty": 0.0}
+	qty_of_coil = flt(getattr(so_row, "qty_of_coil", None) or so_row.get("qty_of_coil"))
+	qty = flt(getattr(so_row, "qty", None) or so_row.get("qty"))
+	return {"estimated_wt": qty, "estimated_qty": qty_of_coil, "actual_qty": qty_of_coil}
+
+
+def _sales_order_item_qty_metrics_for_input(so_item):
+	qty_of_coil = flt(so_item.get("custom_qty_of_coil"))
+	qty = flt(so_item.get("qty"))
+	return {"estimated_wt": qty, "estimated_qty": qty_of_coil, "actual_qty": qty_of_coil}
+
+
 def sync_ss_coil_sales_order_item_fields(doc, method=None):
 	"""Pull Sales Order item values onto SS Coil header, so_item, cutting_detail, and job_output."""
 	if doc.doctype != "SS Coil":
@@ -2167,6 +2182,13 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 			value = so_item_doc.get(f"custom_{proc}")
 			if _truthy_process_value(value) and not _truthy_process_value(so_row.get(proc)):
 				so_row.set(proc, value)
+
+	so_metrics = _coil_so_table_qty_metrics(so_row)
+	if so_row and doc.input_coil:
+		for input_row in doc.input_coil:
+			input_row.estimated_wt = so_metrics["estimated_wt"]
+			input_row.estimated_qty = so_metrics["estimated_qty"]
+			input_row.actual_qty = so_metrics["actual_qty"]
 
 	if so_item_doc:
 		mill = so_item_doc.get("custom_mill")
@@ -2221,8 +2243,17 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 	parent_tag_base = resolve_parent_tag_base()
 
 	def apply_values(row, existing_row=None, sequence_number=1, output_width=None, pieces_count=1):
-		estimated_qty = flt(getattr(input_row, "estimated_qty", 0)) / pieces_count if pieces_count else flt(getattr(input_row, "estimated_qty", 0))
-		estimated_wt = flt(getattr(input_row, "estimated_wt", 0)) / pieces_count if pieces_count else flt(getattr(input_row, "estimated_wt", 0))
+		so_metrics = _coil_so_table_qty_metrics(so_row)
+		estimated_qty = (
+			flt(so_metrics["estimated_qty"]) / pieces_count
+			if pieces_count
+			else flt(so_metrics["estimated_qty"])
+		)
+		estimated_wt = (
+			flt(so_metrics["estimated_wt"]) / pieces_count
+			if pieces_count
+			else flt(so_metrics["estimated_wt"])
+		)
 		for fieldname in target_fields:
 			if fieldname == "class":
 				row.set("class", getattr(input_row, "class", None))
@@ -4136,9 +4167,6 @@ def _input_coil_row_from_sales_order_item(so_item):
 			"class": so_item.get("custom_raw_material_item") or so_item.get("item_name") or so_item.get("item_code"),
 			"tag_no": "",
 			"dimension": so_item.get("custom_dimension") or "",
-			"estimated_qty": so_item.get("qty"),
-			"estimated_wt": so_item.get("custom_estimated_wt"),
-			"actual_qty": so_item.get("qty"),
 			"length": so_item.get("custom_length") or so_item.get("custom_length_c"),
 			"location": so_item.get("custom_location"),
 		}
@@ -4154,14 +4182,14 @@ def _input_coil_row_from_sales_order_item(so_item):
 			details["tag_no"] = parent_tag
 		for key, value in {
 			"dimension": so_item.get("custom_dimension") or "",
-			"estimated_qty": so_item.get("qty"),
-			"estimated_wt": so_item.get("custom_estimated_wt"),
-			"actual_qty": so_item.get("qty"),
 			"length": so_item.get("custom_length") or so_item.get("custom_length_c"),
 			"location": so_item.get("custom_location"),
 		}.items():
 			if details.get(key) in (None, "") and value not in (None, ""):
 				details[key] = value
+
+	qty_metrics = _sales_order_item_qty_metrics_for_input(so_item)
+	details.update(qty_metrics)
 
 	for proc in PROCESS_FIELDS:
 		if not details.get(proc):

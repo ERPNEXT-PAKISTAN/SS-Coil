@@ -2792,7 +2792,7 @@ function operationAndMachineFromSalesOrderItem(item, operationHint) {
 	if (!processKey) {
 		processKey = configured[0] || "slitter";
 	}
-	const opLink = item[`custom_${processKey}`] || formatProcessLabel(processKey);
+	const opLink = item[`custom_${processKey}`] || "";
 	return { operation: opLink, machine: opLink };
 }
 

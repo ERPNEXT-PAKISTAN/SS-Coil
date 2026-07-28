@@ -730,6 +730,16 @@ def _process_key_for_operation(value, so_item=None):
 	return None
 
 
+def _coerce_operation_link(value):
+	"""Return value only if it is a valid Operation name (Link target)."""
+	if value in (None, ""):
+		return ""
+	name = str(value).strip()
+	if name and frappe.db.exists("Operation", name):
+		return name
+	return ""
+
+
 def _operation_and_machine_from_sales_order_item(so_item, operation=None):
 	"""SS Coil operation + machine from SO Item process Operation links (not Workstation)."""
 	configured = _get_enabled_processes_from_row(so_item, custom=True)
@@ -739,7 +749,9 @@ def _operation_and_machine_from_sales_order_item(so_item, operation=None):
 	if not process_key:
 		process_key = "slitter"
 
-	op_link = so_item.get(f"custom_{process_key}") or _label_for_process(process_key)
+	op_link = _coerce_operation_link(so_item.get(f"custom_{process_key}"))
+	if not op_link:
+		op_link = _coerce_operation_link(_label_for_process(process_key))
 	return op_link, op_link
 
 
@@ -4930,21 +4942,29 @@ def setup_tag_origin_fields():
 
 def setup_ss_coil_machine_operation_link():
 	"""SS Coil Machine links to Operation (same as SO Slitter/Leveler/Reshearing), not Workstation."""
+	frappe.db.set_value(
+		"DocField",
+		{"parent": "SS Coil", "fieldname": "machine"},
+		"options",
+		"Operation",
+		update_modified=False,
+	)
 	ps_name = "SS Coil-machine-options"
 	if frappe.db.exists("Property Setter", ps_name):
 		frappe.db.set_value("Property Setter", ps_name, "value", "Operation", update_modified=False)
-		return
-	frappe.make_property_setter(
-		{
-			"doctype": "SS Coil",
-			"fieldname": "machine",
-			"property": "options",
-			"property_type": "Text",
-			"value": "Operation",
-		},
-		validate_fields_for_doctype=False,
-		is_system_generated=False,
-	)
+	else:
+		frappe.make_property_setter(
+			{
+				"doctype": "SS Coil",
+				"fieldname": "machine",
+				"property": "options",
+				"property_type": "Text",
+				"value": "Operation",
+			},
+			validate_fields_for_doctype=False,
+			is_system_generated=False,
+		)
+	frappe.clear_cache(doctype="SS Coil")
 
 
 def setup_updatable_stock_entry_sales_order_property_setters():

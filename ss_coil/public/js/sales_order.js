@@ -2172,23 +2172,17 @@ function escape_html(value) {
 	return frappe.utils.escape_html(value == null ? "" : String(value));
 }
 
-function build_cutting_scheme_report_html(groups) {
-	if (!groups.length) {
-		return `<div style="${panelStyle("#fffefb", "#eadfbe")}"><div style="color:#7b6f5c;">No cutting scheme saved yet.</div></div>`;
-	}
+function build_cutting_scheme_process_table_html(group) {
+	const process_key = group.process_key || "slitter";
+	const process_label = group.process_label || SS_COIL_CUTTING_PROCESS_LABELS[process_key] || process_key;
+	const is_slitter = process_key === "slitter";
+	const row_list = group.rows || [];
 
-	return groups
-		.map((group) => {
-			const process_key = group.process_key || "slitter";
-			const process_label = group.process_label || SS_COIL_CUTTING_PROCESS_LABELS[process_key] || process_key;
-			const is_slitter = process_key === "slitter";
-			const row_list = group.rows || [];
-
-			const rows = row_list.length
-				? row_list
-						.map((row) => {
-							if (is_slitter) {
-								return `<tr>
+	const rows = row_list.length
+		? row_list
+				.map((row) => {
+					if (is_slitter) {
+						return `<tr>
 							<td>${row.seq || ""}</td>
 							<td>${row.width || ""}</td>
 							<td>${row.strip || ""}</td>
@@ -2198,52 +2192,102 @@ function build_cutting_scheme_report_html(groups) {
 							<td>${row.tolerance_minus || ""}</td>
 							<td>${row.knife ? "Yes" : "No"}</td>
 						</tr>`;
-							}
-							return `<tr>
-							<td>${row.seq || ""}</td>
-							<td>${row.width || ""}</td>
-							<td>${row.length || ""}</td>
-							<td>${row.lengthcut || ""}</td>
-							<td>${row.strip || ""}</td>
-							<td>${row.tolerance_plus || ""}</td>
-							<td>${row.tolerance_minus || ""}</td>
-						</tr>`;
-						})
-						.join("")
-				: `<tr><td colspan="${is_slitter ? 8 : 7}" style="color:#64748b;text-align:center;padding:14px;">${__(
-						"No rows saved for this process",
-					)}</td></tr>`;
+					}
+					return `<tr>
+						<td>${row.seq || ""}</td>
+						<td>${row.width || ""}</td>
+						<td>${row.length || ""}</td>
+						<td>${row.lengthcut || ""}</td>
+						<td>${row.strip || ""}</td>
+						<td>${row.tolerance_plus || ""}</td>
+						<td>${row.tolerance_minus || ""}</td>
+					</tr>`;
+				})
+				.join("")
+		: `<tr><td colspan="${is_slitter ? 8 : 7}" style="color:#64748b;text-align:center;padding:10px;">${__(
+				"No rows saved",
+			)}</td></tr>`;
 
-			const thead = is_slitter
-				? `<tr>
-					<th>SEQ</th><th>Width</th><th>Strip</th><th>LengthCut</th>
-					<th>Total Width</th><th>Tol (+)</th><th>Tol (-)</th><th>Knife</th>
-				</tr>`
-				: `<tr>
-					<th>SEQ</th><th>Width</th><th>Length</th><th>LengthCut</th>
-					<th>Total sheets</th><th>Tol(+)</th><th>Tol(-)</th>
-				</tr>`;
+	const thead = is_slitter
+		? `<tr>
+			<th>SEQ</th><th>Width</th><th>Strip</th><th>LengthCut</th>
+			<th>Total Width</th><th>Tol (+)</th><th>Tol (-)</th><th>Knife</th>
+		</tr>`
+		: `<tr>
+			<th>SEQ</th><th>Width</th><th>Length</th><th>LengthCut</th>
+			<th>Total sheets</th><th>Tol(+)</th><th>Tol(-)</th>
+		</tr>`;
+
+	return `
+		<div style="margin-bottom:14px;">
+			<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+				<span style="display:inline-block;background:#1d4ed8;color:#fff;font-size:11px;font-weight:800;padding:4px 12px;border-radius:8px;">${escape_html(process_label)}</span>
+				<span style="font-size:11px;color:#64748b;">${row_list.length ? `${row_list.length} ${__("row(s)")}` : __("Not saved")}</span>
+			</div>
+			<div style="overflow:auto;">
+				<table class="table table-bordered table-sm" style="margin-bottom:0; background:#fffefb; min-width:640px;">
+					<thead style="background:#22384d; color:#f8fbff;">${thead}</thead>
+					<tbody>${rows}</tbody>
+				</table>
+			</div>
+		</div>`;
+}
+
+function group_cutting_scheme_report_by_item(groups) {
+	const process_order = { slitter: 0, leveler: 1, reshearing: 2 };
+	const by_item = new Map();
+	(groups || []).forEach((group) => {
+		const key = group.sales_order_item || group.item_label || group.plan_name || "";
+		if (!by_item.has(key)) {
+			by_item.set(key, { meta: group, processes: [] });
+		}
+		by_item.get(key).processes.push(group);
+	});
+	return Array.from(by_item.values()).map((entry) => {
+		entry.processes.sort(
+			(a, b) =>
+				(process_order[a.process_key] ?? 9) - (process_order[b.process_key] ?? 9) ||
+				String(a.process_label || "").localeCompare(String(b.process_label || "")),
+		);
+		return entry;
+	});
+}
+
+function build_cutting_scheme_report_html(groups) {
+	if (!groups.length) {
+		return `<div style="${panelStyle("#fffefb", "#eadfbe")}"><div style="color:#7b6f5c;">No cutting scheme saved yet.</div></div>`;
+	}
+
+	return group_cutting_scheme_report_by_item(groups)
+		.map(({ meta, processes }) => {
+			const process_chips = processes
+				.map((p) => {
+					const label = p.process_label || SS_COIL_CUTTING_PROCESS_LABELS[p.process_key] || p.process_key;
+					return `<span style="display:inline-block;background:#334155;color:#f8fafc;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;margin:0 4px 4px 0;">${escape_html(label)}</span>`;
+				})
+				.join("");
+			const process_tables = processes.map((p) => build_cutting_scheme_process_table_html(p)).join("");
 
 			return `
 				<div style="border:1px solid #ddd6bf; border-radius:18px; overflow:hidden; background:linear-gradient(180deg,#fffdfa 0%,#f7f2e8 100%); box-shadow:0 10px 28px rgba(70,53,20,.06); margin-bottom:16px;">
 					<div style="display:flex; gap:0; align-items:stretch; flex-wrap:wrap;">
-						<div style="flex:0 0 290px; background:linear-gradient(180deg,#203549 0%,#314e68 100%); color:#f7fbff; padding:18px;">
+						<div style="flex:0 0 260px; background:linear-gradient(180deg,#203549 0%,#314e68 100%); color:#f7fbff; padding:18px;">
 							<div style="font-size:11px; text-transform:uppercase; letter-spacing:.1em; opacity:.72;">Cutting Item</div>
-							<div style="font-size:20px; font-weight:800; margin-top:8px;">${escape_html(group.item_label || group.sales_order_item)}</div>
-							<div style="margin-top:10px;display:inline-block;background:#1d4ed8;color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:8px;">${escape_html(process_label)}</div>
-							<div style="margin-top:14px; display:grid; gap:8px; font-size:12px; color:#d9e7f4;">
-								<div><strong>Qty:</strong> ${group.qty || "-"}</div>
-								<div><strong>Tag:</strong> ${escape_html(group.tag_no || "-")}</div>
-								<div><strong>Dimension:</strong> ${escape_html(group.dimension || "-")}</div>
+							<div style="font-size:18px; font-weight:800; margin-top:8px;line-height:1.3;">${escape_html(meta.item_label || meta.sales_order_item)}</div>
+							<div style="margin-top:12px; display:grid; gap:8px; font-size:12px; color:#d9e7f4;">
+								<div><strong>Qty:</strong> ${meta.qty || "-"}</div>
+								<div><strong>Tag:</strong> ${escape_html(meta.tag_no || "-")}</div>
+								<div><strong>Dimension:</strong> ${escape_html(meta.dimension || "-")}</div>
+							</div>
+							<div style="margin-top:14px;">
+								<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.75;margin-bottom:6px;">${__(
+									"Processes",
+								)}</div>
+								<div style="display:flex;flex-wrap:wrap;">${process_chips}</div>
 							</div>
 						</div>
-						<div style="flex:1; min-width:420px; padding:16px;">
-							<div style="overflow:auto;">
-								<table class="table table-bordered" style="margin-bottom:0; background:#fffefb; min-width:760px;">
-									<thead style="background:#22384d; color:#f8fbff;">${thead}</thead>
-									<tbody>${rows}</tbody>
-								</table>
-							</div>
+						<div style="flex:1; min-width:420px; padding:16px 16px 6px;">
+							${process_tables}
 						</div>
 					</div>
 				</div>`;

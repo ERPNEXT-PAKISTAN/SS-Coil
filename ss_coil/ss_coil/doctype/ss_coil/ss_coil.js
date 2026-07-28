@@ -92,6 +92,7 @@ frappe.ui.form.on("SS Coil", {
 		ss_coil.process.syncSoItemDisplayDimension(frm);
 		update_input_coil_length(frm);
 		apply_ss_coil_cutting_detail_grid_mode(frm);
+		update_grand_totals(frm);
 		render_ss_coil_formulas(frm);
 		load_ss_coil_flow_and_dashboards(frm);
 	},
@@ -247,7 +248,11 @@ frappe.ui.form.on("SS Coil", {
 
 				frm.set_value("calc_ratio_2", flt(item.custom_calc_ratio_2));
 				frm.set_value("actual_ratio", flt(item.custom_actual_ratio));
-				frm.set_value("remaining_width", flt(item.custom_remaining_width));
+				if (ss_coil.process.usesSlitterWidthMetrics(ss_coil.process.resolveProcessKey(frm))) {
+					frm.set_value("remaining_width", flt(item.custom_remaining_width));
+				} else {
+					frm.set_value("remaining_width", 0);
+				}
 				// SS Coil keeps its own order_status per document. Do not copy the
 				// Sales Order Item custom_status rollup here - that reflects all
 				// coils for this line, not this document's stage.
@@ -548,18 +553,30 @@ function buildSSCoilDashboardHtml(data) {
 		</div>
 	`;
 
+	const slitterWidthMetrics =
+		summary.uses_slitter_width_metrics !== false &&
+		(summary.process_key || "slitter") === "slitter";
+	const stripOrSheetLabel = slitterWidthMetrics ? __("Total Strips") : __("Total Sheets");
+	const stripOrSheetValue = slitterWidthMetrics
+		? summary.total_strips
+		: summary.total_sheets || summary.total_strips;
+
 	const planningSection = `
 		<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;">
 			${statCard("Input Coils", summary.input_count || 0, "#0f766e")}
 			${statCard("Output Coils", summary.output_count || 0, "#1d4ed8")}
 			${statCard("Cutting Rows", summary.cutting_count || 0, "#7c3aed")}
-			${statCard("Total Strips", summary.total_strips || 0, "#ea580c")}
+			${statCard(stripOrSheetLabel, stripOrSheetValue || 0, "#ea580c")}
 		</div>
 		<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px;">
-			${statCard("Grand Width", fmt(summary.grand_total_width), "#1f4d8f")}
+			${statCard(__("Grand Width"), fmt(summary.grand_total_width), "#1f4d8f")}
 			${statCard("Grand Est WT", fmt(summary.grand_estimated_wt), "#7c2d12")}
 			${statCard("Actual Ratio", fmt(summary.actual_ratio), "#047857")}
-			${statCard("Remaining Width", fmt(summary.remaining_width), "#be123c")}
+			${statCard(
+				__("Remaining Width"),
+				slitterWidthMetrics ? fmt(summary.remaining_width) : "—",
+				"#be123c",
+			)}
 		</div>
 		<div style="margin-top:16px;background:#f8fbff;border:1px solid #dbe7f3;border-radius:14px;padding:14px;">
 			<div style="font-size:16px;font-weight:800;color:#102a43;">SO Item Detail</div>
@@ -581,8 +598,10 @@ function buildSSCoilDashboardHtml(data) {
 				</div>
 				<div style="background:#fff;border:1px solid #dbe7f3;border-radius:12px;padding:12px;">
 					<div style="font-size:13px;font-weight:800;color:#102a43;">Cutting Scheme Summary</div>
-					<div style="font-size:12px;color:#486581;margin-top:8px;">Rows: <b>${esc(cuttingRows.length || 0)}</b> | Strips: <b>${esc(summary.total_strips || 0)}</b></div>
-					<div style="font-size:12px;color:#486581;margin-top:6px;">Width Total: <b>${fmt(summary.grand_total_width)}</b> | Remaining: <b>${fmt(summary.remaining_width)}</b></div>
+					<div style="font-size:12px;color:#486581;margin-top:8px;">Rows: <b>${esc(cuttingRows.length || 0)}</b> | ${esc(stripOrSheetLabel)}: <b>${esc(stripOrSheetValue || 0)}</b></div>
+					<div style="font-size:12px;color:#486581;margin-top:6px;">Width Total: <b>${fmt(summary.grand_total_width)}</b>${
+						slitterWidthMetrics ? ` | Remaining: <b>${fmt(summary.remaining_width)}</b>` : ""
+					}</div>
 				</div>
 			</div>
 		</div>
@@ -1619,6 +1638,8 @@ frappe.ui.form.on("Cutting Scheme", {
 		const row = locals[cdt] && locals[cdt][cdn];
 		if (row && ss_coil.process.usesNumericLength(ss_coil.process.resolveProcessKey(frm))) {
 			frappe.model.set_value(cdt, cdn, "strip", 1);
+			update_cutting_total_width(cdt, cdn, frm);
+			update_grand_totals(frm);
 		}
 	},
 	total_width(frm) {
@@ -1716,10 +1737,7 @@ frappe.ui.form.on("Coil Input", {
 });
 
 function update_grand_totals(frm) {
-	const total_width_sum = (frm.doc.cutting_detail || []).reduce(
-		(sum, row) => sum + flt(row.total_width),
-		0,
-	);
+	const total_width_sum = ss_coil.process.grandTotalWidth(frm);
 	const estimated_wt_sum = (frm.doc.job_output || []).reduce(
 		(sum, row) => sum + flt(row.estimated_wt),
 		0,
@@ -1791,9 +1809,8 @@ function update_calc_ratio(frm) {
 }
 
 function update_remaining_width(frm) {
-	const so_width = flt((frm.doc.so_item || [])[0]?.width);
-	const grand_total_width = flt(frm.doc.grand_total_width);
-	frm.set_value("remaining_width", so_width - grand_total_width);
+	const value = ss_coil.process.remainingWidthValue(frm);
+	frm.set_value("remaining_width", value);
 	render_ss_coil_formulas(frm);
 }
 

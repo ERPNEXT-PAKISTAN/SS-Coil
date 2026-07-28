@@ -124,16 +124,18 @@ ss_coil.formulas.build_html = function (frm) {
 	const cutting_rows = frm.doc.cutting_detail || [];
 	const output_rows = frm.doc.job_output || [];
 
-	const grand_total_width = cutting_rows.reduce((sum, row) => sum + flt(row.total_width), 0);
+	const grand_total_width = ss_coil.process.grandTotalWidth(frm);
 	const grand_estimated_wt = output_rows.reduce((sum, row) => sum + flt(row.estimated_wt), 0);
 	const so_width = flt(so_row?.width);
-	const remaining_width = so_width - grand_total_width;
+	const remaining_width = ss_coil.process.remainingWidthValue(frm);
 	const grand_wt = flt(frm.doc.grand_estimated_wt != null ? frm.doc.grand_estimated_wt : grand_estimated_wt);
 	const input_estimated_wt = flt(input_row?.estimated_wt);
 	const calc_ratio_computed = ss_coil.formulas.calc_ratio_value(frm);
 	const processKey = ss_coil.process.resolveProcessKey(frm);
 	const processLabel = ss_coil.process.processLabel(processKey);
 	const usesNumericLength = ss_coil.process.usesNumericLength(processKey);
+	const usesSlitterWidth = ss_coil.process.usesSlitterWidthMetrics(processKey);
+	const totalStripsOrSheets = ss_coil.process.totalStripsOrSheets(frm);
 	const coil_length = ss_coil.process.effectiveInputCoilLength(frm);
 	const weight_formula_length = ss_coil.process.weightFormulaLength(so_row);
 	const slitter_dim = ss_coil.process.buildDimensionString(
@@ -215,31 +217,58 @@ ss_coil.formulas.build_html = function (frm) {
 	);
 
 	if (cutting_rows.length) {
-		const calc_html = cutting_rows
-			.map((row, idx) => {
-				const w = flt(row.width);
-				const s = flt(row.strip);
-				const tw = flt(row.total_width);
-				return `<div style="margin-bottom:${idx < cutting_rows.length - 1 ? "10px" : "0"};">
+		const calc_html = usesSlitterWidth
+			? cutting_rows
+					.map((row, idx) => {
+						const w = flt(row.width);
+						const s = flt(row.strip);
+						const tw = ss_coil.process.cuttingRowTotalWidth(row, processKey);
+						return `<div style="margin-bottom:${idx < cutting_rows.length - 1 ? "10px" : "0"};">
 					<span style="font-size:11px;font-weight:700;color:#92400e;margin-right:8px;">Row ${idx + 1}</span>
 					${line([chip(w), op("×"), chip(s), op("="), chip(tw)])}
 				</div>`;
-			})
-			.join("");
+					})
+					.join("")
+			: cutting_rows
+					.map((row, idx) => {
+						const w = flt(row.width);
+						const len = flt(row.length);
+						const sheets = ss_coil.process.schemeSheetCount(row, processKey);
+						return `<div style="margin-bottom:${idx < cutting_rows.length - 1 ? "10px" : "0"};">
+					<span style="font-size:11px;font-weight:700;color:#92400e;margin-right:8px;">Row ${idx + 1}</span>
+					${line([
+						cst(__("Width")),
+						chip(w),
+						cst("|"),
+						cst(__("Length")),
+						chip(len),
+						cst("|"),
+						cst(__("Total sheets")),
+						chip(sheets),
+					])}
+				</div>`;
+					})
+					.join("");
 		blocks.push(
 			ss_coil.formulas.formula_block({
-				title: "Cutting row — Total Width",
-				syntax: "total_width = width × strip",
+				title: usesSlitterWidth ? __("Cutting row — Total Width (Slitter)") : __("Cutting row — Sheet plan (Leveler / Reshearing)"),
+				syntax: usesSlitterWidth
+					? "total_width = width × strip  →  grand_total_width = Σ total_width"
+					: "Use width, length, total_sheets (strip = 1). grand_total_width = Σ row width (not × sheets).",
 				calc_html,
-				result_text: `${ss_coil.formulas.num(grand_total_width)} (Σ → grand_total_width)`,
+				result_text: usesSlitterWidth
+					? `${ss_coil.formulas.num(grand_total_width)} (Σ → grand_total_width)`
+					: `${__("Sheets")}: ${ss_coil.formulas.num(totalStripsOrSheets, 0)} · ${__("Σ width")}: ${ss_coil.formulas.num(
+							grand_total_width,
+						)}`,
 				accent: "#7c3aed",
 			}),
 		);
 	} else {
 		blocks.push(
 			ss_coil.formulas.formula_block({
-				title: "Cutting row — Total Width",
-				syntax: "total_width = width × strip",
+				title: usesSlitterWidth ? __("Cutting row — Total Width (Slitter)") : __("Cutting row — Sheet plan"),
+				syntax: usesSlitterWidth ? "total_width = width × strip" : "width, length, total_sheets",
 				calc_html: `<span style="color:#78716c;font-size:13px;">${__("No cutting rows")}</span>`,
 				result_text: ss_coil.formulas.num(0),
 				accent: "#7c3aed",
@@ -247,21 +276,36 @@ ss_coil.formulas.build_html = function (frm) {
 		);
 	}
 
-	blocks.push(
-		ss_coil.formulas.formula_block({
-			title: "Remaining Width",
-			syntax: "remaining_width = so_item.width − grand_total_width",
-			calc_html: line([chip(so_width), op("−"), chip(grand_total_width)]),
-			result_text: ss_coil.formulas.num(
-				frm.doc.remaining_width != null ? frm.doc.remaining_width : remaining_width,
-			),
-			accent: "#db2777",
-		}),
-	);
+	if (usesSlitterWidth) {
+		blocks.push(
+			ss_coil.formulas.formula_block({
+				title: __("Remaining Width (Slitter only)"),
+				syntax: "remaining_width = so_item.width − grand_total_width",
+				calc_html: line([chip(so_width), op("−"), chip(grand_total_width)]),
+				result_text: ss_coil.formulas.num(
+					frm.doc.remaining_width != null ? frm.doc.remaining_width : remaining_width,
+				),
+				note: __("Not used for Leveler / Reshearing — sheet qty is in total_sheets, not strip."),
+				accent: "#db2777",
+			}),
+		);
+	} else {
+		blocks.push(
+			ss_coil.formulas.formula_block({
+				title: __("Remaining Width"),
+				syntax: __("N/A for {0}", [processLabel]),
+				calc_html: `<span style="color:#78716c;font-size:13px;">${__(
+					"Slitter remaining width uses strip × width. This process uses total_sheets and length instead.",
+				)}</span>`,
+				result_text: "0",
+				accent: "#db2777",
+			}),
+		);
+	}
 
 	blocks.push(
 		ss_coil.formulas.formula_block({
-			title: "Calc Ratio",
+			title: __("Calc Ratio (all processes)"),
 			syntax: "calc_ratio = (grand_estimated_wt ÷ input_coil.estimated_wt) × 100",
 			calc_html: input_estimated_wt
 				? line([

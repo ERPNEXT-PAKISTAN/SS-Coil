@@ -946,6 +946,48 @@ def _repeat_count_for_cutting_row(doc, cutting_row):
 	return max(0, cint(getattr(cutting_row, "strip", 0)))
 
 
+def _cutting_row_dict(row):
+	return row if isinstance(row, dict) else row.as_dict()
+
+
+def _cutting_row_sheet_count(row, process_key):
+	data = _cutting_row_dict(row)
+	if _uses_numeric_length_for_process(process_key):
+		sheets = flt(data.get("total_sheets"))
+		if sheets:
+			return sheets
+		strip = flt(data.get("strip"))
+		return strip if strip > 1 else 0
+	return flt(data.get("strip"))
+
+
+def _cutting_row_total_width(row, process_key):
+	data = _cutting_row_dict(row)
+	if _uses_numeric_length_for_process(process_key):
+		return flt(data.get("width"))
+	total_width = flt(data.get("total_width"))
+	if total_width:
+		return total_width
+	width = flt(data.get("width"))
+	strip = flt(data.get("strip"))
+	return width * strip if strip else width
+
+
+def _ss_coil_grand_total_width_from_rows(cutting_rows, process_key):
+	return sum(_cutting_row_total_width(row, process_key) for row in (cutting_rows or []))
+
+
+def _ss_coil_remaining_width_for_process(so_item, cutting_rows, process_key):
+	if _uses_numeric_length_for_process(process_key):
+		return 0
+	so_width = flt(so_item.get("width") if so_item else 0)
+	return so_width - _ss_coil_grand_total_width_from_rows(cutting_rows, process_key)
+
+
+def _uses_slitter_width_metrics(process_key):
+	return (process_key or "slitter") == "slitter"
+
+
 def _coil_metric_from_so_item(so_item, fieldname):
 	value = so_item.get(fieldname)
 	if value not in (None, ""):
@@ -4187,7 +4229,12 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 
 	output_weight_total = sum(flt(row.get("estimated_wt")) for row in output_rows)
 	output_qty_total = sum(flt(row.get("estimated_qty")) for row in output_rows)
-	total_strips = sum(cint(row.get("strip")) for row in cutting_rows)
+	process_key = _ss_coil_process_key_for_doc(doc)
+	total_strips = sum(_cutting_row_sheet_count(row, process_key) for row in cutting_rows)
+	grand_total_width = _ss_coil_grand_total_width_from_rows(cutting_rows, process_key)
+	remaining_width = _ss_coil_remaining_width_for_process(
+		so_item.as_dict() if so_item else {}, cutting_rows, process_key
+	)
 
 	status_flow = {
 		"operation": doc.operation,
@@ -4222,14 +4269,17 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 			"input_count": len(input_rows),
 			"output_count": len(output_rows),
 			"cutting_count": len(cutting_rows),
+			"process_key": process_key,
+			"uses_slitter_width_metrics": _uses_slitter_width_metrics(process_key),
 			"total_strips": total_strips,
-			"grand_total_width": flt(getattr(doc, "grand_total_width", 0)),
+			"total_sheets": total_strips if _uses_numeric_length_for_process(process_key) else 0,
+			"grand_total_width": grand_total_width,
 			"grand_estimated_wt": flt(getattr(doc, "grand_estimated_wt", 0)),
 			"output_weight_total": output_weight_total,
 			"output_qty_total": output_qty_total,
 			"calc_ratio": flt(getattr(doc, "calc_ratio", 0)),
 			"actual_ratio": flt(getattr(doc, "actual_ratio", 0)),
-			"remaining_width": flt(getattr(doc, "remaining_width", 0)),
+			"remaining_width": remaining_width,
 		},
 		"previous_docs": previous_docs,
 		"next_docs": next_docs,

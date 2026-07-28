@@ -137,3 +137,49 @@ ss_coil.process.syncSoItemDisplayDimension = function (frm) {
 ss_coil.process.processLabel = function (processKey) {
 	return ss_coil.process.PROCESS_LABELS[processKey] || processKey || "Process";
 };
+
+/** Slitter width math uses strip count; leveler/reshearing use total_sheets + length. */
+ss_coil.process.usesSlitterWidthMetrics = function (processKey) {
+	return (processKey || "slitter") === "slitter";
+};
+
+ss_coil.process.cuttingRowTotalWidth = function (row, processKey) {
+	if (!row) {
+		return 0;
+	}
+	if (ss_coil.process.usesNumericLength(processKey)) {
+		return flt(row.width);
+	}
+	const total = flt(row.total_width);
+	if (total) {
+		return total;
+	}
+	const width = flt(row.width);
+	const strip = flt(row.strip);
+	return width * strip || width;
+};
+
+ss_coil.process.grandTotalWidth = function (frm) {
+	const processKey = ss_coil.process.resolveProcessKey(frm);
+	return (frm.doc.cutting_detail || []).reduce(
+		(sum, row) => sum + ss_coil.process.cuttingRowTotalWidth(row, processKey),
+		0,
+	);
+};
+
+ss_coil.process.totalStripsOrSheets = function (frm) {
+	const processKey = ss_coil.process.resolveProcessKey(frm);
+	return (frm.doc.cutting_detail || []).reduce(
+		(sum, row) => sum + ss_coil.process.schemeSheetCount(row, processKey),
+		0,
+	);
+};
+
+ss_coil.process.remainingWidthValue = function (frm) {
+	const processKey = ss_coil.process.resolveProcessKey(frm);
+	if (!ss_coil.process.usesSlitterWidthMetrics(processKey)) {
+		return 0;
+	}
+	const so_width = flt((frm.doc.so_item || [])[0]?.width);
+	return so_width - ss_coil.process.grandTotalWidth(frm);
+};

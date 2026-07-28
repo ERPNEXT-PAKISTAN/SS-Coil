@@ -2234,13 +2234,19 @@ function build_cutting_scheme_process_table_html(group) {
 							<td style="${cell}">${row.knife ? "Yes" : "No"}</td>
 						</tr>`;
 					}
+					const totalSheets =
+						row.total_sheets != null && row.total_sheets !== ""
+							? row.total_sheets
+							: flt(row.strip) > 1
+								? row.strip
+								: "";
 					return `<tr>
 						<td style="${cell}">${row.seq || ""}</td>
 						<td style="${cell}">${dim}</td>
 						<td style="${cell}">${row.width || ""}</td>
 						<td style="${cell}">${row.length || ""}</td>
 						<td style="${cell}">${row.lengthcut || ""}</td>
-						<td style="${cell}">${row.total_sheets ?? (flt(row.strip) > 1 ? row.strip : "") || ""}</td>
+						<td style="${cell}">${totalSheets}</td>
 						<td style="${cell}">${row.tolerance_plus || ""}</td>
 						<td style="${cell}">${row.tolerance_minus || ""}</td>
 					</tr>`;

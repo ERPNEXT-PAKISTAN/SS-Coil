@@ -990,7 +990,7 @@ function render_cutting_scheme_item_meta(dialog, row) {
 			${metaCard("Ref No", row.custom_ref_no || "-")}
 			${metaCard("Thickness", row.custom_thickness || "-")}
 			${metaCard("Width", row.custom_width || "-")}
-			${metaCard("C", row.custom_length_c || "-")}
+			${metaCard("Length C", row.custom_length_c || "-")}
 			${metaCard("Length", row.custom_length != null && row.custom_length !== "" ? format_number(row.custom_length) : "-")}
 		</div>
 	`);

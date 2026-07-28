@@ -5,3 +5,5 @@
 [post_model_sync]
 ss_coil.patches.v1_0.set_ss_coil_machine_link_to_operation
 ss_coil.patches.v1_0.fix_length_c_and_custom_length_fields
+ss_coil.patches.v1_0.reapply_length_c_and_custom_length_schema
+ss_coil.patches.v1_0.set_length_c_display_labels

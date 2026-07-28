@@ -29,7 +29,7 @@ SO_ITEM_PRODUCT_FIELDS = (
 	("custom_specification", _("Specification")),
 	("custom_thickness", _("Thickness")),
 	("custom_width", _("Width")),
-	("custom_length_c", _("C")),
+	("custom_length_c", _("Length C")),
 	("custom_length", _("Length")),
 	("custom_qty_of_coil", _("Qty of Coil")),
 	("custom_mill", _("Mill")),

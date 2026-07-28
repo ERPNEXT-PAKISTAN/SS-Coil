@@ -62,49 +62,115 @@ def _length_value_is_numeric(value):
 def migrate_length_and_length_c_field_values():
 	"""Move mistaken values: text C → custom_length_c, numeric length → custom_length (Float)."""
 	for doctype in ("Sales Order Item", "Stock Entry Detail"):
-		if not _has_field(doctype, "custom_length"):
-			continue
-		has_length_c = _has_field(doctype, "custom_length_c")
-		fields = ["name", "custom_length"]
-		if has_length_c:
-			fields.append("custom_length_c")
-		for row in frappe.get_all(doctype, fields=fields, limit=0):
-			old_length = row.get("custom_length")
-			old_length_c = row.get("custom_length_c") if has_length_c else None
-			new_length = None
-			new_length_c = None
+		_ensure_length_columns_schema(doctype)
 
-			if _length_value_is_numeric(old_length_c):
-				new_length = flt(old_length_c)
-			elif _length_value_is_numeric(old_length):
-				new_length = flt(old_length)
 
-			if old_length not in (None, "") and not _length_value_is_numeric(old_length):
-				new_length_c = str(old_length).strip()
-			elif has_length_c and old_length_c not in (None, "") and not _length_value_is_numeric(old_length_c):
-				new_length_c = str(old_length_c).strip()
+def _table_name(doctype):
+	return f"tab{doctype}"
 
-			updates = {}
+
+def _column_data_type(doctype, fieldname):
+	rows = frappe.db.sql(
+		"""
+		SELECT DATA_TYPE FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s
+		""",
+		(_table_name(doctype), fieldname),
+	)
+	if not rows:
+		return None
+	return (rows[0][0] or "").lower()
+
+
+def _length_migration_plan(old_length, old_length_c):
+	new_length = None
+	new_length_c = None
+	if _length_value_is_numeric(old_length_c):
+		new_length = flt(old_length_c)
+	elif _length_value_is_numeric(old_length):
+		new_length = flt(old_length)
+	if old_length not in (None, "") and not _length_value_is_numeric(old_length):
+		new_length_c = str(old_length).strip()
+	elif old_length_c not in (None, "") and not _length_value_is_numeric(old_length_c):
+		new_length_c = str(old_length_c).strip()
+	return new_length, new_length_c
+
+
+def _ensure_length_columns_schema(doctype):
+	"""Align DB column types with custom_length_c=Data and custom_length=Float."""
+	if not frappe.db.has_column(doctype, "custom_length"):
+		return
+
+	table = _table_name(doctype)
+	has_length_c = frappe.db.has_column(doctype, "custom_length_c")
+	select_sql = (
+		f"SELECT name, custom_length, custom_length_c FROM `{table}`"
+		if has_length_c
+		else f"SELECT name, custom_length FROM `{table}`"
+	)
+	rows = frappe.db.sql(select_sql, as_dict=True)
+	plans = []
+	for row in rows:
+		olc = row.get("custom_length_c") if has_length_c else None
+		plans.append((row.name, *_length_migration_plan(row.get("custom_length"), olc)))
+
+	length_c_type = _column_data_type(doctype, "custom_length_c") if has_length_c else None
+	length_type = _column_data_type(doctype, "custom_length")
+
+	if has_length_c and length_c_type in ("decimal", "double", "float", "int", "bigint"):
+		frappe.db.sql_ddl(f"ALTER TABLE `{table}` MODIFY `custom_length_c` VARCHAR(140) NULL")
+
+	if length_type in ("varchar", "text", "longtext", "char"):
+		for name, new_length, new_c in plans:
+			if has_length_c and new_c not in (None, ""):
+				frappe.db.sql(
+					f"UPDATE `{table}` SET `custom_length_c` = %s WHERE `name` = %s",
+					(new_c, name),
+				)
 			if new_length is not None:
-				updates["custom_length"] = new_length
-			if has_length_c and new_length_c is not None:
-				updates["custom_length_c"] = new_length_c
-			if updates:
-				frappe.db.set_value(doctype, row.name, updates, update_modified=False)
+				frappe.db.sql(
+					f"UPDATE `{table}` SET `custom_length` = %s WHERE `name` = %s",
+					(str(new_length), name),
+				)
+			elif new_c:
+				frappe.db.sql(
+					f"UPDATE `{table}` SET `custom_length` = NULL WHERE `name` = %s",
+					(name,),
+				)
+		frappe.db.sql_ddl(f"ALTER TABLE `{table}` MODIFY `custom_length` DECIMAL(21,9) NULL")
+
+	for name, new_length, new_c in plans:
+		if has_length_c and new_c not in (None, ""):
+			frappe.db.sql(
+				f"UPDATE `{table}` SET `custom_length_c` = %s WHERE `name` = %s",
+				(new_c, name),
+			)
+		if new_length is not None:
+			frappe.db.sql(
+				f"UPDATE `{table}` SET `custom_length` = %s WHERE `name` = %s",
+				(new_length, name),
+			)
+
+
+def _apply_custom_field_definition(dt, fieldname, props):
+	cf_name = f"{dt}-{fieldname}"
+	if not frappe.db.exists("Custom Field", cf_name):
+		return
+	frappe.db.set_value("Custom Field", cf_name, props, update_modified=False)
+	if props.get("fieldtype") or props.get("label"):
+		frappe.db.sql(
+			"""
+			UPDATE `tabDocField`
+			SET fieldtype = COALESCE(%s, fieldtype),
+			    label = COALESCE(%s, label)
+			WHERE parent = %s AND fieldname = %s
+			""",
+			(props.get("fieldtype"), props.get("label"), dt, fieldname),
+		)
 
 
 def setup_length_c_and_length_fields():
 	"""custom_length_c = Data (C in dimension); custom_length = Float (calculated length)."""
-	field_updates = [
-		("Sales Order Item", "custom_length_c", {"fieldtype": "Data", "label": "C", "precision": ""}),
-		("Sales Order Item", "custom_length", {"fieldtype": "Float", "label": "Length"}),
-		("Stock Entry Detail", "custom_length", {"fieldtype": "Float", "label": "Length"}),
-	]
-	for dt, fieldname, props in field_updates:
-		cf_name = f"{dt}-{fieldname}"
-		if frappe.db.exists("Custom Field", cf_name):
-			frappe.db.set_value("Custom Field", cf_name, props, update_modified=False)
-
 	if not _has_field("Stock Entry Detail", "custom_length_c"):
 		doc = frappe.new_doc("Custom Field")
 		doc.update(
@@ -112,24 +178,29 @@ def setup_length_c_and_length_fields():
 				"dt": "Stock Entry Detail",
 				"fieldname": "custom_length_c",
 				"fieldtype": "Data",
-				"label": "C",
+				"label": "Length C",
 				"insert_after": "custom_js_number",
 				"allow_on_submit": 1,
 				"description": "Shown in dimension (e.g. letter C). Not used for numeric length calculations.",
 			}
 		)
 		doc.insert(ignore_permissions=True)
-	elif frappe.db.exists("Custom Field", "Stock Entry Detail-custom_length_c"):
-		frappe.db.set_value(
-			"Custom Field",
-			"Stock Entry Detail-custom_length_c",
-			{"fieldtype": "Data", "label": "C", "precision": ""},
-			update_modified=False,
-		)
 
-	migrate_length_and_length_c_field_values()
 	for doctype in ("Sales Order Item", "Stock Entry Detail"):
+		_ensure_length_columns_schema(doctype)
+
+	for dt, fieldname, props in [
+		("Sales Order Item", "custom_length_c", {"fieldtype": "Data", "label": "Length C", "precision": ""}),
+		("Sales Order Item", "custom_length", {"fieldtype": "Float", "label": "Length"}),
+		("Stock Entry Detail", "custom_length_c", {"fieldtype": "Data", "label": "Length C", "precision": ""}),
+		("Stock Entry Detail", "custom_length", {"fieldtype": "Float", "label": "Length"}),
+	]:
+		_apply_custom_field_definition(dt, fieldname, props)
+
+	for doctype in ("Sales Order Item", "Stock Entry Detail", "Sales Order", "Stock Entry"):
 		frappe.clear_cache(doctype=doctype)
+
+	frappe.clear_cache()
 
 
 def _has_field(doctype, fieldname):

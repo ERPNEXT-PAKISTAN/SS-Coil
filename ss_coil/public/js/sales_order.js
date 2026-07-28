@@ -838,18 +838,23 @@ function default_cutting_scheme_row_for_process(so_item_row, process_key) {
 	};
 }
 
-function ensure_cutting_plan_defaults(plan_cache, processes, so_item_row) {
-	(processes || []).forEach((pk) => {
-		if (pk === "slitter") {
-			return;
-		}
-		if ((plan_cache[pk] || []).length) {
-			return;
-		}
-		const defaults = default_cutting_scheme_row_for_process(so_item_row, pk);
-		if (defaults) {
-			plan_cache[pk] = [defaults];
-		}
+function seed_process_plan_if_empty(plan_cache, process_key, so_item_row) {
+	if (process_key === "slitter" || (plan_cache[process_key] || []).length) {
+		return;
+	}
+	const defaults = default_cutting_scheme_row_for_process(so_item_row, process_key);
+	if (defaults) {
+		plan_cache[process_key] = [{ ...defaults }];
+	}
+}
+
+function clear_cutting_scheme_dialog_table_locals() {
+	if (!locals["Dialog Table"]) {
+		locals["Dialog Table"] = {};
+		return;
+	}
+	Object.keys(locals["Dialog Table"]).forEach((name) => {
+		delete locals["Dialog Table"][name];
 	});
 }
 
@@ -893,7 +898,6 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 			processes.forEach((pk) => {
 				plan_cache[pk] = (plans[pk]?.rows || []).map(map_cutting_scheme_row_from_server);
 			});
-			ensure_cutting_plan_defaults(plan_cache, processes, row);
 			let active_process = processes[0] || "slitter";
 
 			const dialog = new frappe.ui.Dialog({
@@ -918,7 +922,10 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 					sync_cutting_dialog_grid_to_cache(dialog, plan_cache, dialog.__active_process);
 					const plans_to_save = {};
 					processes.forEach((pk) => {
-						plans_to_save[pk] = normalize_cutting_scheme_rows(plan_cache[pk] || [], pk);
+						plans_to_save[pk] = normalize_cutting_scheme_rows(
+							(plan_cache[pk] || []).map((r) => ({ ...r })),
+							pk,
+						);
 					});
 					for (const pk of processes) {
 						if ((plans_to_save[pk] || []).some((d) => !flt(d.width))) {
@@ -992,20 +999,20 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 			}
 			render_cutting_scheme_item_meta(dialog, row);
 			const switchProcess = (next_process) => {
-				if (next_process === dialog.__active_process) {
+				if (next_process === dialog.__active_process || dialog.__cutting_scheme_switching) {
 					return;
 				}
-				sync_cutting_dialog_grid_to_cache(dialog, plan_cache, dialog.__active_process);
-				dialog.__active_process = next_process;
-				active_process = next_process;
-				if (!(plan_cache[next_process] || []).length && next_process !== "slitter") {
-					const defaults = default_cutting_scheme_row_for_process(dialog.__so_item_row, next_process);
-					if (defaults) {
-						plan_cache[next_process] = [defaults];
-					}
+				dialog.__cutting_scheme_switching = true;
+				try {
+					sync_cutting_dialog_grid_to_cache(dialog, plan_cache, dialog.__active_process);
+					dialog.__active_process = next_process;
+					active_process = next_process;
+					seed_process_plan_if_empty(plan_cache, next_process, dialog.__so_item_row);
+					load_cutting_scheme_tab_into_grid(dialog, plan_cache, next_process);
+					render_cutting_scheme_process_tabs(dialog, processes, next_process, switchProcess);
+				} finally {
+					dialog.__cutting_scheme_switching = false;
 				}
-				load_cutting_scheme_tab_into_grid(dialog, plan_cache, next_process);
-				render_cutting_scheme_process_tabs(dialog, processes, next_process, switchProcess);
 			};
 			render_cutting_scheme_process_tabs(dialog, processes, active_process, switchProcess);
 			bind_cutting_scheme_dialog_events(dialog);
@@ -1019,7 +1026,9 @@ function sync_cutting_dialog_grid_to_cache(dialog, plan_cache, process_key) {
 	if (!field || !field.grid || !process_key) {
 		return;
 	}
-	const rows = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+	// Read from grid form state; do not merge with stale Dialog Table rows from other tabs.
+	const raw = (field.grid.get_data() || []).filter(Boolean);
+	const rows = normalize_cutting_scheme_rows(raw, process_key);
 	plan_cache[process_key] = rows.map((row) => ({ ...row }));
 }
 
@@ -1032,15 +1041,17 @@ function load_cutting_scheme_tab_into_grid(dialog, plan_cache, process_key) {
 		(plan_cache[process_key] || []).map((row) => ({ ...row })),
 		process_key,
 	);
-	field.df.data = normalized;
-	field.grid.df.data = normalized;
-	if (locals["Dialog Table"]) {
-		Object.keys(locals["Dialog Table"]).forEach((name) => {
-			delete locals["Dialog Table"][name];
-		});
-	}
+	const data = JSON.parse(JSON.stringify(normalized));
+
+	clear_cutting_scheme_dialog_table_locals();
 	field.grid.grid_rows = [];
+	field.grid.grid_rows_by_docname = {};
+	field.grid.wrapper.find(".grid-row.form-grid-row").remove();
+
+	field.df.data = data;
+	field.grid.df.data = data;
 	field.grid.refresh();
+
 	apply_cutting_scheme_grid_process_mode(field.grid, process_key);
 	update_cutting_scheme_totals(dialog);
 }

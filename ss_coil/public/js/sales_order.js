@@ -2174,36 +2174,63 @@ function escape_html(value) {
 
 function build_cutting_scheme_report_html(groups) {
 	if (!groups.length) {
-		return `<div style="${panelStyle('#fffefb','#eadfbe')}"><div style="color:#7b6f5c;">No cutting scheme saved yet.</div></div>`;
+		return `<div style="${panelStyle("#fffefb", "#eadfbe")}"><div style="color:#7b6f5c;">No cutting scheme saved yet.</div></div>`;
 	}
 
 	return groups
 		.map((group) => {
-			const process_label = group.process_label || group.process_key || "Slitter";
-			const rows = (group.rows || [])
-				.map(
-					(row) => `
-						<tr>
+			const process_key = group.process_key || "slitter";
+			const process_label = group.process_label || SS_COIL_CUTTING_PROCESS_LABELS[process_key] || process_key;
+			const is_slitter = process_key === "slitter";
+			const row_list = group.rows || [];
+
+			const rows = row_list.length
+				? row_list
+						.map((row) => {
+							if (is_slitter) {
+								return `<tr>
 							<td>${row.seq || ""}</td>
 							<td>${row.width || ""}</td>
-							<td>${row.length || ""}</td>
 							<td>${row.strip || ""}</td>
 							<td>${row.lengthcut || ""}</td>
 							<td>${row.total_width || ""}</td>
 							<td>${row.tolerance_plus || ""}</td>
 							<td>${row.tolerance_minus || ""}</td>
 							<td>${row.knife ? "Yes" : "No"}</td>
-						</tr>`,
-				)
-				.join("");
+						</tr>`;
+							}
+							return `<tr>
+							<td>${row.seq || ""}</td>
+							<td>${row.width || ""}</td>
+							<td>${row.length || ""}</td>
+							<td>${row.lengthcut || ""}</td>
+							<td>${row.strip || ""}</td>
+							<td>${row.tolerance_plus || ""}</td>
+							<td>${row.tolerance_minus || ""}</td>
+						</tr>`;
+						})
+						.join("")
+				: `<tr><td colspan="${is_slitter ? 8 : 7}" style="color:#64748b;text-align:center;padding:14px;">${__(
+						"No rows saved for this process",
+					)}</td></tr>`;
+
+			const thead = is_slitter
+				? `<tr>
+					<th>SEQ</th><th>Width</th><th>Strip</th><th>LengthCut</th>
+					<th>Total Width</th><th>Tol (+)</th><th>Tol (-)</th><th>Knife</th>
+				</tr>`
+				: `<tr>
+					<th>SEQ</th><th>Width</th><th>Length</th><th>LengthCut</th>
+					<th>Total sheets</th><th>Tol(+)</th><th>Tol(-)</th>
+				</tr>`;
 
 			return `
-				<div style="border:1px solid #ddd6bf; border-radius:18px; overflow:hidden; background:linear-gradient(180deg,#fffdfa 0%,#f7f2e8 100%); box-shadow:0 10px 28px rgba(70,53,20,.06);">
+				<div style="border:1px solid #ddd6bf; border-radius:18px; overflow:hidden; background:linear-gradient(180deg,#fffdfa 0%,#f7f2e8 100%); box-shadow:0 10px 28px rgba(70,53,20,.06); margin-bottom:16px;">
 					<div style="display:flex; gap:0; align-items:stretch; flex-wrap:wrap;">
 						<div style="flex:0 0 290px; background:linear-gradient(180deg,#203549 0%,#314e68 100%); color:#f7fbff; padding:18px;">
 							<div style="font-size:11px; text-transform:uppercase; letter-spacing:.1em; opacity:.72;">Cutting Item</div>
 							<div style="font-size:20px; font-weight:800; margin-top:8px;">${escape_html(group.item_label || group.sales_order_item)}</div>
-							<div style="margin-top:8px;font-size:12px;font-weight:700;color:#93c5fd;">${escape_html(process_label)}</div>
+							<div style="margin-top:10px;display:inline-block;background:#1d4ed8;color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:8px;">${escape_html(process_label)}</div>
 							<div style="margin-top:14px; display:grid; gap:8px; font-size:12px; color:#d9e7f4;">
 								<div><strong>Qty:</strong> ${group.qty || "-"}</div>
 								<div><strong>Tag:</strong> ${escape_html(group.tag_no || "-")}</div>
@@ -2213,19 +2240,7 @@ function build_cutting_scheme_report_html(groups) {
 						<div style="flex:1; min-width:420px; padding:16px;">
 							<div style="overflow:auto;">
 								<table class="table table-bordered" style="margin-bottom:0; background:#fffefb; min-width:760px;">
-									<thead style="background:#22384d; color:#f8fbff;">
-										<tr>
-											<th>SEQ</th>
-											<th>Width</th>
-											<th>Length</th>
-											<th>Strip/Sheet</th>
-											<th>LengthCut</th>
-											<th>Total Width</th>
-											<th>Tol (+)</th>
-											<th>Tol (-)</th>
-											<th>Knife</th>
-										</tr>
-									</thead>
+									<thead style="background:#22384d; color:#f8fbff;">${thead}</thead>
 									<tbody>${rows}</tbody>
 								</table>
 							</div>
@@ -2559,62 +2574,7 @@ function render_cutting_scheme_report(frm) {
 				html_field.$wrapper.html("<div class='text-muted'>No cutting scheme saved yet.</div>");
 				return;
 			}
-
-			const sections = groups
-				.map((group) => {
-					const rows = (group.rows || [])
-						.map(
-							(row) => `
-								<tr>
-									<td>${row.seq || ""}</td>
-									<td>${row.width || ""}</td>
-									<td>${row.strip || ""}</td>
-									<td>${row.lengthcut || ""}</td>
-									<td>${row.total_width || ""}</td>
-									<td>${row.tolerance_plus || ""}</td>
-									<td>${row.tolerance_minus || ""}</td>
-									<td>${row.knife ? "Yes" : "No"}</td>
-								</tr>`,
-						)
-						.join("");
-
-					return `
-						<div style="margin-bottom: 18px; border: 1px solid #d9e2f2; border-radius: 12px; overflow: hidden; background: linear-gradient(180deg, #fbfdff 0%, #f3f7fc 100%);">
-							<div style="display: flex; gap: 18px; align-items: stretch;">
-								<div style="flex: 0 0 280px; padding: 16px; background: #16324f; color: #fff;">
-									<div style="font-size: 12px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.06em;">Item</div>
-									<div style="font-size: 18px; font-weight: 700; margin-top: 6px;">
-										${frappe.utils.escape_html(group.item_label || group.sales_order_item)}
-									</div>
-									<div style="font-size: 12px; margin-top: 12px; line-height: 1.7; color: #d7e6f7;">
-										<div><strong>Qty:</strong> ${group.qty || "-"}</div>
-										<div><strong>Tag:</strong> ${group.tag_no || "-"}</div>
-										<div><strong>Dim:</strong> ${group.dimension || "-"}</div>
-									</div>
-								</div>
-								<div style="flex: 1; padding: 14px 14px 10px 0;">
-									<table class="table table-bordered" style="margin-bottom: 0; background: #fff;">
-										<thead style="background: #edf4fb; color: #16324f;">
-											<tr>
-												<th>SEQ</th>
-												<th>Width</th>
-												<th>Strip</th>
-												<th>LengthCut</th>
-												<th>Total Width</th>
-												<th>Tol (+)</th>
-												<th>Tol (-)</th>
-												<th>Knife</th>
-											</tr>
-										</thead>
-										<tbody>${rows}</tbody>
-									</table>
-								</div>
-							</div>
-						</div>`;
-				})
-				.join("");
-
-			html_field.$wrapper.html(sections);
+			html_field.$wrapper.html(build_cutting_scheme_report_html(groups));
 		},
 	});
 }

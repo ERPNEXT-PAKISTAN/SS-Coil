@@ -7110,11 +7110,8 @@ def get_sales_order_cutting_scheme_report(sales_order):
 		"SO Production Plan",
 		filters={"sales_order": sales_order},
 		fields=plan_fields,
-		order_by="modified asc",
+		order_by="sales_order_item asc, process_key asc",
 	)
-	if not plans:
-		return []
-
 	item_meta = {
 		d.name: d
 		for d in frappe.get_all(
@@ -7123,14 +7120,18 @@ def get_sales_order_cutting_scheme_report(sales_order):
 			fields=["name", "item_name", "item_code", "qty", "custom_dimension", "custom_tag_no"],
 		)
 	}
+	if not plans and not item_meta:
+		return []
 
 	result = []
+	seen = set()
 	for plan in plans:
 		doc = frappe.get_doc("SO Production Plan", plan.name)
 		item = item_meta.get(plan.sales_order_item, frappe._dict())
 		process_key = (plan.get("process_key") if _so_production_plan_process_key_enabled() else None) or doc.get(
 			"process_key"
 		) or "slitter"
+		seen.add((plan.sales_order_item, process_key))
 		result.append(
 			{
 				"plan_name": plan.name,
@@ -7144,4 +7145,26 @@ def get_sales_order_cutting_scheme_report(sales_order):
 				"rows": [row.as_dict() for row in doc.cutting_scheme],
 			}
 		)
+
+	if _so_production_plan_process_key_enabled():
+		for item_name, item in item_meta.items():
+			so_item = frappe.get_doc("Sales Order Item", item_name)
+			for process_key in _processes_for_so_item_row(so_item):
+				if (item_name, process_key) in seen:
+					continue
+				result.append(
+					{
+						"plan_name": None,
+						"sales_order_item": item_name,
+						"process_key": process_key,
+						"process_label": _label_for_process(process_key),
+						"item_label": item.get("item_name") or item.get("item_code") or item_name,
+						"qty": item.get("qty"),
+						"dimension": item.get("custom_dimension"),
+						"tag_no": item.get("custom_tag_no"),
+						"rows": [],
+					}
+				)
+
+	result.sort(key=lambda row: (row.get("sales_order_item") or "", row.get("process_key") or ""))
 	return result

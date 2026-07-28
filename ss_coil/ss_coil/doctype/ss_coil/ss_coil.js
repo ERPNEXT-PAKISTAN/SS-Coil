@@ -1613,6 +1613,17 @@ frappe.ui.form.on("Coil Output", {
 	estimated_wt(frm) {
 		update_grand_totals(frm);
 	},
+	width(frm, cdt, cdn) {
+		const input_row = (frm.doc.input_coil || [])[0];
+		const so_row = (frm.doc.so_item || [])[0] || {};
+		const row = locals[cdt] && locals[cdt][cdn];
+		if (!input_row || !row) {
+			return;
+		}
+		row.estimated_wt = jobOutputEstimatedWt(input_row, so_row, row.width);
+		frm.refresh_field("job_output");
+		update_grand_totals(frm);
+	},
 	tag_no(frm) {
 		sync_process_preview(frm);
 	},
@@ -1643,6 +1654,7 @@ frappe.ui.form.on("Coil SO", {
 	width(frm) {
 		update_remaining_width(frm);
 		update_input_coil_length(frm);
+		refreshAllJobOutputEstimatedWt(frm);
 	},
 });
 
@@ -1660,7 +1672,7 @@ frappe.ui.form.on("Coil Input", {
 		rebuild_job_output_from_input(frm);
 	},
 	estimated_wt(frm) {
-		rebuild_job_output_from_input(frm);
+		refreshAllJobOutputEstimatedWt(frm);
 	},
 	length(frm) {
 		rebuild_job_output_from_input(frm);
@@ -1838,6 +1850,30 @@ function soItemTableQtyMetrics(so_row) {
 	};
 }
 
+/** Job Output estimated_wt = (input_coil.estimated_wt / so_item.width) × row width */
+function jobOutputEstimatedWt(input_row, so_row, outputWidth) {
+	const inputWt = flt(input_row?.estimated_wt);
+	const soWidth = flt(so_row?.width);
+	const rowWidth = flt(outputWidth);
+	if (!soWidth) {
+		return inputWt;
+	}
+	return (inputWt / soWidth) * rowWidth;
+}
+
+function refreshAllJobOutputEstimatedWt(frm) {
+	const input_row = (frm.doc.input_coil || [])[0];
+	const so_row = (frm.doc.so_item || [])[0] || {};
+	if (!input_row) {
+		return;
+	}
+	(frm.doc.job_output || []).forEach((row) => {
+		row.estimated_wt = jobOutputEstimatedWt(input_row, so_row, row.width);
+	});
+	frm.refresh_field("job_output");
+	update_grand_totals(frm);
+}
+
 function applySoItemQuantitiesToInputCoil(frm) {
 	const metrics = soItemTableQtyMetrics((frm.doc.so_item || [])[0]);
 	(frm.doc.input_coil || []).forEach((row) => {
@@ -1978,9 +2014,9 @@ function rebuild_job_output_from_input(frm) {
 
 function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequenceNumber, outputWidth, totalPieces) {
 	const target_fields = get_mappable_fieldnames("Coil Output");
-	const soMetrics = soItemTableQtyMetrics(so_row);
-	const estimatedQty = totalPieces ? soMetrics.estimated_qty / totalPieces : soMetrics.estimated_qty;
-	const estimatedWt = totalPieces ? soMetrics.estimated_wt / totalPieces : soMetrics.estimated_wt;
+	const estimatedQty = flt(so_row.qty_of_coil);
+	const rowWidth = outputWidth || existing_row?.width || so_row.width || "";
+	const estimatedWt = jobOutputEstimatedWt(input_row, so_row, rowWidth);
 	const parentTag = input_row.tag_no || "";
 
 	target_fields.forEach((fieldname) => {
@@ -1997,15 +2033,19 @@ function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequ
 			return;
 		}
 		if (fieldname === "actual_qty") {
-			row.actual_qty = existing_row?.actual_qty || estimatedQty;
+			if (existing_row?.actual_qty != null && existing_row.actual_qty !== "") {
+				row.actual_qty = existing_row.actual_qty;
+			}
 			return;
 		}
 		if (fieldname === "estimated_wt") {
-			row.estimated_wt = existing_row?.estimated_wt || estimatedWt;
+			row.estimated_wt = estimatedWt;
 			return;
 		}
 		if (fieldname === "actual_wt") {
-			row.actual_wt = existing_row?.actual_wt || estimatedWt;
+			if (existing_row?.actual_wt != null && existing_row.actual_wt !== "") {
+				row.actual_wt = existing_row.actual_wt;
+			}
 			return;
 		}
 		if (fieldname === "length") {
@@ -2021,7 +2061,7 @@ function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequ
 			return;
 		}
 		if (fieldname === "width") {
-			row.width = outputWidth || existing_row?.width || so_row.width || "";
+			row.width = rowWidth;
 			return;
 		}
 		if (fieldname === "packing") {

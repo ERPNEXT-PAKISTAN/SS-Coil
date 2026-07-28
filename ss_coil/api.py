@@ -2159,6 +2159,16 @@ def _sales_order_item_qty_metrics_for_input(so_item):
 	return {"estimated_wt": qty, "estimated_qty": qty_of_coil, "actual_qty": qty_of_coil}
 
 
+def _job_output_estimated_wt(input_row, so_row, output_width):
+	"""estimated_wt = (input_coil.estimated_wt / so_item.width) × job_output row width."""
+	input_wt = flt(getattr(input_row, "estimated_wt", None) or (input_row or {}).get("estimated_wt"))
+	so_width = flt(getattr(so_row, "width", None) or (so_row or {}).get("width"))
+	row_width = flt(output_width)
+	if not so_width:
+		return input_wt
+	return (input_wt / so_width) * row_width
+
+
 def sync_ss_coil_sales_order_item_fields(doc, method=None):
 	"""Pull Sales Order item values onto SS Coil header, so_item, cutting_detail, and job_output."""
 	if doc.doctype != "SS Coil":
@@ -2244,16 +2254,9 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 
 	def apply_values(row, existing_row=None, sequence_number=1, output_width=None, pieces_count=1):
 		so_metrics = _coil_so_table_qty_metrics(so_row)
-		estimated_qty = (
-			flt(so_metrics["estimated_qty"]) / pieces_count
-			if pieces_count
-			else flt(so_metrics["estimated_qty"])
-		)
-		estimated_wt = (
-			flt(so_metrics["estimated_wt"]) / pieces_count
-			if pieces_count
-			else flt(so_metrics["estimated_wt"])
-		)
+		estimated_qty = flt(so_metrics["estimated_qty"])
+		row_width = output_width or getattr(existing_row, "width", None) or getattr(so_row, "width", None)
+		estimated_wt = _job_output_estimated_wt(input_row, so_row, row_width)
 		for fieldname in target_fields:
 			if fieldname == "class":
 				row.set("class", getattr(input_row, "class", None))
@@ -2262,17 +2265,23 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 			elif fieldname == "estimated_qty":
 				row.estimated_qty = estimated_qty
 			elif fieldname == "actual_qty":
-				row.actual_qty = getattr(existing_row, "actual_qty", None) or estimated_qty
+				if existing_row is not None:
+					existing_actual = getattr(existing_row, "actual_qty", None)
+					if existing_actual not in (None, ""):
+						row.actual_qty = existing_actual
 			elif fieldname == "estimated_wt":
-				row.estimated_wt = getattr(existing_row, "estimated_wt", None) or estimated_wt
+				row.estimated_wt = estimated_wt
 			elif fieldname == "actual_wt":
-				row.actual_wt = getattr(existing_row, "actual_wt", None) or estimated_wt
+				if existing_row is not None:
+					existing_actual_wt = getattr(existing_row, "actual_wt", None)
+					if existing_actual_wt not in (None, ""):
+						row.actual_wt = existing_actual_wt
 			elif fieldname == "customer":
 				row.customer = getattr(doc, "customer_name", None)
 			elif fieldname == "thickness":
 				row.thickness = (getattr(existing_row, "thickness", None) or getattr(so_row, "thickness", None) or getattr(input_row, "thickness", None))
 			elif fieldname == "width":
-				row.width = output_width or getattr(existing_row, "width", None) or getattr(so_row, "width", None)
+				row.width = row_width
 			elif fieldname == "packing":
 				row.packing = (
 					getattr(existing_row, "packing", None)

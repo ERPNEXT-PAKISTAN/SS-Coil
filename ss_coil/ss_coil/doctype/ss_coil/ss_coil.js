@@ -78,6 +78,7 @@ frappe.ui.form.on("SS Coil", {
 	},
 	operation(frm) {
 		sync_process_preview(frm);
+		syncMachineFromSalesOrderOperation(frm);
 		load_ss_coil_flow_and_dashboards(frm);
 	},
 	process_control_enabled(frm) {
@@ -232,7 +233,9 @@ frappe.ui.form.on("SS Coil", {
 
 				apply_ss_coil_fields_from_sales_order_item(frm, item, row);
 
-				frm.set_value("machine", item.custom_machine || "");
+				frm._last_sales_order_item = item;
+				applyOperationAndMachineFromSalesOrderItem(frm, item);
+
 				frm.set_value("calc_ratio", flt(item.custom_calc_ratio));
 				frm.set_value("calc_ratio_2", flt(item.custom_calc_ratio_2));
 				frm.set_value("actual_ratio", flt(item.custom_actual_ratio));
@@ -2763,6 +2766,52 @@ function formatProcessLabel(processName) {
 	};
 	const key = String(processName || "").trim().toLowerCase();
 	return labelMap[key] || processName || "";
+}
+
+const SS_COIL_PROCESS_KEYS = ["slitter", "leveler", "reshearing"];
+
+function resolveProcessKeyFromOperationHint(item, hint) {
+	if (!hint) {
+		return null;
+	}
+	const normalized = String(hint).trim().toLowerCase();
+	for (const key of SS_COIL_PROCESS_KEYS) {
+		if (key === normalized || formatProcessLabel(key).toLowerCase() === normalized) {
+			return key;
+		}
+		if (item && item[`custom_${key}`] === hint) {
+			return key;
+		}
+	}
+	return null;
+}
+
+function operationAndMachineFromSalesOrderItem(item, operationHint) {
+	const configured = SS_COIL_PROCESS_KEYS.filter((key) => item[`custom_${key}`]);
+	let processKey = resolveProcessKeyFromOperationHint(item, operationHint);
+	if (!processKey) {
+		processKey = configured[0] || "slitter";
+	}
+	const opLink = item[`custom_${processKey}`] || formatProcessLabel(processKey);
+	return { operation: opLink, machine: opLink };
+}
+
+function applyOperationAndMachineFromSalesOrderItem(frm, item, operationHint) {
+	const { operation, machine } = operationAndMachineFromSalesOrderItem(
+		item,
+		operationHint || frm.doc.operation,
+	);
+	frm.set_value("operation", operation);
+	frm.set_value("machine", machine);
+}
+
+function syncMachineFromSalesOrderOperation(frm) {
+	const item = frm._last_sales_order_item;
+	if (!item || !frm.doc.operation) {
+		return;
+	}
+	const { machine } = operationAndMachineFromSalesOrderItem(item, frm.doc.operation);
+	frm.set_value("machine", machine);
 }
 
 function buildOutputQrHtml(frm, row) {

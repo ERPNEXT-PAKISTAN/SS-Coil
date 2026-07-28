@@ -193,7 +193,7 @@
    "fieldname": "machine",
    "fieldtype": "Link",
    "label": "Machine",
-   "options": "Workstation"
+   "options": "Operation"
   },
   {
    "fieldname": "column_break_kqkz",

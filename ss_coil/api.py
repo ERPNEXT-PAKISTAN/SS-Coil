@@ -715,6 +715,34 @@ def _label_for_process(process_name):
 	return PROCESS_LABELS.get(key, process_name or "")
 
 
+def _process_key_for_operation(value, so_item=None):
+	"""Map operation label, process key, or Operation link to slitter/leveler/reshearing."""
+	if not value:
+		return None
+	op_key = str(value).strip().lower()
+	for field in PROCESS_FIELDS:
+		if field == op_key or PROCESS_LABELS.get(field, "").lower() == op_key:
+			return field
+	if so_item:
+		for field in PROCESS_FIELDS:
+			if so_item.get(f"custom_{field}") == value:
+				return field
+	return None
+
+
+def _operation_and_machine_from_sales_order_item(so_item, operation=None):
+	"""SS Coil operation + machine from SO Item process Operation links (not Workstation)."""
+	configured = _get_enabled_processes_from_row(so_item, custom=True)
+	process_key = _process_key_for_operation(operation, so_item)
+	if not process_key and configured:
+		process_key = configured[0]
+	if not process_key:
+		process_key = "slitter"
+
+	op_link = so_item.get(f"custom_{process_key}") or _label_for_process(process_key)
+	return op_link, op_link
+
+
 def _first_unique(values):
 	values = [v for v in values if v]
 	unique = list(dict.fromkeys(values))
@@ -2210,6 +2238,12 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 			doc.specifications = spec
 		if commodity not in (None, ""):
 			doc.commodity = commodity
+		if doc.get("operation"):
+			_op, machine = _operation_and_machine_from_sales_order_item(so_item_doc, doc.operation)
+			if machine not in (None, ""):
+				doc.machine = machine
+			if _op not in (None, "") and not doc.operation:
+				doc.operation = _op
 
 	if doc.order_no:
 		for row in doc.cutting_detail or []:
@@ -2386,7 +2420,7 @@ def _build_sales_order_item_operation_rows(sales_order_item):
 				"planned": _clean_text(planned) or label,
 				"line_status": (match.order_status if match else "Not Started"),
 				"ss_coil": match.name if match else None,
-				"machine": match.machine if match else None,
+				"machine": match.machine if match else (_clean_text(planned) or None),
 				"source": source_label,
 			}
 		)
@@ -4234,20 +4268,18 @@ def _cutting_scheme_rows_for_sales_order_item(sales_order_item):
 
 
 def _resolve_ss_coil_operation(so_item, operation=None):
-	configured = _get_enabled_processes_from_row(so_item, custom=True)
+	"""Return Operation link (or label fallback) for the configured SO process."""
+	op_link, _machine = _operation_and_machine_from_sales_order_item(so_item, operation)
 	if operation:
-		op_key = str(operation).strip().lower()
-		for field in configured:
-			if field == op_key or PROCESS_LABELS.get(field, "").lower() == op_key:
-				return _label_for_process(field)
-		frappe.throw(
-			_("Operation {0} is not configured on Sales Order Item {1}").format(
-				operation, so_item.get("item_code") or so_item.name
+		process_key = _process_key_for_operation(operation, so_item)
+		configured = _get_enabled_processes_from_row(so_item, custom=True)
+		if process_key and process_key not in configured and not so_item.get(f"custom_{process_key}"):
+			frappe.throw(
+				_("Operation {0} is not configured on Sales Order Item {1}").format(
+					operation, so_item.get("item_code") or so_item.name
+				)
 			)
-		)
-	if configured:
-		return _label_for_process(configured[0])
-	return "Slitter"
+	return op_link
 
 
 def _get_sales_order_item_row(source, sales_order_item=None):
@@ -4316,8 +4348,18 @@ def create_ss_coil_from_sales_order(source_name, sales_order_item=None, operatio
 	ss_coil.order_received_date = source.transaction_date
 	ss_coil.sc_date = nowdate()
 	ss_coil.order_status = "Not Started"
-	ss_coil.operation = _resolve_ss_coil_operation(so_item, operation)
-	ss_coil.machine = so_item.get("custom_machine") or ""
+	op_link, machine = _operation_and_machine_from_sales_order_item(so_item, operation)
+	if operation:
+		process_key = _process_key_for_operation(operation, so_item)
+		configured = _get_enabled_processes_from_row(so_item, custom=True)
+		if process_key and process_key not in configured and not so_item.get(f"custom_{process_key}"):
+			frappe.throw(
+				_("Operation {0} is not configured on Sales Order Item {1}").format(
+					operation, so_item.get("item_code") or so_item.name
+				)
+			)
+	ss_coil.operation = op_link
+	ss_coil.machine = machine
 	ss_coil.calc_ratio = flt(so_item.get("custom_calc_ratio"))
 	ss_coil.calc_ratio_2 = flt(so_item.get("custom_calc_ratio_2"))
 	ss_coil.actual_ratio = flt(so_item.get("custom_actual_ratio"))
@@ -4880,9 +4922,29 @@ def setup_tag_origin_fields():
 	_sync_workspace_query_report_links()
 	setup_stock_entry_sales_order_link_fields()
 	setup_updatable_stock_entry_sales_order_property_setters()
+	setup_ss_coil_machine_operation_link()
 
 	frappe.clear_cache()
 	return {"status": "ok"}
+
+
+def setup_ss_coil_machine_operation_link():
+	"""SS Coil Machine links to Operation (same as SO Slitter/Leveler/Reshearing), not Workstation."""
+	ps_name = "SS Coil-machine-options"
+	if frappe.db.exists("Property Setter", ps_name):
+		frappe.db.set_value("Property Setter", ps_name, "value", "Operation", update_modified=False)
+		return
+	frappe.make_property_setter(
+		{
+			"doctype": "SS Coil",
+			"fieldname": "machine",
+			"property": "options",
+			"property_type": "Text",
+			"value": "Operation",
+		},
+		validate_fields_for_doctype=False,
+		is_system_generated=False,
+	)
 
 
 def setup_updatable_stock_entry_sales_order_property_setters():

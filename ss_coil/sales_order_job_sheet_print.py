@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import cint, flt, getdate
 
 from ss_coil.api import get_sales_order_cutting_scheme_report, get_stock_entry_sticker_logo_url
+from ss_coil.job_sheet_print import _info_grid, _notes_row, _signature_row
 
 ITEM_COLUMNS = (
 	("item_label", "Item"),
@@ -25,6 +26,8 @@ CUTTING_COLUMNS = (
 	("width", "Width"),
 	("strip", "Strip"),
 	("lengthcut", "LengthCut"),
+	("length", "Length"),
+	("total_sheets", "Total Sheets"),
 	("total_width", "Total Width"),
 	("tolerance_plus", "Tol (+)"),
 	("tolerance_minus", "Tol (-)"),
@@ -138,6 +141,9 @@ def _render_table(columns, rows, empty_label="No rows"):
 				"no_of_pack",
 				"width",
 				"strip",
+				"lengthcut",
+				"length",
+				"total_sheets",
 				"total_width",
 				"tolerance_plus",
 				"tolerance_minus",
@@ -218,10 +224,93 @@ def _so_packing(doc):
 	return rows
 
 
-def _so_cutting_sections(sales_order):
+def _so_item_job_sheet_fields(sales_order_item):
+	if not sales_order_item:
+		return frappe._dict()
+	if isinstance(sales_order_item, str):
+		if not frappe.db.exists("Sales Order Item", sales_order_item):
+			return frappe._dict()
+		return frappe.get_doc("Sales Order Item", sales_order_item)
+	return sales_order_item
+
+
+def _job_sheet_prep_grid(item):
+	item = _so_item_job_sheet_fields(item)
+	return _info_grid(
+		[
+			("Machine", item.get("custom_machine")),
+			("Calc Ratio", item.get("custom_calc_ratio")),
+			("Calc Ratio 2", item.get("custom_calc_ratio_2")),
+			("Actual Ratio", item.get("custom_actual_ratio")),
+			("Remaining Width", item.get("custom_remaining_width")),
+		]
+	)
+
+
+def _job_sheet_dimension_grid(item, doc=None):
+	item = _so_item_job_sheet_fields(item)
+
+	def _pick(item_key, header_key):
+		val = item.get(item_key)
+		if val not in (None, ""):
+			return val
+		return doc.get(header_key) if doc else None
+
+	return _info_grid(
+		[
+			("Width", _pick("custom_width", "custom_job_sheet_width")),
+			("DS", _pick("custom_ds", "custom_job_sheet_ds")),
+			("CTR", _pick("custom_ctr", "custom_job_sheet_ctr")),
+			("WS", _pick("custom_ws", "custom_job_sheet_ws")),
+		]
+	)
+
+
+def _job_sheet_mill_grid(item, doc=None):
+	item = _so_item_job_sheet_fields(item)
+
+	def _pick(item_key, header_key):
+		val = item.get(item_key)
+		if val not in (None, ""):
+			return val
+		return doc.get(header_key) if doc else None
+
+	return _info_grid(
+		[
+			("Mill", _pick("custom_mill", "custom_job_sheet_mill")),
+			("Specifications", _pick("custom_specification", "custom_job_sheet_specifications")),
+			("Commodity", _pick("custom_commodity", "custom_job_sheet_commodity")),
+			("Works", _pick("custom_works", "custom_job_sheet_works")),
+		]
+	 )
+
+
+def _job_sheet_notes_block(item, doc=None):
+	item = _so_item_job_sheet_fields(item)
+	special = item.get("custom_comments")
+	remarks = item.get("custom_remarks")
+	if doc:
+		if special in (None, ""):
+			special = doc.get("custom_job_sheet_special_instructions")
+		if remarks in (None, ""):
+			remarks = doc.get("custom_job_sheet_remarks")
+	return _notes_row(special, remarks)
+
+
+def _so_cutting_sections(sales_order, doc=None):
+	if doc is None:
+		doc = frappe.get_doc("Sales Order", sales_order)
 	groups = get_sales_order_cutting_scheme_report(sales_order) or []
 	if not groups:
-		return _section("Cutting Scheme", _render_table(CUTTING_COLUMNS, [], "No cutting scheme saved yet."))
+		first_item = (doc.items or [None])[0]
+		body = (
+			f'<div style="margin-bottom:10px;">{_job_sheet_prep_grid(first_item)}</div>'
+			+ _render_table(CUTTING_COLUMNS, [], "No cutting scheme saved yet.")
+			+ _section("Notes", _job_sheet_notes_block(first_item, doc))
+			+ _section("Dimensions", _job_sheet_dimension_grid(first_item, doc))
+			+ _section("Mill &amp; Product", _job_sheet_mill_grid(first_item, doc))
+		)
+		return _section("Cutting Scheme", body)
 
 	parts = []
 	for group in groups:
@@ -239,13 +328,24 @@ def _so_cutting_sections(sales_order):
 					"width": row.get("width"),
 					"strip": row.get("strip"),
 					"lengthcut": row.get("lengthcut"),
+					"length": row.get("length"),
+					"total_sheets": row.get("total_sheets"),
 					"total_width": row.get("total_width"),
 					"tolerance_plus": row.get("tolerance_plus"),
 					"tolerance_minus": row.get("tolerance_minus"),
 					"knife": row.get("knife"),
 				}
 			)
-		parts.append(f'<div style="margin-bottom:14px;">{meta}{_render_table(CUTTING_COLUMNS, rows, "No rows")}</div>')
+		item_key = group.get("sales_order_item")
+		parts.append(
+			f'<div style="margin-bottom:18px;">{meta}'
+			f'<div style="margin-bottom:10px;">{_job_sheet_prep_grid(item_key)}</div>'
+			f"{_render_table(CUTTING_COLUMNS, rows, 'No rows')}"
+			f'{_section("Notes", _job_sheet_notes_block(item_key, doc))}'
+			f'{_section("Dimensions", _job_sheet_dimension_grid(item_key, doc))}'
+			f'{_section("Mill &amp; Product", _job_sheet_mill_grid(item_key, doc))}'
+			f"</div>"
+		)
 	return _section("Cutting Scheme", "".join(parts))
 
 
@@ -355,7 +455,18 @@ def build_sales_order_job_sheet_html(doc):
 
 	body = (
 		_section("Order Items", _render_table(ITEM_COLUMNS, _so_items(doc), "No order items."))
-		+ _so_cutting_sections(doc.name)
+		+ _so_cutting_sections(doc.name, doc)
+		+ _section(
+			"Signatures",
+			_signature_row(
+				[
+					("Planning", doc.get("custom_job_sheet_planning")),
+					("Sales", doc.get("custom_job_sheet_sales")),
+					("Production", doc.get("custom_job_sheet_production")),
+					("Encoded By", doc.get("custom_job_sheet_encoded_by")),
+				]
+			),
+		)
 		+ _section("Packing", _render_table(PACKING_COLUMNS, _so_packing(doc), "No packing detail yet."))
 	)
 

@@ -32,6 +32,11 @@ function render_ss_coil_formulas(frm) {
 
 frappe.ui.form.on("SS Coil", {
 	setup(frm) {
+		frm.set_query("order_no", function () {
+			return {
+				query: "ss_coil.api.sales_order_link_query",
+			};
+		});
 		frm.set_query("sales_order_item", function () {
 			if (!frm.doc.order_no) {
 				return { filters: { name: "" } };

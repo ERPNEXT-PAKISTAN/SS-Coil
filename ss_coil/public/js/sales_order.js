@@ -9,6 +9,7 @@ frappe.ui.form.on("Sales Order", {
 			add_coil_detail_print_button(frm);
 		});
 		render_sales_order_job_sheet_report(frm);
+		sync_sales_order_job_sheet_tab_from_items(frm);
 		add_sales_order_job_sheet_print_button(frm);
 		add_sales_order_create_stock_entry_button(frm);
 		add_sales_order_create_ss_coil_button(frm);
@@ -31,6 +32,36 @@ const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
 const SS_COIL_DEFAULT_LENGTH_C = "C";
 
 const SO_JOB_SHEET_HTML_FIELDS = ["custom_job_sheet_report", "job_sheet_report"];
+
+const SO_JOB_SHEET_ITEM_SYNC_MAP = [
+	["custom_job_sheet_machine", "custom_machine"],
+	["custom_job_sheet_calc_ratio", "custom_calc_ratio"],
+	["custom_job_sheet_calc_ratio_2", "custom_calc_ratio_2"],
+	["custom_job_sheet_actual_ratio", "custom_actual_ratio"],
+	["custom_job_sheet_remaining_width", "custom_remaining_width"],
+	["custom_job_sheet_special_instructions", "custom_comments"],
+	["custom_job_sheet_remarks", "custom_remarks"],
+	["custom_job_sheet_width", "custom_width"],
+	["custom_job_sheet_mill", "custom_mill"],
+	["custom_job_sheet_specifications", "custom_specification"],
+	["custom_job_sheet_commodity", "custom_commodity"],
+];
+
+function sync_sales_order_job_sheet_tab_from_items(frm) {
+	const item = (frm.doc.items || [])[0];
+	if (!item || frm.is_new()) {
+		return;
+	}
+	for (const [headerField, itemField] of SO_JOB_SHEET_ITEM_SYNC_MAP) {
+		if (!frm.fields_dict[headerField]) {
+			continue;
+		}
+		const value = item[itemField];
+		if (value !== undefined && value !== null && value !== "") {
+			frm.set_value(headerField, value);
+		}
+	}
+}
 
 function get_sales_order_job_sheet_field(frm) {
 	for (const fieldname of SO_JOB_SHEET_HTML_FIELDS) {

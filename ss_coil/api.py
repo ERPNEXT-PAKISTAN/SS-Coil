@@ -6375,6 +6375,28 @@ def backfill_tag_registry():
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
+def sales_order_link_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Sales Order link on SS Coil — newest order numbers first (e.g. 00017 above 00001)."""
+	del doctype, searchfield, filters
+	txt = f"%{txt or ''}%"
+	return frappe.db.sql(
+		"""
+		select name, customer_name
+		from `tabSales Order`
+		where docstatus < 2
+			and (
+				name like %(txt)s
+				or ifnull(customer_name, '') like %(txt)s
+			)
+		order by name desc
+		limit %(start)s, %(page_len)s
+		""",
+		{"txt": txt, "start": start, "page_len": page_len},
+	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
 def sales_order_item_query(doctype, txt, searchfield, start, page_len, filters):
 	parent = (filters or {}).get("parent")
 	if not parent:
@@ -6600,9 +6622,101 @@ def setup_sales_order_job_sheet_fields():
 		)
 
 	_hide_duplicate_sales_order_job_sheet_fields()
+	_ensure_sales_order_job_sheet_tab_detail_fields()
 	ensure_sales_order_job_sheet_field_order()
 	frappe.clear_cache(doctype="Sales Order")
 	return {"status": "ok"}
+
+
+def _ensure_sales_order_job_sheet_tab_detail_fields():
+	"""Job Sheet tab: metrics, notes, dimensions, mill block, signatures (before HTML report)."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	tab_anchor = None
+	for candidate in ("custom_job_sheet_tab", "job_sheet_tab"):
+		if frappe.db.exists("Custom Field", f"Sales Order-{candidate}"):
+			tab_anchor = candidate
+			break
+	if not tab_anchor:
+		tab_anchor = "custom_job_sheet_tab"
+
+	def _field(fieldname, label, fieldtype, insert_after, **extra):
+		return {
+			"fieldname": fieldname,
+			"label": label,
+			"fieldtype": fieldtype,
+			"insert_after": insert_after,
+			**extra,
+		}
+
+	spec = [
+		_field("custom_job_sheet_section_prep", "", "Section Break", tab_anchor),
+		_field("custom_job_sheet_machine", "Machine", "Data", "custom_job_sheet_section_prep"),
+		_field("custom_job_sheet_column_break_a", "", "Column Break", "custom_job_sheet_machine"),
+		_field("custom_job_sheet_calc_ratio", "Calc Ratio", "Float", "custom_job_sheet_column_break_a"),
+		_field("custom_job_sheet_column_break_b", "", "Column Break", "custom_job_sheet_calc_ratio"),
+		_field("custom_job_sheet_calc_ratio_2", "Calc Ratio 2", "Float", "custom_job_sheet_column_break_b"),
+		_field("custom_job_sheet_column_break_c", "", "Column Break", "custom_job_sheet_calc_ratio_2"),
+		_field("custom_job_sheet_actual_ratio", "Actual Ratio", "Float", "custom_job_sheet_column_break_c"),
+		_field("custom_job_sheet_column_break_d", "", "Column Break", "custom_job_sheet_actual_ratio"),
+		_field("custom_job_sheet_remaining_width", "Remaining Width", "Float", "custom_job_sheet_column_break_d"),
+		_field("custom_job_sheet_section_notes", "", "Section Break", "custom_job_sheet_remaining_width"),
+		_field("custom_job_sheet_special_instructions", "Special Instructions", "Small Text", "custom_job_sheet_section_notes"),
+		_field("custom_job_sheet_column_break_notes", "", "Column Break", "custom_job_sheet_special_instructions"),
+		_field("custom_job_sheet_remarks", "Remarks", "Small Text", "custom_job_sheet_column_break_notes"),
+		_field("custom_job_sheet_section_dims", "", "Section Break", "custom_job_sheet_remarks"),
+		_field("custom_job_sheet_width", "Width", "Float", "custom_job_sheet_section_dims"),
+		_field("custom_job_sheet_column_break_ds", "", "Column Break", "custom_job_sheet_width"),
+		_field("custom_job_sheet_ds", "DS", "Float", "custom_job_sheet_column_break_ds"),
+		_field("custom_job_sheet_column_break_ctr", "", "Column Break", "custom_job_sheet_ds"),
+		_field("custom_job_sheet_ctr", "CTR", "Float", "custom_job_sheet_column_break_ctr"),
+		_field("custom_job_sheet_column_break_ws", "", "Column Break", "custom_job_sheet_ctr"),
+		_field("custom_job_sheet_ws", "WS", "Float", "custom_job_sheet_column_break_ws"),
+		_field("custom_job_sheet_section_mill", "", "Section Break", "custom_job_sheet_ws"),
+		_field("custom_job_sheet_mill", "Mill", "Data", "custom_job_sheet_section_mill"),
+		_field("custom_job_sheet_column_break_spec", "", "Column Break", "custom_job_sheet_mill"),
+		_field("custom_job_sheet_specifications", "Specifications", "Data", "custom_job_sheet_column_break_spec"),
+		_field("custom_job_sheet_column_break_commodity", "", "Column Break", "custom_job_sheet_specifications"),
+		_field("custom_job_sheet_commodity", "Commodity", "Data", "custom_job_sheet_column_break_commodity"),
+		_field("custom_job_sheet_column_break_works", "", "Column Break", "custom_job_sheet_commodity"),
+		_field("custom_job_sheet_works", "Works", "Data", "custom_job_sheet_column_break_works"),
+		_field("custom_job_sheet_section_signatures", "", "Section Break", "custom_job_sheet_works"),
+		_field(
+			"custom_job_sheet_planning",
+			"Planning",
+			"Link",
+			"custom_job_sheet_section_signatures",
+			options="Employee",
+		),
+		_field("custom_job_sheet_column_break_sig_a", "", "Column Break", "custom_job_sheet_planning"),
+		_field("custom_job_sheet_sales", "Sales", "Link", "custom_job_sheet_column_break_sig_a", options="Employee"),
+		_field("custom_job_sheet_column_break_sig_b", "", "Column Break", "custom_job_sheet_sales"),
+		_field(
+			"custom_job_sheet_production",
+			"Production",
+			"Link",
+			"custom_job_sheet_column_break_sig_b",
+			options="Employee",
+		),
+		_field("custom_job_sheet_column_break_sig_c", "", "Column Break", "custom_job_sheet_production"),
+		_field(
+			"custom_job_sheet_encoded_by",
+			"Encoded By",
+			"Link",
+			"custom_job_sheet_column_break_sig_c",
+			options="Employee",
+		),
+	]
+
+	to_create = [f for f in spec if not frappe.db.exists("Custom Field", f"Sales Order-{f['fieldname']}")]
+	if to_create:
+		create_custom_fields({"Sales Order": to_create}, update=True)
+
+	report_after = "custom_job_sheet_encoded_by"
+	for fn in ("custom_job_sheet_report", "job_sheet_report"):
+		name = f"Sales Order-{fn}"
+		if frappe.db.exists("Custom Field", name):
+			frappe.db.set_value("Custom Field", name, "insert_after", report_after, update_modified=False)
 
 
 def _hide_duplicate_sales_order_job_sheet_fields():

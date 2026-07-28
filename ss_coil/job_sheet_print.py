@@ -14,6 +14,8 @@ CUTTING_SCHEME_COLUMNS = (
 	("width", "Width"),
 	("strip", "Strip"),
 	("lengthcut", "LengthCut"),
+	("length", "Length"),
+	("total_sheets", "Total Sheets"),
 	("total_width", "Total Width"),
 	("tolerance_plus", "Tol (+)"),
 	("tolerance_minus", "Tol (-)"),
@@ -121,6 +123,8 @@ def _render_table(columns, rows, empty_label="No rows"):
 				"width",
 				"strip",
 				"lengthcut",
+				"length",
+				"total_sheets",
 				"total_width",
 				"estimated_qty",
 				"actual_qty",
@@ -191,6 +195,28 @@ def _notes_row(special_instructions, remarks):
 	</table>"""
 
 
+def _employee_name(employee):
+	if not employee:
+		return "—"
+	return frappe.db.get_value("Employee", employee, "employee_name") or employee
+
+
+def _signature_row(pairs):
+	cells = []
+	for label, employee_id in pairs:
+		name = _employee_name(employee_id)
+		cells.append(
+			f"""
+			<td style="width:25%;vertical-align:top;padding:4px 6px 0 0;">
+				<div style="border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;min-height:72px;background:#fff;">
+					<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#64748b;">{escape(label)}</div>
+					<div style="font-size:12px;font-weight:700;color:#0f172a;margin-top:28px;border-top:1px solid #94a3b8;padding-top:6px;">{_esc(name)}</div>
+				</div>
+			</td>"""
+		)
+	return f'<table style="width:100%;border-collapse:collapse;table-layout:fixed;"><tr>{"".join(cells)}</tr></table>'
+
+
 def build_ss_coil_job_sheet_context(doc):
 	if isinstance(doc, str):
 		doc = frappe.get_doc("SS Coil", doc)
@@ -227,6 +253,24 @@ def build_ss_coil_job_sheet_context(doc):
 		"estimated_wt": estimated_wt,
 		"special_instructions": _doc_field(doc, "special_instructions"),
 		"remarks": _doc_field(doc, "remarks"),
+		"machine": _doc_field(doc, "machine"),
+		"calc_ratio": _doc_field(doc, "calc_ratio"),
+		"calc_ratio_2": _doc_field(doc, "calc_ratio_2"),
+		"actual_ratio": _doc_field(doc, "actual_ratio"),
+		"remaining_width": _doc_field(doc, "remaining_width"),
+		"grand_total_width": _doc_field(doc, "grand_total_width"),
+		"width": _doc_field(doc, "width"),
+		"ds": _doc_field(doc, "ds"),
+		"ctr": _doc_field(doc, "ctr"),
+		"ws": _doc_field(doc, "ws"),
+		"mill": _doc_field(doc, "mill"),
+		"specifications": _doc_field(doc, "specifications"),
+		"commodity": _doc_field(doc, "commodity"),
+		"works": _doc_field(doc, "works"),
+		"planning": _doc_field(doc, "planning"),
+		"sales": _doc_field(doc, "sales"),
+		"production": _doc_field(doc, "produciton"),
+		"encoded_by": _doc_field(doc, "encoded_by"),
 		"cutting_rows": _cutting_rows(doc),
 		"input_rows": _normalize_child_rows(_doc_field(doc, "input_coil") or []),
 		"output_rows": _normalize_child_rows(_doc_field(doc, "job_output") or []),
@@ -308,7 +352,51 @@ def build_ss_coil_job_sheet_html(doc, for_print=False):
 		]
 	)
 
+	prep_row = _info_grid(
+		[
+			("Machine", ctx["machine"]),
+			("Calc Ratio", ctx["calc_ratio"]),
+			("Calc Ratio 2", ctx["calc_ratio_2"]),
+			("Actual Ratio", ctx["actual_ratio"]),
+			("Remaining Width", ctx["remaining_width"]),
+		]
+	)
+
+	dimension_row = _info_grid(
+		[
+			("Width", ctx["width"]),
+			("DS", ctx["ds"]),
+			("CTR", ctx["ctr"]),
+			("WS", ctx["ws"]),
+		]
+	)
+
+	mill_row = _info_grid(
+		[
+			("Mill", ctx["mill"]),
+			("Specifications", ctx["specifications"]),
+			("Commodity", ctx["commodity"]),
+			("Works", ctx["works"]),
+		]
+	)
+
 	text_block = _notes_row(ctx["special_instructions"], ctx["remarks"])
+	signatures = _signature_row(
+		[
+			("Planning", ctx["planning"]),
+			("Sales", ctx["sales"]),
+			("Production", ctx["production"]),
+			("Encoded By", ctx["encoded_by"]),
+		]
+	)
+
+	grand_total = ctx.get("grand_total_width")
+	cutting_body = _render_table(CUTTING_SCHEME_COLUMNS, ctx["cutting_rows"], "No cutting scheme rows")
+	if grand_total not in (None, ""):
+		cutting_body += (
+			f'<div style="margin-top:8px;font-size:11px;font-weight:700;color:#1e3a5f;">'
+			f"Grand Total Width: {_fmt_float(grand_total)}</div>"
+		)
 
 	entry = escape(str(ctx["entry_no"]))
 	print_css = """
@@ -502,10 +590,14 @@ def build_ss_coil_job_sheet_html(doc, for_print=False):
 			</tr>
 		</table>
 		{order_product_section(meta_row)}
-		{section("Cutting Scheme", _render_table(CUTTING_SCHEME_COLUMNS, ctx["cutting_rows"], "No cutting scheme rows"))}
+		{section("Machine &amp; Ratios", prep_row)}
+		{section("Cutting Scheme", cutting_body)}
 		{section("Notes", text_block)}
+		{section("Dimensions", dimension_row)}
+		{section("Mill &amp; Product", mill_row)}
 		{section("Input Coil", _render_table(INPUT_COIL_COLUMNS, ctx["input_rows"], "No input coil rows"))}
 		{section("Job Output", _render_table(JOB_OUTPUT_COLUMNS, ctx["output_rows"], "No job output rows"))}
+		{section("Signatures", signatures)}
 	</div>
 	</div>"""
 	return html

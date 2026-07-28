@@ -134,7 +134,7 @@ def apply_stock_entry_ss_coil_defaults(doc):
 		apply_stock_entry_detail_ss_coil_defaults(doc, row)
 
 
-def apply_sales_order_ss_coil_defaults(doc):
+def apply_sales_order_ss_coil_defaults(doc, method=None):
 	if _default_ss_coil_warehouse_exists():
 		if _has_field(doc.doctype, "custom_source_warehouse") and not doc.get("custom_source_warehouse"):
 			doc.custom_source_warehouse = DEFAULT_SS_COIL_WAREHOUSE
@@ -1843,7 +1843,7 @@ def assign_sales_order_item_tags(doc, method=None):
 		)
 
 
-def sync_sales_order_item_tags_from_stock_entry(doc):
+def sync_sales_order_item_tags_from_stock_entry(doc, method=None):
 	"""Copy mother-coil tag/batch from linked Stock Entry Detail onto SO items."""
 	for row in doc.items or []:
 		stock_entry = row.get("custom_source_stock_entry")
@@ -2332,11 +2332,9 @@ def _build_sales_order_item_operation_rows(sales_order_item):
 	return rows
 
 
-def _update_sales_order_item_process_status(sales_order_item=None):
+def _compute_sales_order_item_process_status(sales_order_item=None):
 	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
-		return
-	if not _has_field("Sales Order Item", "custom_status"):
-		return
+		return ""
 
 	so_item = frappe.get_doc("Sales Order Item", sales_order_item)
 	configured = _get_enabled_processes_from_row(so_item, custom=True)
@@ -2353,8 +2351,7 @@ def _update_sales_order_item_process_status(sales_order_item=None):
 	)
 
 	if not rows:
-		frappe.db.set_value("Sales Order Item", sales_order_item, "custom_status", "", update_modified=False)
-		return
+		return ""
 
 	by_operation = {}
 	for row in rows:
@@ -2362,7 +2359,6 @@ def _update_sales_order_item_process_status(sales_order_item=None):
 		if op_key not in by_operation:
 			by_operation[op_key] = row
 
-	status = ""
 	matched = []
 	if configured:
 		for key in configured:
@@ -2374,24 +2370,50 @@ def _update_sales_order_item_process_status(sales_order_item=None):
 		target_rows = rows
 
 	if configured and matched and all((r.order_status or "") in ("Completed", "Closed") for r in matched):
-		status = "Completed"
-	elif any((r.order_status or "") == "Closed" for r in target_rows) and not any(
+		return "Completed"
+	if any((r.order_status or "") == "Closed" for r in target_rows) and not any(
 		(r.order_status or "") not in ("Completed", "Closed") for r in target_rows
 	):
-		status = "Closed"
-	elif any(
+		return "Closed"
+	if any(
 		(r.order_status or "")
 		in ("Started", "In Process", "Partially Completed", "Stopped", "Not Started", "Completed", "Closed")
 		for r in target_rows
 	):
 		if all((r.order_status or "") in ("Completed", "Closed") for r in target_rows):
-			status = "Completed"
-		else:
-			status = "In Process"
-	else:
-		status = _map_ss_coil_status_to_so_item(rows[0].order_status)
+			return "Completed"
+		return "In Process"
+	return _map_ss_coil_status_to_so_item(rows[0].order_status)
 
-	frappe.db.set_value("Sales Order Item", sales_order_item, "custom_status", status, update_modified=False)
+
+def _update_sales_order_item_process_status(sales_order_item=None):
+	if not sales_order_item or not frappe.db.exists("Sales Order Item", sales_order_item):
+		return
+	if not _has_field("Sales Order Item", "custom_status"):
+		return
+
+	status = _compute_sales_order_item_process_status(sales_order_item)
+	current = frappe.db.get_value("Sales Order Item", sales_order_item, "custom_status") or ""
+	if current == status:
+		return
+
+	try:
+		frappe.db.set_value(
+			"Sales Order Item",
+			sales_order_item,
+			"custom_status",
+			status,
+			update_modified=False,
+		)
+	except frappe.QueryDeadlockError:
+		frappe.log_error(
+			title="SO Item custom_status skipped (concurrent update)",
+			message=f"Sales Order Item: {sales_order_item}",
+		)
+	except Exception as exc:
+		if getattr(exc, "args", (None,))[0] == 1020:
+			return
+		raise
 
 
 def _build_qr_payload(row, ss_coil_doc):
@@ -5814,12 +5836,14 @@ def get_sales_order_detail_dashboard(sales_order):
 	items = []
 	packing_details = []
 	for item in doc.items:
-		if item.name:
-			_update_sales_order_item_process_status(item.name)
 		operation_rows = _build_sales_order_item_operation_rows(item.name)
-		item_status = item.get("custom_status")
+		item_status = item.get("custom_status") or ""
 		if item.name:
-			item_status = frappe.db.get_value("Sales Order Item", item.name, "custom_status") or item_status
+			item_status = (
+				_compute_sales_order_item_process_status(item.name)
+				or frappe.db.get_value("Sales Order Item", item.name, "custom_status")
+				or item_status
+			)
 		items.append(
 			{
 				"name": item.name,

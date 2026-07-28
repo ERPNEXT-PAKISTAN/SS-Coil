@@ -1,5 +1,6 @@
 {
  "app": "ss_coil",
+ "creation": "2026-07-28 00:08:59.198859",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
  "header_icon": "organization",
@@ -23,6 +24,17 @@
    "icon": "layers",
    "indent": 0,
    "keep_closed": 0,
+   "label": "Production",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "layers",
+   "indent": 1,
+   "keep_closed": 0,
    "label": "SS Coil",
    "link_to": "SS Coil",
    "link_type": "DocType",
@@ -30,10 +42,10 @@
    "type": "Link"
   },
   {
-   "child": 0,
+   "child": 1,
    "collapsible": 1,
-   "icon": "clipboard",
-   "indent": 0,
+   "icon": "",
+   "indent": 1,
    "keep_closed": 0,
    "label": "SO Production Plan",
    "link_to": "SO Production Plan",
@@ -42,10 +54,57 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "tool",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Mills",
+   "link_to": "Mills",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "settings",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Tag Number Settings",
+   "link_to": "Tag Number Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "users",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "For Customer",
+   "link_to": "For Customer",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
-   "icon": "shopping-cart",
+   "icon": "folder",
    "indent": 0,
+   "keep_closed": 0,
+   "label": "Documents",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "shopping-cart",
+   "indent": 1,
    "keep_closed": 0,
    "label": "Sales Order",
    "link_to": "Sales Order",
@@ -54,10 +113,10 @@
    "type": "Link"
   },
   {
-   "child": 0,
+   "child": 1,
    "collapsible": 1,
    "icon": "package",
-   "indent": 0,
+   "indent": 1,
    "keep_closed": 0,
    "label": "Stock Entry",
    "link_to": "Stock Entry",
@@ -66,10 +125,10 @@
    "type": "Link"
   },
   {
-   "child": 0,
+   "child": 1,
    "collapsible": 1,
    "icon": "tag",
-   "indent": 0,
+   "indent": 1,
    "keep_closed": 0,
    "label": "Tag Registry",
    "link_to": "Tag Registry",
@@ -81,7 +140,7 @@
    "child": 0,
    "collapsible": 1,
    "icon": "notepad-text",
-   "indent": 1,
+   "indent": 0,
    "keep_closed": 1,
    "label": "Reports",
    "link_type": "DocType",
@@ -92,7 +151,7 @@
    "child": 1,
    "collapsible": 1,
    "icon": "",
-   "indent": 0,
+   "indent": 1,
    "keep_closed": 0,
    "label": "Production Planning",
    "link_to": "Production Planning",
@@ -104,7 +163,7 @@
    "child": 1,
    "collapsible": 1,
    "icon": "",
-   "indent": 0,
+   "indent": 1,
    "keep_closed": 0,
    "label": "Production Planning SS Coil",
    "link_to": "Production Planning SS Coil",
@@ -116,7 +175,7 @@
    "child": 1,
    "collapsible": 1,
    "icon": "",
-   "indent": 0,
+   "indent": 1,
    "keep_closed": 0,
    "label": "Tag Registry Trace",
    "link_to": "Tag Registry Trace",
@@ -125,8 +184,11 @@
    "type": "Link"
   }
  ],
+ "modified": "2026-07-28 12:40:07.210536",
+ "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",
+ "owner": "Administrator",
  "standard": 1,
  "title": "SS Coil Space"
 }

@@ -18,6 +18,7 @@
    "is_query_report": 0,
    "label": "Planning & Production",
    "link_count": 0,
+   "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
   },
@@ -54,8 +55,39 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Mills",
+   "link_count": 0,
+   "link_to": "Mills",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tag Registry",
+   "link_count": 0,
+   "link_to": "Tag Registry",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "For Customer",
+   "link_count": 0,
+   "link_to": "For Customer",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Documents & Tracking",
    "link_count": 0,
+   "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
   },
@@ -122,18 +154,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Tag Registry",
-   "link_count": 0,
-   "link_to": "Tag Registry",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Reports & Settings",
    "link_count": 0,
+   "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
   },
@@ -173,16 +196,6 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Mills",
-   "link_count": 0,
-   "link_to": "Mills",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Print Designer",
    "link_count": 0,
    "link_to": "print-designer",
@@ -191,7 +204,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-05 23:16:40.339722",
+ "modified": "2026-07-28 12:40:06.841493",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",
@@ -203,7 +216,80 @@
  "restrict_to_domain": "",
  "roles": [],
  "sequence_id": 18.0,
- "shortcuts": [],
+ "shortcuts": [
+  {
+   "color": "Blue",
+   "doc_view": "List",
+   "label": "SS Coil",
+   "link_to": "SS Coil",
+   "type": "DocType"
+  },
+  {
+   "color": "Orange",
+   "doc_view": "List",
+   "label": "Sales Order",
+   "link_to": "Sales Order",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Stock Entry",
+   "link_to": "Stock Entry",
+   "type": "DocType"
+  },
+  {
+   "color": "Purple",
+   "doc_view": "List",
+   "label": "Tag Registry",
+   "link_to": "Tag Registry",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Mills",
+   "link_to": "Mills",
+   "type": "DocType"
+  },
+  {
+   "color": "Cyan",
+   "doc_view": "List",
+   "label": "SO Production Plan",
+   "link_to": "SO Production Plan",
+   "type": "DocType"
+  },
+  {
+   "color": "Pink",
+   "doc_view": "List",
+   "label": "For Customer",
+   "link_to": "For Customer",
+   "type": "DocType"
+  },
+  {
+   "color": "Yellow",
+   "doc_view": "List",
+   "label": "Tag Number Settings",
+   "link_to": "Tag Number Settings",
+   "type": "DocType"
+  },
+  {
+   "color": "Red",
+   "doc_view": "List",
+   "label": "Production Planning",
+   "link_to": "Production Planning",
+   "report_ref_doctype": "Sales Order",
+   "type": "Report"
+  },
+  {
+   "color": "Red",
+   "doc_view": "List",
+   "label": "Tag Registry Trace",
+   "link_to": "Tag Registry Trace",
+   "report_ref_doctype": "Tag Registry",
+   "type": "Report"
+  }
+ ],
  "title": "SS Coil Space",
  "type": "Workspace"
 }

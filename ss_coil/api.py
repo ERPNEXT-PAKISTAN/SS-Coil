@@ -2162,6 +2162,29 @@ def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row):
 		# Show inward mother-coil tag on Tag No until SS Coil assigns an output child tag.
 		so_row.custom_tag_no = tag
 
+	_apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row)
+
+
+def _apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row):
+	"""Copy coil line fields (length, dimensions, etc.) from Stock Entry Detail to Sales Order Item."""
+	for fieldname in COIL_INWARD_SO_FIELDNAMES:
+		if not _has_field("Sales Order Item", fieldname) or not _has_field(se_row.doctype, fieldname):
+			continue
+		value = se_row.get(fieldname)
+		if value in (None, ""):
+			continue
+		so_row.set(fieldname, value)
+
+	if _has_field("Sales Order Item", "custom_dimension"):
+		parts = []
+		for value in [so_row.get("custom_thickness"), so_row.get("custom_width"), so_row.get("custom_length_c")]:
+			if value in (None, ""):
+				continue
+			text = _format_dimension_part(value)
+			if text:
+				parts.append(text)
+		so_row.custom_dimension = " x ".join(parts)
+
 
 def _sales_order_item_tag_sync_values(so_row):
 	"""DB values to persist after Stock Entry → Sales Order tag / finish-good sync."""
@@ -2186,6 +2209,14 @@ def _sales_order_item_tag_sync_values(so_row):
 			updates[fieldname] = value
 		elif fieldname in ("custom_raw_material_tag_no", "custom_raw_material_batch_no", "custom_tag_no"):
 			updates[fieldname] = value or ""
+	for fieldname in COIL_INWARD_SO_FIELDNAMES:
+		if not _has_field("Sales Order Item", fieldname):
+			continue
+		if fieldname in updates:
+			continue
+		value = so_row.get(fieldname)
+		if value is not None and value != "":
+			updates[fieldname] = value
 	return updates
 
 

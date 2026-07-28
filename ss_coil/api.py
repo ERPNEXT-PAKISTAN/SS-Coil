@@ -4331,6 +4331,7 @@ def create_ss_coil_from_sales_order(source_name, sales_order_item=None, operatio
 		ss_coil.append("cutting_detail", scheme_row)
 
 	sync_ss_coil_sales_order_item_fields(ss_coil)
+	_sync_job_output_rows_from_cutting_detail(ss_coil)
 
 	return ss_coil
 

@@ -246,8 +246,6 @@ frappe.ui.form.on("SS Coil", {
 
 				frm.refresh_field("so_item");
 				load_input_coil_from_sales_order_item(frm, item);
-				update_input_coil_length(frm);
-				rebuild_job_output_from_input(frm);
 				sync_process_preview(frm);
 
 				frappe.call({
@@ -1885,6 +1883,17 @@ function applySoItemQuantitiesToInputCoil(frm) {
 
 function load_input_coil_from_sales_order_item(frm, item) {
 	const parent_tag = item.custom_raw_material_tag_no;
+
+	const after_input_coil_loaded = () => {
+		applySoItemQuantitiesToInputCoil(frm);
+		frm.refresh_field("input_coil");
+		update_input_coil_length(frm);
+		if ((frm.doc.input_coil || []).length) {
+			rebuild_job_output_from_input(frm);
+		}
+		sync_process_preview(frm);
+	};
+
 	const apply_input = (details) => {
 		const target_fields = get_mappable_fieldnames("Coil Input");
 		frm.clear_table("input_coil");
@@ -1909,8 +1918,7 @@ function load_input_coil_from_sales_order_item(frm, item) {
 			}
 		});
 
-		applySoItemQuantitiesToInputCoil(frm);
-		frm.refresh_field("input_coil");
+		after_input_coil_loaded();
 	};
 
 	if (parent_tag) {
@@ -1959,9 +1967,13 @@ function getExpectedOutputCount(frm) {
 }
 
 function rebuild_job_output_if_needed(frm) {
+	const input_rows = frm.doc.input_coil || [];
+	if (!input_rows.length) {
+		return;
+	}
 	const expectedCount = getExpectedOutputCount(frm);
 	const currentCount = (frm.doc.job_output || []).length;
-	if (expectedCount !== currentCount) {
+	if (expectedCount !== currentCount || !currentCount) {
 		rebuild_job_output_from_input(frm);
 	}
 }

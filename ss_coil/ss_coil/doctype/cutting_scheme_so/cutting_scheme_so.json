@@ -6,19 +6,21 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "seq",
   "column_break_geds",
   "width",
   "column_break_vpwy",
   "strip",
-  "column_break_sheets",
-  "total_sheets",
-  "column_break_fcmf",
-  "length",
   "column_break_len2",
   "lengthcut",
   "column_break_rtuo",
   "total_width",
+  "section_break_nyav",
+  "seq",
+  "column_break_uzsr",
+  "length",
+  "column_break_sheets",
+  "total_sheets",
+  "column_break_swzg",
   "section_break_rlqv",
   "tolerance_plus",
   "column_break_mkfg",
@@ -30,14 +32,6 @@
   "column_break_jxsv"
  ],
  "fields": [
-  {
-   "allow_on_submit": 1,
-   "fieldname": "seq",
-   "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "SEQ",
-   "precision": "0"
-  },
   {
    "fieldname": "column_break_geds",
    "fieldtype": "Column Break"
@@ -61,29 +55,6 @@
    "label": "Strip"
   },
   {
-   "fieldname": "column_break_sheets",
-   "fieldtype": "Column Break"
-  },
-  {
-   "allow_on_submit": 1,
-   "fieldname": "total_sheets",
-   "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "Total sheets"
-  },
-  {
-   "allow_on_submit": 1,
-   "fieldname": "column_break_fcmf",
-   "fieldtype": "Column Break"
-  },
-  {
-   "allow_on_submit": 1,
-   "fieldname": "length",
-   "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "Length"
-  },
-  {
    "fieldname": "column_break_len2",
    "fieldtype": "Column Break"
   },
@@ -103,6 +74,44 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Total Width"
+  },
+  {
+   "fieldname": "section_break_nyav",
+   "fieldtype": "Section Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "seq",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "SEQ",
+   "precision": "0"
+  },
+  {
+   "fieldname": "column_break_uzsr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "length",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length"
+  },
+  {
+   "fieldname": "column_break_sheets",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_sheets",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total sheets"
+  },
+  {
+   "fieldname": "column_break_swzg",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "section_break_rlqv",
@@ -157,8 +166,8 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-05 01:38:54.400756",
- "modified_by": "Administrator",
+ "modified": "2026-07-29 01:51:24.255780",
+ "modified_by": "techcraft986@gmail.com",
  "module": "SS Coil",
  "name": "Cutting Scheme SO",
  "owner": "Administrator",

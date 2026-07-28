@@ -3232,6 +3232,30 @@ def render_ss_coil_output_tags_page(ss_coil_name, print_view=0):
 	frappe.response["display_content_as"] = "inline"
 
 
+def _is_persisted_child_row(row):
+	name = getattr(row, "name", None)
+	if not name:
+		return False
+	if str(name).startswith("new-"):
+		return False
+	return True
+
+
+def _sync_job_output_process_row(row, current_process, next_process_label, next_process_date):
+	"""Keep per-output next_process: blank means this tag does not advance."""
+	row.current_process = current_process
+	if _truthy_process_value(getattr(row, "next_process", None)):
+		if not getattr(row, "next_process_date", None) and next_process_date:
+			row.next_process_date = next_process_date
+		return
+	if getattr(row, "next_process", None) == "" or _is_persisted_child_row(row):
+		row.next_process = ""
+		row.next_process_date = ""
+		return
+	row.next_process = next_process_label or ""
+	row.next_process_date = next_process_date if next_process_label else ""
+
+
 def sync_ss_coil_process_tracking(doc, method=None):
 	operation_value = _clean_text(getattr(doc, "operation", None))
 	current_process = _label_for_process(operation_value)
@@ -3257,9 +3281,7 @@ def sync_ss_coil_process_tracking(doc, method=None):
 			row.next_process = current_process or next_process_label
 
 	for row in doc.job_output or []:
-		row.current_process = current_process
-		row.next_process = next_process_label or ""
-		row.next_process_date = next_process_date
+		_sync_job_output_process_row(row, current_process, next_process_label, next_process_date)
 		row.barcode = row.tag_no or ""
 		row.qr_code = _build_qr_html(_build_qr_payload(row, doc))
 
@@ -3328,27 +3350,18 @@ def create_next_ss_coil_entry(source_name):
 		frappe.throw(f"SS Coil {source_name} not found")
 
 	source_doc = frappe.get_doc("SS Coil", source_name)
-	next_process = ""
-	for row in source_doc.job_output or []:
-		if getattr(row, "next_process", None):
-			next_process = row.next_process
-			break
-
-	if not next_process:
-		# Not an error: this item's configured process chain (so_item's
-		# slitter/leveler/reshearing flags) simply ends at this document's
-		# operation - e.g. only Slitter+Leveler are required, so completing
-		# Leveler has nothing further to advance to. Both the "Create Next
-		# Process" button (only shown when getNextProcessLabelFromOutputs
-		# finds something) and the auto-trigger after "Complete" already
-		# guard against calling this with nothing to do, but return
-		# gracefully here too for any other caller.
+	eligible_outputs = [
+		row for row in (source_doc.job_output or []) if _truthy_process_value(row.get("next_process"))
+	]
+	if not eligible_outputs:
 		return {"created_docs": [], "skipped_docs": [], "count": 0, "skipped_count": 0, "no_next_process": True}
 
-	next_operation = _resolve_operation_name(next_process)
 	created_docs = []
 	skipped_docs = []
-	for output_row in source_doc.job_output or []:
+	for output_row in eligible_outputs:
+		next_operation = _resolve_operation_name(output_row.get("next_process"))
+		if not next_operation:
+			continue
 		existing_name = _find_existing_next_process_doc(source_doc, next_operation, output_row.get("tag_no"))
 		if existing_name:
 			skipped_docs.append(

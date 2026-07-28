@@ -1628,11 +1628,20 @@ frappe.ui.form.on("Coil Output", {
 	tag_no(frm) {
 		sync_process_preview(frm);
 	},
+	next_process(frm, cdt, cdn) {
+		const row = locals[cdt] && locals[cdt][cdn];
+		if (!row) {
+			return;
+		}
+		if (!row.next_process) {
+			row.next_process_date = "";
+		}
+		frm.refresh_field("job_output");
+	},
 	class(frm) {
 		sync_process_preview(frm);
 	},
 	job_output_form_render(frm) {
-		sync_process_preview(frm);
 		render_job_output_qr_fields(frm);
 	},
 });
@@ -2107,6 +2116,10 @@ function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequ
 	});
 }
 
+function isPersistedGridRow(row) {
+	return Boolean(row && row.name && !row.__islocal);
+}
+
 function sync_process_preview(frm) {
 	const currentProcess = formatProcessLabel(frm.doc.operation);
 	const configuredProcesses = getConfiguredProcesses(frm);
@@ -2122,8 +2135,15 @@ function sync_process_preview(frm) {
 
 	(frm.doc.job_output || []).forEach((row) => {
 		row.current_process = currentProcess;
-		row.next_process = nextProcess;
-		row.next_process_date = nextProcess ? today : "";
+		if (row.next_process) {
+			row.next_process_date = row.next_process_date || (nextProcess ? today : "");
+		} else if (row.next_process === "" || isPersistedGridRow(row)) {
+			row.next_process = "";
+			row.next_process_date = "";
+		} else {
+			row.next_process = nextProcess;
+			row.next_process_date = nextProcess ? today : "";
+		}
 		row.barcode = row.tag_no || "";
 		row.qr_code = buildOutputQrHtml(frm, row);
 	});

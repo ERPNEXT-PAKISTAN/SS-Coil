@@ -915,7 +915,7 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 				],
 				primary_action_label: __("Save All Processes"),
 				primary_action() {
-					sync_cutting_dialog_grid_to_cache(dialog, plan_cache, active_process);
+					sync_cutting_dialog_grid_to_cache(dialog, plan_cache, dialog.__active_process);
 					const plans_to_save = {};
 					processes.forEach((pk) => {
 						plans_to_save[pk] = normalize_cutting_scheme_rows(plan_cache[pk] || [], pk);
@@ -992,35 +992,122 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 			}
 			render_cutting_scheme_item_meta(dialog, row);
 			const switchProcess = (next_process) => {
-				sync_cutting_dialog_grid_to_cache(dialog, plan_cache, active_process);
+				if (next_process === dialog.__active_process) {
+					return;
+				}
+				sync_cutting_dialog_grid_to_cache(dialog, plan_cache, dialog.__active_process);
+				dialog.__active_process = next_process;
 				active_process = next_process;
-				dialog.__active_process = active_process;
-				if (!(plan_cache[active_process] || []).length && active_process !== "slitter") {
-					ensure_cutting_plan_defaults(plan_cache, [active_process], dialog.__so_item_row);
+				if (!(plan_cache[next_process] || []).length && next_process !== "slitter") {
+					const defaults = default_cutting_scheme_row_for_process(dialog.__so_item_row, next_process);
+					if (defaults) {
+						plan_cache[next_process] = [defaults];
+					}
 				}
-				const field = dialog.fields_dict.cutting_rows;
-				field.df.data = normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process);
-				if (locals["Dialog Table"]) {
-					Object.keys(locals["Dialog Table"]).forEach((name) => {
-						delete locals["Dialog Table"][name];
-					});
-				}
-				field.grid.grid_rows = [];
-				field.grid.refresh();
-				apply_cutting_scheme_grid_process_mode(field.grid, active_process);
-				render_cutting_scheme_process_tabs(dialog, processes, active_process, switchProcess);
-				prepare_cutting_scheme_dialog(dialog);
+				load_cutting_scheme_tab_into_grid(dialog, plan_cache, next_process);
+				render_cutting_scheme_process_tabs(dialog, processes, next_process, switchProcess);
 			};
 			render_cutting_scheme_process_tabs(dialog, processes, active_process, switchProcess);
-			prepare_cutting_scheme_dialog(dialog);
+			bind_cutting_scheme_dialog_events(dialog);
+			load_cutting_scheme_tab_into_grid(dialog, plan_cache, active_process);
 		},
 	});
 }
 
 function sync_cutting_dialog_grid_to_cache(dialog, plan_cache, process_key) {
 	const field = dialog.fields_dict.cutting_rows;
-	if (!field || !field.grid) return;
-	plan_cache[process_key] = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+	if (!field || !field.grid || !process_key) {
+		return;
+	}
+	const rows = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+	plan_cache[process_key] = rows.map((row) => ({ ...row }));
+}
+
+function load_cutting_scheme_tab_into_grid(dialog, plan_cache, process_key) {
+	const field = dialog.fields_dict.cutting_rows;
+	if (!field || !field.grid) {
+		return;
+	}
+	const normalized = normalize_cutting_scheme_rows(
+		(plan_cache[process_key] || []).map((row) => ({ ...row })),
+		process_key,
+	);
+	field.df.data = normalized;
+	field.grid.df.data = normalized;
+	if (locals["Dialog Table"]) {
+		Object.keys(locals["Dialog Table"]).forEach((name) => {
+			delete locals["Dialog Table"][name];
+		});
+	}
+	field.grid.grid_rows = [];
+	field.grid.refresh();
+	apply_cutting_scheme_grid_process_mode(field.grid, process_key);
+	update_cutting_scheme_totals(dialog);
+}
+
+function bind_cutting_scheme_dialog_events(dialog) {
+	const field = dialog.fields_dict.cutting_rows;
+	if (!field || !field.grid || dialog.__cutting_scheme_events_bound) {
+		return;
+	}
+	dialog.__cutting_scheme_events_bound = true;
+
+	field.grid.wrapper.css("overflow-x", "auto");
+	field.grid.wrapper.find(".grid-body").css("overflow-x", "auto");
+	field.grid.wrapper.find(".grid-heading-row, .rows").css("min-width", "1200px");
+	field.grid.wrapper.find(".grid-add-row, .grid-remove-rows").css("display", "");
+
+	field.grid.wrapper.off(".ss_coil_cutting_dialog");
+	field.grid.wrapper.on(
+		"input.ss_coil_cutting_dialog change.ss_coil_cutting_dialog",
+		'[data-fieldname="width"] input, [data-fieldname="strip"] input, [data-fieldname="length"] input, [data-fieldname="lengthcut"] input, [data-fieldname="tolerance_plus"] input, [data-fieldname="tolerance_minus"] input',
+		function () {
+			const process_key = dialog.__active_process || "slitter";
+			const row_name =
+				$(this).attr("data-name") || $(this).closest(".grid-row").attr("data-name");
+			if (!row_name) return;
+			const row = (locals["Dialog Table"] || {})[row_name];
+			if (!row) return;
+
+			row.total_width = flt(row.width) * (flt(row.strip) || 1);
+			field.grid.refresh_row(row_name);
+			update_cutting_scheme_totals(dialog);
+		},
+	);
+
+	field.grid.wrapper.on("click.ss_coil_cutting_dialog", ".grid-add-row", function () {
+		setTimeout(() => {
+			const process_key = dialog.__active_process || "slitter";
+			const data = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+			const so_row = dialog.__so_item_row;
+			if (so_row && process_key !== "slitter" && data.length) {
+				const last = data[data.length - 1];
+				const defaults = default_cutting_scheme_row_for_process(so_row, process_key);
+				if (defaults) {
+					Object.keys(defaults).forEach((key) => {
+						if (last[key] === undefined || last[key] === null || last[key] === "") {
+							last[key] = defaults[key];
+						}
+					});
+				}
+			}
+			field.df.data = data;
+			field.grid.df.data = data;
+			field.grid.refresh();
+			update_cutting_scheme_totals(dialog);
+		}, 50);
+	});
+
+	field.grid.wrapper.on("click.ss_coil_cutting_dialog", ".grid-remove-rows, .grid-delete-row", function () {
+		setTimeout(() => {
+			const process_key = dialog.__active_process || "slitter";
+			const data = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+			field.df.data = data;
+			field.grid.df.data = data;
+			field.grid.refresh();
+			update_cutting_scheme_totals(dialog);
+		}, 50);
+	});
 }
 
 function render_cutting_scheme_process_tabs(dialog, processes, active_process, on_select) {
@@ -1046,73 +1133,19 @@ function render_cutting_scheme_process_tabs(dialog, processes, active_process, o
 	);
 	html_field.$wrapper.find(".ss-coil-scheme-tab").off("click").on("click", function () {
 		const pk = $(this).attr("data-process");
-		if (pk && pk !== active_process && typeof on_select === "function") {
+		const current = dialog.__active_process;
+		if (pk && pk !== current && typeof on_select === "function") {
 			on_select(pk);
 		}
 	});
 }
 
 function prepare_cutting_scheme_dialog(dialog) {
-	const field = dialog.fields_dict.cutting_rows;
-	if (!field || !field.grid) return;
-	const process_key = dialog.__active_process || "slitter";
-
-	field.grid.df.data = normalize_cutting_scheme_rows(field.grid.df.data || [], process_key);
-	field.grid.refresh();
-	apply_cutting_scheme_grid_process_mode(field.grid, process_key);
-	field.grid.wrapper.css("overflow-x", "auto");
-	field.grid.wrapper.find(".grid-body").css("overflow-x", "auto");
-	field.grid.wrapper.find(".grid-heading-row, .rows").css("min-width", "1200px");
-	update_cutting_scheme_totals(dialog);
-
-	field.grid.wrapper.find(".grid-add-row, .grid-remove-rows").css("display", "");
-
-	field.grid.wrapper.off(".ss_coil_cutting_dialog");
-	field.grid.wrapper.on(
-		"input.ss_coil_cutting_dialog change.ss_coil_cutting_dialog",
-		'[data-fieldname="width"] input, [data-fieldname="strip"] input, [data-fieldname="length"] input, [data-fieldname="lengthcut"] input, [data-fieldname="tolerance_plus"] input, [data-fieldname="tolerance_minus"] input',
-		function () {
-			const row_name =
-				$(this).attr("data-name") || $(this).closest(".grid-row").attr("data-name");
-			if (!row_name) return;
-			const row = (locals["Dialog Table"] || {})[row_name];
-			if (!row) return;
-
-			row.total_width = flt(row.width) * (flt(row.strip) || 1);
-			field.grid.refresh_row(row_name);
-			update_cutting_scheme_totals(dialog);
-		},
-	);
-
-	field.grid.wrapper.on("click.ss_coil_cutting_dialog", ".grid-add-row", function () {
-		setTimeout(() => {
-			const data = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
-			const so_row = dialog.__so_item_row;
-			if (so_row && process_key !== "slitter" && data.length) {
-				const last = data[data.length - 1];
-				const defaults = default_cutting_scheme_row_for_process(so_row, process_key);
-				if (defaults) {
-					Object.keys(defaults).forEach((key) => {
-						if (last[key] === undefined || last[key] === null || last[key] === "") {
-							last[key] = defaults[key];
-						}
-					});
-				}
-			}
-			field.grid.df.data = data;
-			field.grid.refresh();
-			update_cutting_scheme_totals(dialog);
-		}, 50);
-	});
-
-	field.grid.wrapper.on("click.ss_coil_cutting_dialog", ".grid-remove-rows, .grid-delete-row", function () {
-		setTimeout(() => {
-			const data = normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
-			field.grid.df.data = data;
-			field.grid.refresh();
-			update_cutting_scheme_totals(dialog);
-		}, 50);
-	});
+	// Legacy entry — bind once and load current tab from cache (do not re-read stale grid rows).
+	bind_cutting_scheme_dialog_events(dialog);
+	if (dialog.__plan_cache && dialog.__active_process) {
+		load_cutting_scheme_tab_into_grid(dialog, dialog.__plan_cache, dialog.__active_process);
+	}
 }
 
 function normalize_cutting_scheme_rows(rows, process_key = "slitter") {

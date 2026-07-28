@@ -768,43 +768,56 @@ const SS_COIL_CUTTING_PROCESS_LABELS = {
 	reshearing: __("Reshearing"),
 };
 
-function cutting_scheme_table_fields(process_key) {
-	const is_slitter = process_key === "slitter";
-	if (is_slitter) {
-		return [
-			{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, read_only: 1, columns: 1 },
-			{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
-			{ fieldname: "strip", fieldtype: "Float", label: __("Strip"), in_list_view: 1, columns: 1 },
-			{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 2 },
-			{
-				fieldname: "total_width",
-				fieldtype: "Float",
-				label: __("Total Width"),
-				in_list_view: 1,
-				read_only: 1,
-				columns: 2,
-			},
-			{ fieldname: "tolerance_plus", fieldtype: "Float", label: "Tol (+)", in_list_view: 1, columns: 1 },
-			{ fieldname: "tolerance_minus", fieldtype: "Float", label: "Tol (-)", in_list_view: 1, columns: 1 },
-			{ fieldname: "knife", fieldtype: "Check", label: "Knife", in_list_view: 1, columns: 1 },
-		];
-	}
-	// Leveler / Reshearing — match production sheet: Width, Length, LengthCut, Total sheets, Tolerance
+function cutting_scheme_dialog_table_fields() {
+	/** Single schema for all tabs — Frappe grid breaks if column defs change on tab switch. */
 	return [
 		{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, read_only: 1, columns: 1 },
 		{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
 		{ fieldname: "length", fieldtype: "Float", label: "Length", in_list_view: 1, columns: 2 },
 		{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 2 },
+		{ fieldname: "strip", fieldtype: "Float", label: __("Total sheets"), in_list_view: 1, columns: 2 },
 		{
-			fieldname: "strip",
+			fieldname: "total_width",
 			fieldtype: "Float",
-			label: __("Total sheets"),
+			label: __("Total Width"),
 			in_list_view: 1,
+			read_only: 1,
 			columns: 2,
 		},
 		{ fieldname: "tolerance_plus", fieldtype: "Float", label: "Tol(+)", in_list_view: 1, columns: 1 },
 		{ fieldname: "tolerance_minus", fieldtype: "Float", label: "Tol(-)", in_list_view: 1, columns: 1 },
+		{ fieldname: "knife", fieldtype: "Check", label: "Knife", in_list_view: 1, columns: 1 },
 	];
+}
+
+function ensure_cutting_scheme_dialog_grid_styles() {
+	if (document.getElementById("ss-coil-scheme-grid-style")) {
+		return;
+	}
+	const style = document.createElement("style");
+	style.id = "ss-coil-scheme-grid-style";
+	style.textContent = `
+		.ss-coil-scheme-slitter .grid-heading-row [data-fieldname="length"],
+		.ss-coil-scheme-slitter .grid-row [data-fieldname="length"] { display: none !important; }
+		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="total_width"],
+		.ss-coil-scheme-leveler .grid-row [data-fieldname="total_width"],
+		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="knife"],
+		.ss-coil-scheme-leveler .grid-row [data-fieldname="knife"] { display: none !important; }
+	`;
+	document.head.appendChild(style);
+}
+
+function apply_cutting_scheme_grid_process_mode(grid, process_key) {
+	if (!grid || !grid.wrapper) {
+		return;
+	}
+	ensure_cutting_scheme_dialog_grid_styles();
+	const is_slitter = process_key === "slitter";
+	grid.wrapper
+		.toggleClass("ss-coil-scheme-slitter", is_slitter)
+		.toggleClass("ss-coil-scheme-leveler", !is_slitter);
+	const strip_label = is_slitter ? __("Strip") : __("Total sheets");
+	grid.wrapper.find(".grid-heading-row [data-fieldname='strip'] .static-area").text(strip_label);
 }
 
 function default_cutting_scheme_row_for_process(so_item_row, process_key) {
@@ -896,7 +909,7 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 						in_place_edit: true,
 						cannot_add_rows: false,
 						data: normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process),
-						fields: cutting_scheme_table_fields(active_process),
+						fields: cutting_scheme_dialog_table_fields(),
 					},
 					{ fieldname: "totals_html", fieldtype: "HTML" },
 				],
@@ -982,14 +995,19 @@ function open_cutting_scheme_dialog(frm, cdt, cdn) {
 				sync_cutting_dialog_grid_to_cache(dialog, plan_cache, active_process);
 				active_process = next_process;
 				dialog.__active_process = active_process;
-				const field = dialog.fields_dict.cutting_rows;
-				field.df.fields = cutting_scheme_table_fields(active_process);
-				field.df.data = normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process);
 				if (!(plan_cache[active_process] || []).length && active_process !== "slitter") {
 					ensure_cutting_plan_defaults(plan_cache, [active_process], dialog.__so_item_row);
-					field.df.data = normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process);
 				}
+				const field = dialog.fields_dict.cutting_rows;
+				field.df.data = normalize_cutting_scheme_rows(plan_cache[active_process] || [], active_process);
+				if (locals["Dialog Table"]) {
+					Object.keys(locals["Dialog Table"]).forEach((name) => {
+						delete locals["Dialog Table"][name];
+					});
+				}
+				field.grid.grid_rows = [];
 				field.grid.refresh();
+				apply_cutting_scheme_grid_process_mode(field.grid, active_process);
 				render_cutting_scheme_process_tabs(dialog, processes, active_process, switchProcess);
 				prepare_cutting_scheme_dialog(dialog);
 			};
@@ -1041,6 +1059,7 @@ function prepare_cutting_scheme_dialog(dialog) {
 
 	field.grid.df.data = normalize_cutting_scheme_rows(field.grid.df.data || [], process_key);
 	field.grid.refresh();
+	apply_cutting_scheme_grid_process_mode(field.grid, process_key);
 	field.grid.wrapper.css("overflow-x", "auto");
 	field.grid.wrapper.find(".grid-body").css("overflow-x", "auto");
 	field.grid.wrapper.find(".grid-heading-row, .rows").css("min-width", "1200px");

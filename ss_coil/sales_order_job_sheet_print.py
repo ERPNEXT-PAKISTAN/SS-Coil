@@ -15,7 +15,8 @@ ITEM_COLUMNS = (
 	("ref_no", "Ref No"),
 	("dimension", "Dimension"),
 	("specification", "Specification"),
-	("machine", "Machine"),
+	("mill", "Mill"),
+	("operations", "Operations"),
 	("estimated_wt", "Est WT"),
 )
 
@@ -45,6 +46,53 @@ def _esc(value):
 	if value in (None, ""):
 		return "—"
 	return escape(str(value))
+
+
+def _desk_link(route, label, label_text=None):
+	text = label_text if label_text is not None else label
+	return (
+		f'<a href="/app/{escape(route)}/{escape(label)}" '
+		f'style="color:#1d4ed8;font-weight:800;text-decoration:none;">{escape(text)}</a>'
+	)
+
+
+def _format_item_operations(item):
+	parts = []
+	for field, label in (
+		("custom_slitter", "Slitter"),
+		("custom_leveler", "Leveler"),
+		("custom_reshearing", "Reshearing"),
+	):
+		value = item.get(field)
+		if value in (None, ""):
+			continue
+		text = str(value).strip()
+		if text.lower() == label.lower() or text in ("1", "Yes"):
+			parts.append(label)
+		else:
+			parts.append(f"{label}: {text}")
+	return " · ".join(parts) if parts else "—"
+
+
+def _linked_stock_entry_names(doc):
+	names = set()
+	raw = doc.get("custom_source_stock_entries") or ""
+	for part in raw.replace(";", ",").split(","):
+		token = part.strip()
+		if token:
+			names.add(token)
+	for item in doc.items or []:
+		se = item.get("custom_source_stock_entry")
+		if se:
+			names.add(se)
+	return sorted(names)
+
+
+def _stock_entry_links_html(doc):
+	entries = _linked_stock_entry_names(doc)
+	if not entries:
+		return "—"
+	return " · ".join(_desk_link("stock-entry", name) for name in entries)
 
 
 def _fmt_date(value):
@@ -95,6 +143,8 @@ def _render_table(columns, rows, empty_label="No rows"):
 				"tolerance_minus",
 			):
 				cell_val = _fmt_float(val) if val not in (None, "") else "—"
+			elif fieldname == "operations":
+				cell_val = _esc(val) if val not in (None, "") else "—"
 			else:
 				cell_val = _esc(val)
 			cells.append(
@@ -132,7 +182,8 @@ def _so_items(doc):
 				"ref_no": item.get("custom_ref_no"),
 				"dimension": item.get("custom_dimension"),
 				"specification": item.get("custom_specification"),
-				"machine": item.get("custom_machine"),
+				"mill": item.get("custom_mill"),
+				"operations": _format_item_operations(item),
 				"estimated_wt": item.get("custom_estimated_wt"),
 			}
 		)
@@ -211,7 +262,7 @@ def build_sales_order_job_sheet_html(doc):
 	if logo_url:
 		logo_html = (
 			f'<img class="ss-coil-job-sheet-header-logo-img" src="{escape(logo_url)}" alt="Logo" '
-			f'style="height:24px;width:auto;max-width:140px;object-fit:contain;display:block;">'
+			f'style="height:48px;width:auto;max-width:280px;object-fit:contain;display:block;">'
 		)
 
 	header_title_style = (
@@ -236,6 +287,11 @@ def build_sales_order_job_sheet_html(doc):
 		}
 		@media print {
 			.ss-coil-so-job-sheet-print-bar { display: none !important; }
+		}
+		.ss-coil-so-job-sheet-root .ss-coil-job-sheet-header-logo-img {
+			height: 48px !important;
+			max-height: 48px !important;
+			max-width: 280px !important;
 		}
 	</style>"""
 
@@ -281,6 +337,18 @@ def build_sales_order_job_sheet_html(doc):
 				<td style="width:25%;padding:8px;background:#f1f5f9;border:1px solid #e2e8f0;border-left:none;border-radius:0 8px 8px 0;">
 					<span style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;">For Customer</span>
 					<div style="font-size:13px;font-weight:800;">{_esc(for_customer)}</div>
+				</td>
+			</tr>
+		</table>
+		<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4px;">
+			<tr>
+				<td style="width:50%;padding:8px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px 0 0 8px;">
+					<span style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;">Sales Order</span>
+					<div style="font-size:13px;font-weight:800;">{_desk_link("sales-order", doc.name)}</div>
+				</td>
+				<td style="width:50%;padding:8px;background:#eef2ff;border:1px solid #c7d2fe;border-left:none;border-radius:0 8px 8px 0;">
+					<span style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;">Linked Stock Entry</span>
+					<div style="font-size:13px;font-weight:800;line-height:1.5;">{_stock_entry_links_html(doc)}</div>
 				</td>
 			</tr>
 		</table>"""

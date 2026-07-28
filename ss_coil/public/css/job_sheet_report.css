@@ -22,6 +22,12 @@
 	object-fit: contain !important;
 }
 
+.ss-coil-so-job-sheet-root .ss-coil-job-sheet-header-logo-img {
+	height: 48px !important;
+	max-height: 48px !important;
+	max-width: 280px !important;
+}
+
 .ss-coil-job-sheet-root .ss-coil-job-sheet-brand-name-cell,
 .ss-coil-job-sheet-root .ss-coil-job-sheet-brand-logo-cell {
 	vertical-align: middle !important;

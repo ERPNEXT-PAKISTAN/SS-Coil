@@ -148,7 +148,7 @@
    "fieldname": "length_c",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Length C"
+   "label": "C"
   },
   {
    "fieldname": "column_break_egpx",

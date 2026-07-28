@@ -51,6 +51,87 @@ def _format_dimension_part(value):
 	return text
 
 
+def _length_value_is_numeric(value):
+	if value in (None, ""):
+		return False
+	if isinstance(value, (int, float)):
+		return True
+	return bool(re.fullmatch(r"-?\d+(\.\d+)?", str(value).strip()))
+
+
+def migrate_length_and_length_c_field_values():
+	"""Move mistaken values: text C → custom_length_c, numeric length → custom_length (Float)."""
+	for doctype in ("Sales Order Item", "Stock Entry Detail"):
+		if not _has_field(doctype, "custom_length"):
+			continue
+		has_length_c = _has_field(doctype, "custom_length_c")
+		fields = ["name", "custom_length"]
+		if has_length_c:
+			fields.append("custom_length_c")
+		for row in frappe.get_all(doctype, fields=fields, limit=0):
+			old_length = row.get("custom_length")
+			old_length_c = row.get("custom_length_c") if has_length_c else None
+			new_length = None
+			new_length_c = None
+
+			if _length_value_is_numeric(old_length_c):
+				new_length = flt(old_length_c)
+			elif _length_value_is_numeric(old_length):
+				new_length = flt(old_length)
+
+			if old_length not in (None, "") and not _length_value_is_numeric(old_length):
+				new_length_c = str(old_length).strip()
+			elif has_length_c and old_length_c not in (None, "") and not _length_value_is_numeric(old_length_c):
+				new_length_c = str(old_length_c).strip()
+
+			updates = {}
+			if new_length is not None:
+				updates["custom_length"] = new_length
+			if has_length_c and new_length_c is not None:
+				updates["custom_length_c"] = new_length_c
+			if updates:
+				frappe.db.set_value(doctype, row.name, updates, update_modified=False)
+
+
+def setup_length_c_and_length_fields():
+	"""custom_length_c = Data (C in dimension); custom_length = Float (calculated length)."""
+	field_updates = [
+		("Sales Order Item", "custom_length_c", {"fieldtype": "Data", "label": "C", "precision": ""}),
+		("Sales Order Item", "custom_length", {"fieldtype": "Float", "label": "Length"}),
+		("Stock Entry Detail", "custom_length", {"fieldtype": "Float", "label": "Length"}),
+	]
+	for dt, fieldname, props in field_updates:
+		cf_name = f"{dt}-{fieldname}"
+		if frappe.db.exists("Custom Field", cf_name):
+			frappe.db.set_value("Custom Field", cf_name, props, update_modified=False)
+
+	if not _has_field("Stock Entry Detail", "custom_length_c"):
+		doc = frappe.new_doc("Custom Field")
+		doc.update(
+			{
+				"dt": "Stock Entry Detail",
+				"fieldname": "custom_length_c",
+				"fieldtype": "Data",
+				"label": "C",
+				"insert_after": "custom_js_number",
+				"allow_on_submit": 1,
+				"description": "Shown in dimension (e.g. letter C). Not used for numeric length calculations.",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+	elif frappe.db.exists("Custom Field", "Stock Entry Detail-custom_length_c"):
+		frappe.db.set_value(
+			"Custom Field",
+			"Stock Entry Detail-custom_length_c",
+			{"fieldtype": "Data", "label": "C", "precision": ""},
+			update_modified=False,
+		)
+
+	migrate_length_and_length_c_field_values()
+	for doctype in ("Sales Order Item", "Stock Entry Detail"):
+		frappe.clear_cache(doctype=doctype)
+
+
 def _has_field(doctype, fieldname):
 	return bool(frappe.get_meta(doctype).get_field(fieldname))
 
@@ -4235,7 +4316,7 @@ def _input_coil_row_from_sales_order_item(so_item):
 			"class": so_item.get("custom_raw_material_item") or so_item.get("item_name") or so_item.get("item_code"),
 			"tag_no": "",
 			"dimension": so_item.get("custom_dimension") or "",
-			"length": so_item.get("custom_length") or so_item.get("custom_length_c"),
+			"length": flt(so_item.get("custom_length")) or None,
 			"location": so_item.get("custom_location"),
 		}
 	else:
@@ -4250,7 +4331,7 @@ def _input_coil_row_from_sales_order_item(so_item):
 			details["tag_no"] = parent_tag
 		for key, value in {
 			"dimension": so_item.get("custom_dimension") or "",
-			"length": so_item.get("custom_length") or so_item.get("custom_length_c"),
+			"length": flt(so_item.get("custom_length")) or None,
 			"location": so_item.get("custom_location"),
 		}.items():
 			if details.get(key) in (None, "") and value not in (None, ""):

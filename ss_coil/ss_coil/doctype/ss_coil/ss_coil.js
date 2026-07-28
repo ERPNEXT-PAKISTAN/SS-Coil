@@ -24,6 +24,12 @@ function render_ss_coil_job_sheet_report(frm) {
 	ss_coil.job_sheet.render_on_ss_coil_form(frm);
 }
 
+function render_ss_coil_formulas(frm) {
+	if (ss_coil.formulas && ss_coil.formulas.render) {
+		ss_coil.formulas.render(frm);
+	}
+}
+
 frappe.ui.form.on("SS Coil", {
 	setup(frm) {
 		frm.set_query("sales_order_item", function () {
@@ -73,6 +79,7 @@ frappe.ui.form.on("SS Coil", {
 		render_job_output_qr_fields(frm);
 		load_ss_coil_flow_and_dashboards(frm);
 		render_ss_coil_job_sheet_report(frm);
+		render_ss_coil_formulas(frm);
 		sync_linked_stock_entry_field(frm);
 		apply_sales_order_item_link_title(frm);
 	},
@@ -83,12 +90,6 @@ frappe.ui.form.on("SS Coil", {
 	},
 	process_control_enabled(frm) {
 		load_ss_coil_flow_and_dashboards(frm);
-	},
-	estimated_wt(frm) {
-		update_calc_ratio(frm);
-	},
-	grand_estimated_wt(frm) {
-		update_calc_ratio(frm);
 	},
 	cutting_detail_add(frm) {
 		sync_cutting_detail_so_no(frm, false);
@@ -236,7 +237,6 @@ frappe.ui.form.on("SS Coil", {
 				frm._last_sales_order_item = item;
 				applyOperationAndMachineFromSalesOrderItem(frm, item);
 
-				frm.set_value("calc_ratio", flt(item.custom_calc_ratio));
 				frm.set_value("calc_ratio_2", flt(item.custom_calc_ratio_2));
 				frm.set_value("actual_ratio", flt(item.custom_actual_ratio));
 				frm.set_value("remaining_width", flt(item.custom_remaining_width));
@@ -1702,6 +1702,8 @@ function update_grand_totals(frm) {
 	frm.set_value("grand_total_width", total_width_sum);
 	frm.set_value("grand_estimated_wt", estimated_wt_sum);
 	update_remaining_width(frm);
+	update_calc_ratio(frm);
+	render_ss_coil_formulas(frm);
 }
 
 function update_cutting_total_width(cdt, cdn) {
@@ -1712,21 +1714,18 @@ function update_cutting_total_width(cdt, cdn) {
 }
 
 function update_calc_ratio(frm) {
-	const estimated = flt(frm.doc.estimated_wt);
-	const grand = flt(frm.doc.grand_estimated_wt);
-
-	if (!estimated) {
-		frm.set_value("calc_ratio", 0);
-		return;
-	}
-
-	frm.set_value("calc_ratio", (grand / estimated) * 100);
+	const value =
+		ss_coil.formulas && ss_coil.formulas.calc_ratio_value
+			? ss_coil.formulas.calc_ratio_value(frm)
+			: flt(frm.doc.calc_ratio);
+	frm.set_value("calc_ratio", value);
 }
 
 function update_remaining_width(frm) {
 	const so_width = flt((frm.doc.so_item || [])[0]?.width);
 	const grand_total_width = flt(frm.doc.grand_total_width);
 	frm.set_value("remaining_width", so_width - grand_total_width);
+	render_ss_coil_formulas(frm);
 }
 
 function update_input_coil_length(frm, target_row = null) {
@@ -1747,6 +1746,7 @@ function update_input_coil_length(frm, target_row = null) {
 	});
 
 	frm.refresh_field("input_coil");
+	render_ss_coil_formulas(frm);
 }
 
 function formatCounterDuration(totalSeconds) {
@@ -1891,6 +1891,8 @@ function applySoItemQuantitiesToInputCoil(frm) {
 		row.estimated_qty = metrics.estimated_qty;
 		row.actual_qty = metrics.actual_qty;
 	});
+	update_calc_ratio(frm);
+	render_ss_coil_formulas(frm);
 }
 
 function load_input_coil_from_sales_order_item(frm, item) {
@@ -1948,7 +1950,7 @@ function load_input_coil_from_sales_order_item(frm, item) {
 		class: item.custom_raw_material_item || item.item_name || item.item_code,
 		tag_no: "",
 		dimension: item.custom_dimension || "",
-		length: item.custom_length || item.custom_length_c,
+		length: flt(item.custom_length) || undefined,
 		location: item.custom_location,
 		slitter: item.custom_slitter,
 		leveler: item.custom_leveler,

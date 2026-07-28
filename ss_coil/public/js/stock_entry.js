@@ -79,7 +79,7 @@ frappe.ui.form.on("Stock Entry Detail", {
 	custom_width(frm, cdt, cdn) {
 		set_stock_entry_dimension_from_values(cdt, cdn);
 	},
-	custom_length(frm, cdt, cdn) {
+	custom_length_c(frm, cdt, cdn) {
 		set_stock_entry_dimension_from_values(cdt, cdn);
 	},
 	form_render(frm, cdt, cdn) {
@@ -332,7 +332,7 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	},
 	{
 		label: "Dimensions",
-		fields: ["custom_thickness", "custom_width", "custom_length", "custom_dimension"],
+		fields: ["custom_thickness", "custom_width", "custom_length_c", "custom_length", "custom_dimension"],
 	},
 	{
 		label: "References",
@@ -586,10 +586,21 @@ function save_stock_entry_data_entry_from_dialog(state, dialog) {
 }
 
 function update_stock_entry_data_entry_row_dimension(row) {
-	const parts = [row.custom_thickness, row.custom_width, row.custom_length]
-		.map((value) => (value === undefined || value === null ? "" : String(value).trim()))
+	const parts = [row.custom_thickness, row.custom_width, row.custom_length_c]
+		.map((value) => format_stock_entry_dimension_part(value))
 		.filter(Boolean);
 	row.custom_dimension = parts.join(" x ");
+}
+
+function format_stock_entry_dimension_part(value) {
+	if (value === undefined || value === null) return "";
+	const text = String(value).trim();
+	if (!text) return "";
+	const num = Number(text);
+	if (!Number.isNaN(num) && text.match(/^-?\d+(\.\d+)?$/)) {
+		return String(num % 1 === 0 ? parseInt(num, 10) : num);
+	}
+	return text;
 }
 
 function map_stock_entry_data_entry_field(df) {
@@ -699,7 +710,7 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 	$tr.append(`<td class="ss-coil-de-col-index ss-coil-de-sticky">${idx + 1}</td>`);
 
 	const controls = {};
-	const dimension_fields = ["custom_thickness", "custom_width", "custom_length"];
+	const dimension_fields = ["custom_thickness", "custom_width", "custom_length_c"];
 
 	state.child_columns.forEach((group) => {
 		group.fields.forEach((df) => {
@@ -973,7 +984,7 @@ function bind_live_stock_entry_dimension_events(frm) {
 	const selector = [
 		'[data-fieldname="custom_thickness"] input',
 		'[data-fieldname="custom_width"] input',
-		'[data-fieldname="custom_length"] input',
+		'[data-fieldname="custom_length_c"] input',
 	].join(", ");
 
 	grid.wrapper.off(".ss_coil_stock_dimension");
@@ -1005,12 +1016,12 @@ function bind_live_stock_entry_dimension_events(frm) {
 				$scope.find('[data-fieldname="custom_width"] input').val() ??
 				row.custom_width;
 			const typed_length =
-				$scope.find('[data-name="' + row_name + '"] [data-fieldname="custom_length"] input').val() ??
-				$scope.find('[data-fieldname="custom_length"] input').val() ??
-				row.custom_length;
+				$scope.find('[data-name="' + row_name + '"] [data-fieldname="custom_length_c"] input').val() ??
+				$scope.find('[data-fieldname="custom_length_c"] input').val() ??
+				row.custom_length_c;
 
 			const parts = [typed_thickness, typed_width, typed_length]
-				.map((v) => (v === undefined || v === null ? "" : String(v).trim()))
+				.map((v) => format_stock_entry_dimension_part(v))
 				.filter((v) => v !== "");
 
 			frappe.model.set_value(row.doctype, row.name, "custom_dimension", parts.join(" x "));
@@ -1022,8 +1033,8 @@ function set_stock_entry_dimension_from_values(cdt, cdn) {
 	const row = locals[cdt] && locals[cdt][cdn];
 	if (!row) return;
 
-	const parts = [row.custom_thickness, row.custom_width, row.custom_length]
-		.map((v) => (v === undefined || v === null ? "" : String(v).trim()))
+	const parts = [row.custom_thickness, row.custom_width, row.custom_length_c]
+		.map((v) => format_stock_entry_dimension_part(v))
 		.filter((v) => v !== "");
 
 	frappe.model.set_value(cdt, cdn, "custom_dimension", parts.join(" x "));

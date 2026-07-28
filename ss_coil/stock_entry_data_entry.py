@@ -38,6 +38,7 @@ STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"custom_ref_no",
 	"custom_thickness",
 	"custom_width",
+	"custom_length_c",
 	"custom_length",
 	"custom_dimension",
 	"custom_js_number",

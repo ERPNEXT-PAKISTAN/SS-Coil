@@ -74,6 +74,7 @@ doctype_js = {
 	"SS Coil": [
 		"public/js/coil_detail_print.js",
 		"public/js/job_sheet_report.js",
+		"public/js/ss_coil_formulas.js",
 	],
 	"Delivery Note": "public/js/delivery_note.js",
 	"Sales Invoice": "public/js/sales_invoice.js",

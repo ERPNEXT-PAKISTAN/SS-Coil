@@ -2173,16 +2173,30 @@ function rebuild_job_output_from_input(frm) {
 	render_job_output_qr_fields(frm);
 }
 
+function getJobOutputFinishGoodClass(frm, so_row) {
+	// Job Output class = Finish Good from Coil SO / Sales Order Item, not mother coil.
+	const fromSo = (so_row && (so_row.item_name || so_row.item_code)) || "";
+	if (fromSo) {
+		return fromSo;
+	}
+	const cached = frm._last_sales_order_item;
+	if (cached) {
+		return cached.item_name || cached.item_code || "";
+	}
+	return "";
+}
+
 function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequenceNumber, outputWidth, totalPieces) {
 	const target_fields = get_mappable_fieldnames("Coil Output");
 	const estimatedQty = flt(so_row.qty_of_coil);
 	const rowWidth = outputWidth || existing_row?.width || so_row.width || "";
 	const estimatedWt = jobOutputEstimatedWt(input_row, so_row, rowWidth);
 	const parentTag = input_row.tag_no || "";
+	const finishGoodClass = getJobOutputFinishGoodClass(frm, so_row);
 
 	target_fields.forEach((fieldname) => {
 		if (fieldname === "class") {
-			row.class = input_row.class;
+			row.class = finishGoodClass || existing_row?.class || "";
 			return;
 		}
 		if (fieldname === "tag_no") {

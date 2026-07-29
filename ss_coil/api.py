@@ -2643,6 +2643,24 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 				row.packing = packing_type
 
 
+def _ss_coil_job_output_class(doc, so_row=None):
+	"""Job Output class = Finish Good (SO item), not mother-coil Input Coil class."""
+	so_row = so_row or ((doc.so_item or [None])[0] if doc else None)
+	for value in (
+		getattr(so_row, "item_name", None) if so_row else None,
+		(so_row or {}).get("item_name") if isinstance(so_row, dict) else None,
+	):
+		if value not in (None, ""):
+			return value
+
+	so_item_doc = _ss_coil_sales_order_item_doc(doc) if doc else None
+	if so_item_doc:
+		for value in (so_item_doc.get("item_name"), so_item_doc.get("item_code")):
+			if value not in (None, ""):
+				return value
+	return None
+
+
 def _sync_job_output_rows_from_cutting_detail(doc):
 	input_row = (doc.input_coil or [None])[0]
 	so_row = (doc.so_item or [None])[0]
@@ -2672,6 +2690,7 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 		return None
 
 	parent_tag_base = resolve_parent_tag_base()
+	finish_good_class = _ss_coil_job_output_class(doc, so_row)
 
 	def apply_values(row, existing_row=None, sequence_number=1, output_width=None, pieces_count=1):
 		so_metrics = _coil_so_table_qty_metrics(so_row)
@@ -2680,7 +2699,7 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 		estimated_wt = _job_output_estimated_wt(input_row, so_row, row_width)
 		for fieldname in target_fields:
 			if fieldname == "class":
-				row.set("class", getattr(input_row, "class", None))
+				row.set("class", finish_good_class)
 			elif fieldname == "tag_no":
 				row.tag_no = getattr(existing_row, "tag_no", None) or _build_child_tag(parent_tag_base, sequence_number)
 			elif fieldname == "estimated_qty":

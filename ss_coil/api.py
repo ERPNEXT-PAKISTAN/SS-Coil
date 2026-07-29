@@ -356,10 +356,12 @@ COIL_INWARD_SO_FIELDNAMES = (
 	"custom_ref_no",
 	"custom_thickness",
 	"custom_js_number",
+	"custom_hdgc_no",
 	"custom_length_c",
 	"custom_po_no",
 	"custom_width",
 	"custom_condition",
+	"custom_for_customer",
 	"custom_commodity",
 	"custom_length",
 	"custom_remarks",
@@ -594,20 +596,10 @@ def _find_sales_order_item_for_stock_entry_row(sales_order, se_row, stock_entry_
 
 
 def sync_sales_order_item_child_tags(doc, method=None):
-	if not getattr(doc, "sales_order_item", None):
-		return
-	child_tags = [row.tag_no for row in (doc.job_output or []) if getattr(row, "tag_no", None)]
-	if not child_tags:
-		return
+	"""Keep SO Item Tag No / Sub Tag No / Entry Number in sync with SS Coil outputs."""
+	from ss_coil.coil_item_fields import apply_ss_coil_trace_to_sales_order_item
 
-	primary_tag = child_tags[0]
-	values = {}
-	if _has_field("Sales Order Item", "custom_child_tag_no"):
-		values["custom_child_tag_no"] = ", ".join(child_tags)
-	if _has_field("Sales Order Item", "custom_tag_no"):
-		values["custom_tag_no"] = primary_tag
-	if values:
-		frappe.db.set_value("Sales Order Item", doc.sales_order_item, values, update_modified=False)
+	apply_ss_coil_trace_to_sales_order_item(doc)
 
 
 def _find_tag_by_batch(batch_no, item_code=None):
@@ -2314,7 +2306,24 @@ def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row):
 		# Show inward mother-coil tag on Tag No until SS Coil assigns an output child tag.
 		so_row.custom_tag_no = tag
 
+	# Entry Number = source Stock Entry (item-level trace)
+	se_name = getattr(se_row, "parent", None)
+	if se_name and _has_field("Sales Order Item", "custom_entry_no") and not so_row.get("custom_entry_no"):
+		so_row.custom_entry_no = se_name
+	if se_name and _has_field(se_row.doctype, "custom_entry_no") and not se_row.get("custom_entry_no"):
+		se_row.custom_entry_no = se_name
+
 	_apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row)
+
+	# Copy process flags if present on SE and empty on SO
+	for fieldname in ("custom_slitter", "custom_leveler", "custom_reshearing"):
+		if not _has_field("Sales Order Item", fieldname) or not _has_field(se_row.doctype, fieldname):
+			continue
+		if so_row.get(fieldname) not in (None, ""):
+			continue
+		value = se_row.get(fieldname)
+		if value not in (None, ""):
+			so_row.set(fieldname, value)
 
 
 def _apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row):
@@ -5288,11 +5297,14 @@ def sync_stock_entry_sales_order_links(doc, method=None):
 
 
 def prepare_stock_entry_links(doc, method=None):
+	from ss_coil.coil_item_fields import fill_stock_entry_item_entry_numbers
+
 	populate_custom_sales_order(doc, method=method)
 	clear_copied_stock_entry_origin_tags(doc)
 	apply_stock_entry_ss_coil_defaults(doc)
 	apply_inward_tag_row_defaults(doc)
 	assign_stock_entry_detail_tags(doc, method=method)
+	fill_stock_entry_item_entry_numbers(doc, method=method)
 
 
 def prepare_purchase_receipt_links(doc, method=None):
@@ -5307,6 +5319,8 @@ def prepare_purchase_invoice_links(doc, method=None):
 
 
 def assign_delivery_note_item_tags(doc, method=None):
+	from ss_coil.coil_item_fields import copy_sales_order_trace_fields_to_row
+
 	for row in doc.items or []:
 		if not _has_field(row.doctype, "custom_tag_no"):
 			continue
@@ -5318,6 +5332,12 @@ def assign_delivery_note_item_tags(doc, method=None):
 				sales_order=getattr(row, "against_sales_order", None),
 				item_code=row.item_code,
 			)
+		copy_sales_order_trace_fields_to_row(
+			row,
+			so_item_name=getattr(row, "so_detail", None),
+			sales_order=getattr(row, "against_sales_order", None),
+			item_code=row.item_code,
+		)
 		if row.custom_tag_no:
 			_update_tag_location(
 				doc,
@@ -5328,6 +5348,8 @@ def assign_delivery_note_item_tags(doc, method=None):
 
 
 def assign_sales_invoice_item_tags(doc, method=None):
+	from ss_coil.coil_item_fields import copy_sales_order_trace_fields_to_row
+
 	for row in doc.items or []:
 		if not _has_field(row.doctype, "custom_tag_no"):
 			continue
@@ -5349,6 +5371,12 @@ def assign_sales_invoice_item_tags(doc, method=None):
 				},
 				"custom_tag_no",
 			)
+		copy_sales_order_trace_fields_to_row(
+			row,
+			so_item_name=getattr(row, "so_detail", None),
+			sales_order=getattr(row, "sales_order", None),
+			item_code=row.item_code,
+		)
 		if row.custom_tag_no:
 			_update_tag_location(
 				doc,

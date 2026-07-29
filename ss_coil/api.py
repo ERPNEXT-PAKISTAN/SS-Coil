@@ -4979,17 +4979,22 @@ def _resolve_ss_coil_operation(so_item, operation=None):
 
 
 def _get_sales_order_item_row(source, sales_order_item=None):
-	if not source.items:
-		frappe.throw(_("Sales Order has no items"))
+	from ss_coil.process_charges import is_process_charge_row
+
+	production_items = [row for row in (source.items or []) if not is_process_charge_row(row)]
+	if not production_items:
+		frappe.throw(_("Sales Order has no production items"))
 
 	if sales_order_item:
 		for row in source.items:
 			if row.name == sales_order_item:
+				if is_process_charge_row(row):
+					frappe.throw(_("Select a production Sales Order Item, not a process charge line"))
 				return row
 		frappe.throw(_("Sales Order Item {0} was not found on {1}").format(sales_order_item, source.name))
 
-	if len(source.items) == 1:
-		return source.items[0]
+	if len(production_items) == 1:
+		return production_items[0]
 
 	frappe.throw(_("Select a Sales Order Item"))
 
@@ -5000,6 +5005,10 @@ def get_sales_order_ss_coil_create_options(source_name):
 	source = frappe.get_doc("Sales Order", source_name)
 	options = []
 	for row in source.items:
+		from ss_coil.process_charges import is_process_charge_row
+
+		if is_process_charge_row(row):
+			continue
 		processes = [_label_for_process(key) for key in _get_enabled_processes_from_row(row, custom=True)]
 		if not processes:
 			processes = ["Slitter"]

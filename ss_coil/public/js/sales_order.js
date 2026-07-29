@@ -1,6 +1,7 @@
 frappe.ui.form.on("Sales Order", {
 	setup(frm) {
 		apply_ss_coil_sales_order_header_defaults(frm);
+		load_process_charge_catalog(frm);
 	},
 	refresh(frm) {
 		bind_live_dimension_events(frm);
@@ -17,14 +18,23 @@ frappe.ui.form.on("Sales Order", {
 		render_packing_detail(frm);
 		render_cutting_scheme_report(frm);
 		add_production_planning_report_button(frm);
+		load_process_charge_catalog(frm);
+		if (!frm.is_new() && !frm.doc.__islocal) {
+			// Keep charge markers readable in grid without cluttering.
+			frm.fields_dict.items?.grid?.update_docfield_property?.("custom_is_process_charge", "hidden", 1);
+		}
 	},
 	validate(frm) {
 		(frm.doc.items || []).forEach((row) => {
 			set_custom_dimension_from_values(row.doctype, row.name);
 		});
+		sync_sales_order_process_charge_lines(frm);
 	},
 	items_add(frm, cdt, cdn) {
 		apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn);
+	},
+	items_remove(frm) {
+		sync_sales_order_process_charge_lines(frm);
 	},
 });
 
@@ -421,8 +431,41 @@ function add_sales_order_tag_buttons(frm) {
 
 frappe.ui.form.on("Sales Order Item", {
 	item_code(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (is_process_charge_row(row)) {
+			return;
+		}
 		apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn);
 		apply_sales_order_item_coil_defaults(frm, cdt, cdn);
+		sync_sales_order_process_charge_lines(frm);
+	},
+	qty(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (is_process_charge_row(row)) {
+			return;
+		}
+		sync_sales_order_process_charge_lines(frm);
+	},
+	custom_slitter(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (is_process_charge_row(row)) {
+			return;
+		}
+		sync_sales_order_process_charge_lines(frm);
+	},
+	custom_leveler(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (is_process_charge_row(row)) {
+			return;
+		}
+		sync_sales_order_process_charge_lines(frm);
+	},
+	custom_reshearing(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (is_process_charge_row(row)) {
+			return;
+		}
+		sync_sales_order_process_charge_lines(frm);
 	},
 	custom_raw_material_item(frm, cdt, cdn) {
 		frappe.model.set_value(cdt, cdn, "custom_raw_material_tag_no", "");
@@ -455,6 +498,147 @@ frappe.ui.form.on("Sales Order Item", {
 		open_raw_material_tag_dialog(frm, cdt, cdn);
 	},
 });
+
+const PROCESS_CHARGE_FIELDS = ["custom_slitter", "custom_leveler", "custom_reshearing"];
+const PROCESS_CHARGE_KEYS = ["slitter", "leveler", "reshearing"];
+let _process_charge_catalog = null;
+let _process_charge_syncing = false;
+
+function load_process_charge_catalog(frm) {
+	if (_process_charge_catalog) {
+		return;
+	}
+	frappe.call({
+		method: "ss_coil.process_charges.get_process_charge_catalog",
+		callback(r) {
+			_process_charge_catalog = r.message || {};
+		},
+		error() {
+			_process_charge_catalog = _process_charge_catalog || {};
+		},
+	});
+}
+
+function is_process_charge_row(row) {
+	return cint(row.custom_is_process_charge) || !!row.custom_process_charge_key;
+}
+
+function enabled_processes_for_row(row) {
+	const enabled = [];
+	PROCESS_CHARGE_KEYS.forEach((key) => {
+		const value = row[`custom_${key}`];
+		if (value !== undefined && value !== null && String(value).trim() !== "") {
+			enabled.push(key);
+		}
+	});
+	return enabled;
+}
+
+function sync_sales_order_process_charge_lines(frm) {
+	if (_process_charge_syncing || frm.doc.docstatus > 0) {
+		return;
+	}
+	if (!frm.fields_dict.items) {
+		return;
+	}
+	load_process_charge_catalog(frm);
+	const catalog = _process_charge_catalog || {};
+	if (!Object.keys(catalog).length) {
+		// Catalog still loading — retry once shortly.
+		setTimeout(() => {
+			if (_process_charge_catalog && Object.keys(_process_charge_catalog).length) {
+				sync_sales_order_process_charge_lines(frm);
+			}
+		}, 400);
+		return;
+	}
+
+	_process_charge_syncing = true;
+	try {
+		const items = frm.doc.items || [];
+		const sources = items.filter((row) => row.item_code && !is_process_charge_row(row));
+		const wanted = {};
+		sources.forEach((source) => {
+			enabled_processes_for_row(source).forEach((processKey) => {
+				wanted[`${source.name}::${processKey}`] = { source, processKey };
+			});
+		});
+
+		const toRemove = [];
+		const seen = new Set();
+		items.forEach((row) => {
+			if (!is_process_charge_row(row)) {
+				return;
+			}
+			const key = `${row.custom_process_charge_source || ""}::${row.custom_process_charge_key || ""}`;
+			const match = wanted[key];
+			if (!match) {
+				toRemove.push(row);
+				return;
+			}
+			seen.add(key);
+			apply_process_charge_row_values(frm, row, match.source, match.processKey, catalog, false);
+		});
+
+		toRemove.forEach((row) => {
+			const grid = frm.get_field("items")?.grid;
+			const gridRow = grid?.grid_rows_by_docname?.[row.name];
+			if (gridRow) {
+				gridRow.remove();
+			} else {
+				frm.doc.items = (frm.doc.items || []).filter((item) => item.name !== row.name);
+			}
+		});
+
+		Object.keys(wanted).forEach((key) => {
+			if (seen.has(key)) {
+				return;
+			}
+			const { source, processKey } = wanted[key];
+			const meta = catalog[processKey];
+			if (!meta || !meta.item_code) {
+				return;
+			}
+			const row = frm.add_child("items");
+			apply_process_charge_row_values(frm, row, source, processKey, catalog, true);
+		});
+
+		frm.refresh_field("items");
+		frm.trigger("calculate_taxes_and_totals");
+	} finally {
+		_process_charge_syncing = false;
+	}
+}
+
+function apply_process_charge_row_values(frm, row, source, processKey, catalog, setRate) {
+	const meta = catalog[processKey] || {};
+	const label = meta.label || processKey;
+	frappe.model.set_value(row.doctype, row.name, {
+		item_code: meta.item_code,
+		item_name: meta.item_name || meta.item_code,
+		description: __("{0} charge for {1}", [label, source.item_name || source.item_code || source.name]),
+		qty: flt(source.qty) || 1,
+		uom: source.uom || row.uom,
+		stock_uom: source.stock_uom || source.uom || row.stock_uom,
+		conversion_factor: flt(source.conversion_factor) || 1,
+		delivery_date: source.delivery_date || frm.doc.delivery_date || frm.doc.transaction_date,
+		warehouse: source.warehouse || row.warehouse,
+		custom_is_process_charge: 1,
+		custom_process_charge_key: processKey,
+		custom_process_charge_source: source.name,
+		custom_slitter: "",
+		custom_leveler: "",
+		custom_reshearing: "",
+		custom_raw_material_item: "",
+		custom_raw_material_tag_no: "",
+		custom_raw_material_batch_no: "",
+		custom_tag_no: "",
+		custom_child_tag_no: "",
+	});
+	if (setRate || !flt(row.rate)) {
+		frappe.model.set_value(row.doctype, row.name, "rate", flt(meta.rate));
+	}
+}
 
 const STOCK_SOURCE_PURCHASE_RECEIPTS = "Purchase Receipts";
 const STOCK_SOURCE_STOCK_ENTRY = "Stock Entry";

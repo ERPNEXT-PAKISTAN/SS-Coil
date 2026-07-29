@@ -18,12 +18,14 @@ def run_post_install_setup():
 		setup_tag_origin_fields,
 	)
 	from ss_coil.form_layout import sync_coil_form_layouts
+	from ss_coil.process_charges import ensure_process_charge_items
 	from ss_coil.workspace_sync import sync_ss_coil_workspace
 
 	setup_tag_origin_fields()
 	setup_length_c_and_length_fields()
 	setup_ss_coil_machine_operation_link()
 	setup_sales_order_job_sheet_fields()
+	ensure_process_charge_items()
 	sync_coil_form_layouts()
 	sync_delivery_advise_print_formats()
 	sync_ss_coil_detail_print_format()

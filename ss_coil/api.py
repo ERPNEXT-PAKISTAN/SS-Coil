@@ -843,14 +843,24 @@ def _update_tag_location(doc, row, status="Active", sales_order=None, stock_entr
 	if not getattr(row, "custom_tag_no", None):
 		return
 	batch_no = getattr(row, "batch_no", None)
+	item_code = row.item_code
+	item_name = row.item_name
+	# Sales Order Tag No may temporarily hold the mother-coil tag while the SO
+	# line item_code is the Finish Good. Never push FG onto the origin mother tag.
+	if getattr(doc, "doctype", None) == "Sales Order":
+		raw_tag = row.get("custom_raw_material_tag_no")
+		raw_item = row.get("custom_raw_material_item")
+		if raw_tag and row.custom_tag_no == raw_tag and raw_item:
+			item_code = raw_item
+			item_name = frappe.db.get_value("Item", raw_item, "item_name") or raw_item
 	_register_tag(
 		row.custom_tag_no,
 		source_doctype=None,
 		source_docname=None,
 		source_child_doctype=None,
 		source_child_name=None,
-		item_code=row.item_code,
-		item_name=row.item_name,
+		item_code=item_code,
+		item_name=item_name,
 		sales_order=sales_order,
 		stock_entry=stock_entry,
 		batch_no=batch_no,
@@ -1511,8 +1521,27 @@ def _register_tag(
 	doc.current_docname = current_docname or source_docname
 	doc.current_child_doctype = current_child_doctype or source_child_doctype
 	doc.current_child_name = current_child_name or source_child_name
-	doc.item_code = item_code
-	doc.item_name = item_name
+	# Keep origin (generation 0) mother-coil item when a later Sales Order /
+	# location update would overwrite it with Finish Good.
+	origin_sources = ("Stock Entry", "Purchase Receipt", "Purchase Invoice")
+	existing_item = doc.get("item_code") if registry else None
+	existing_source = doc.get("source_doctype") if registry else None
+	existing_level = cint(doc.get("generation_level") or 0) if registry else generation_level
+	if (
+		registry
+		and existing_item
+		and item_code
+		and existing_item != item_code
+		and existing_level == 0
+		and existing_source in origin_sources
+		and (not source_doctype or source_doctype not in origin_sources)
+	):
+		item_code = existing_item
+		item_name = doc.get("item_name") or item_name
+	if item_code not in (None, ""):
+		doc.item_code = item_code
+	if item_name not in (None, ""):
+		doc.item_name = item_name
 	doc.sales_order = sales_order
 	doc.stock_entry = stock_entry
 	doc.parent_tag_no = parent_tag_no
@@ -4583,6 +4612,18 @@ def _child_table_fieldnames(doctype):
 	]
 
 
+def _so_item_output_tag_no(so_item):
+	"""Child/output tag for Coil SO — never the mother-coil raw-material tag."""
+	child = (so_item.get("custom_child_tag_no") or "").strip()
+	if child:
+		return child
+	tag = (so_item.get("custom_tag_no") or "").strip()
+	raw_tag = (so_item.get("custom_raw_material_tag_no") or "").strip()
+	if tag and tag != raw_tag:
+		return tag
+	return ""
+
+
 def _coil_so_row_from_sales_order_item(so_item, order_no, operation=None):
 	"""Mirror ss_coil.js sales_order_item handler: one Coil SO row from SO Item."""
 	row = {}
@@ -4599,7 +4640,7 @@ def _coil_so_row_from_sales_order_item(so_item, order_no, operation=None):
 				or ""
 			)
 		elif fieldname == "tag_no":
-			row[fieldname] = so_item.get("custom_child_tag_no") or so_item.get("custom_tag_no") or ""
+			row[fieldname] = _so_item_output_tag_no(so_item)
 		elif fieldname == "mother_coil":
 			row[fieldname] = so_item.get("custom_raw_material_item") or ""
 		else:
@@ -4616,23 +4657,27 @@ def _coil_so_row_from_sales_order_item(so_item, order_no, operation=None):
 def _input_coil_row_from_sales_order_item(so_item, operation=None):
 	"""Mirror load_input_coil_from_sales_order_item() on the SS Coil form."""
 	parent_tag = so_item.get("custom_raw_material_tag_no")
+	raw_material = so_item.get("custom_raw_material_item")
 	details = get_raw_material_inward_details(parent_tag) if parent_tag else {}
 	if not details and parent_tag:
 		details = {"tag_no": parent_tag}
 
 	if not details:
 		details = {
-			"class": so_item.get("custom_raw_material_item") or so_item.get("item_name") or so_item.get("item_code"),
+			"class": raw_material or so_item.get("item_name") or so_item.get("item_code"),
 			"tag_no": "",
 			"dimension": so_item.get("custom_dimension") or "",
 			"length": flt(so_item.get("custom_length")) or None,
 			"location": so_item.get("custom_location"),
 		}
 	else:
-		if not details.get("class"):
+		# Always prefer SO Raw Material Item for Input Coil class (mother coil).
+		# Tag Registry may wrongly hold Finish Good after an SO link overwrite.
+		if raw_material:
+			details["class"] = raw_material
+		elif not details.get("class"):
 			details["class"] = (
 				details.get("item_name")
-				or so_item.get("custom_raw_material_item")
 				or so_item.get("item_name")
 				or so_item.get("item_code")
 			)

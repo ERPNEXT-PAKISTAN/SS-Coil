@@ -222,7 +222,16 @@ frappe.ui.form.on("SS Coil", {
 					}
 
 					if (fieldname === "tag_no") {
-						row.tag_no = item.custom_child_tag_no || item.custom_tag_no || "";
+						const child = (item.custom_child_tag_no || "").trim();
+						const tag = (item.custom_tag_no || "").trim();
+						const rawTag = (item.custom_raw_material_tag_no || "").trim();
+						if (child) {
+							row.tag_no = child;
+						} else if (tag && tag !== rawTag) {
+							row.tag_no = tag;
+						} else {
+							row.tag_no = "";
+						}
 						return;
 					}
 
@@ -2006,9 +2015,8 @@ function load_input_coil_from_sales_order_item(frm, item) {
 			}
 		});
 
-		if (!row.class) {
-			row.class = details.class || details.item_name || item.custom_raw_material_item || item.item_name;
-		}
+		// Prefer Raw Material Item (mother coil) over Tag Registry / FG item name.
+		row.class = item.custom_raw_material_item || details.class || details.item_name || item.item_name;
 		if (!row.tag_no && parent_tag) {
 			row.tag_no = parent_tag;
 		}

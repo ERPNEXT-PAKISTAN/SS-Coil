@@ -356,6 +356,20 @@ def copy_sales_order_trace_fields_to_row(target_row, so_item_name=None, sales_or
 		if value not in (None, ""):
 			target_row.set(target_field, value)
 
+	# Tag No → Batch No on DN/SI when item is batch-tracked
+	if (
+		_has_field(target_row.doctype, "batch_no")
+		and target_row.get("batch_no") in (None, "")
+		and target_row.get("custom_tag_no")
+	):
+		tag = target_row.custom_tag_no
+		item = target_row.get("item_code")
+		if item and frappe.get_cached_value("Item", item, "has_batch_no"):
+			if frappe.db.exists("Batch", tag):
+				target_row.batch_no = tag
+			elif frappe.db.exists("Batch", {"name": tag}):
+				target_row.batch_no = tag
+
 	# If SO only has child_tag_no, mirror into sub_tag_no on target
 	if (
 		_has_field(target_row.doctype, "custom_sub_tag_no")

@@ -74,6 +74,7 @@ frappe.ui.form.on("SS Coil", {
 		add_ss_coil_tag_buttons(frm);
 		add_ss_coil_sales_order_buttons(frm);
 		add_process_action_buttons(frm);
+		add_ss_coil_manufacture_button(frm);
 		frm.set_df_property("order_status", "read_only", 1);
 		update_grand_totals(frm);
 		update_calc_ratio(frm);
@@ -1425,6 +1426,21 @@ function add_ss_coil_tag_buttons(frm) {
 			}
 		);
 	}, __("Tags"));
+}
+
+function add_ss_coil_manufacture_button(frm) {
+	if (!frm.doc.name || (frm.is_new && frm.is_new())) return;
+	frm.add_custom_button(
+		__("Create Manufacture Entry"),
+		function () {
+			if (typeof open_coil_manufacture_from_ss_coil === "function") {
+				open_coil_manufacture_from_ss_coil(frm);
+			} else {
+				frappe.msgprint(__("Coil manufacture UI is not loaded. Please hard-refresh."));
+			}
+		},
+		__("Create")
+	);
 }
 
 function add_ss_coil_sales_order_buttons(frm) {

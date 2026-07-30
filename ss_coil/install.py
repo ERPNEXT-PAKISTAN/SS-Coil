@@ -18,6 +18,7 @@ def run_post_install_setup():
 		setup_tag_origin_fields,
 	)
 	from ss_coil.coil_item_fields import setup_coil_item_trace_fields
+	from ss_coil.coil_manufacture import setup_coil_manufacture_fields
 	from ss_coil.coil_production import setup_coil_production_fields
 	from ss_coil.form_layout import sync_coil_form_layouts
 	from ss_coil.process_charges import ensure_process_charge_items
@@ -25,6 +26,7 @@ def run_post_install_setup():
 
 	setup_tag_origin_fields()
 	setup_coil_item_trace_fields()
+	setup_coil_manufacture_fields()
 	setup_coil_production_fields()
 	setup_length_c_and_length_fields()
 	setup_ss_coil_machine_operation_link()

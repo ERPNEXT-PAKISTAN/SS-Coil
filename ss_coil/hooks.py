@@ -72,6 +72,7 @@ doctype_js = {
 	"Sales Order": [
 		"public/js/coil_detail_print.js",
 		"public/js/entry_trace_links.js",
+		"public/js/coil_manufacture_ui.js",
 		"public/js/sales_order.js",
 		"public/js/sales_order_manufacture.js",
 	],
@@ -85,6 +86,7 @@ doctype_js = {
 		"public/js/job_sheet_report.js",
 		"public/js/ss_coil_process_dimension.js",
 		"public/js/ss_coil_formulas.js",
+		"public/js/coil_manufacture_ui.js",
 	],
 	"Delivery Note": "public/js/delivery_note.js",
 	"Sales Invoice": "public/js/sales_invoice.js",

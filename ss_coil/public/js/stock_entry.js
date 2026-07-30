@@ -255,9 +255,24 @@ function add_stock_entry_create_sales_order_button(frm) {
 	frm.add_custom_button(
 		__("Create Sales Order"),
 		function () {
-			frappe.model.open_mapped_doc({
+			frappe.call({
 				method: "ss_coil.api.create_sales_order_from_stock_entry",
-				frm: frm,
+				args: { source_name: frm.doc.name },
+				freeze: true,
+				freeze_message: __("Preparing Sales Order..."),
+				callback(r) {
+					if (!r.message) return;
+					const doc = r.message;
+					doc.__ss_coil_from_stock_entry = frm.doc.name;
+					frappe.model.with_doctype("Sales Order", () => {
+						frappe.model.with_doctype("Sales Order Item", () => {
+							frappe.model.with_doctype("Coil Production Line", () => {
+								frappe.model.sync(doc);
+								frappe.set_route("Form", "Sales Order", doc.name);
+							});
+						});
+					});
+				},
 			});
 		},
 		__("Create")

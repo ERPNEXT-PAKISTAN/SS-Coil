@@ -93,6 +93,7 @@ doc_events = {
 	"Sales Order": {
 		"before_validate": [
 			"ss_coil.api.apply_sales_order_ss_coil_defaults",
+			"ss_coil.coil_production.link_coil_production_to_sales_order_items",
 			"ss_coil.api.sync_sales_order_item_tags_from_stock_entry",
 			"ss_coil.api.sync_sales_order_item_dimensions",
 			"ss_coil.process_charges.sync_sales_order_process_charge_lines",

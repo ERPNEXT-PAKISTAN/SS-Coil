@@ -1,0 +1,13 @@
+<div id="ledger-report-dashboard" class="lrd-shell">
+  <div class="lrd-head"><div><h2>Ledger Report</h2><p>Detailed transaction-wise ledger with running balance</p></div><div class="lrd-actions"><button id="lrd-load" class="lrd-btn">Load Data</button><button id="lrd-print" class="lrd-btn lrd-btn-print">Print Report</button></div></div>
+  <div class="lrd-card lrd-filters">
+    <label>Company<div id="lrd-company-control" class="lrd-link-control"></div></label>
+    <label>From Date<input id="lrd-from" type="date"></label>
+    <label>To Date<input id="lrd-to" type="date"></label>
+    <label>Account<div id="lrd-account-control" class="lrd-link-control"></div></label>
+    <label>Party Type<select id="lrd-party-type"><option value="Customer" selected>Customer</option><option value="Supplier">Supplier</option><option value="Employee">Employee</option></select></label>
+    <label>Party Name<div id="lrd-party-control" class="lrd-link-control"></div></label>
+  </div>
+  <div id="lrd-error" class="lrd-error"></div><div id="lrd-loading" class="lrd-loading"><span></span> Loading ledger entries…</div>
+  <div class="lrd-card"><div class="lrd-card-head"><span>General Ledger</span><span id="lrd-summary"></span></div><div class="lrd-table-wrap"><table class="lrd-table" id="lrd-table"></table></div></div>
+</div>

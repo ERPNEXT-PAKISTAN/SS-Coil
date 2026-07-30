@@ -210,52 +210,12 @@ def ensure_ss_coil_job_sheet_field_order():
 
 SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE = (
 	"custom_job_sheet_tab",
-	"job_sheet_tab",
-	"custom_job_sheet_section_prep",
-	"custom_job_sheet_machine",
-	"custom_job_sheet_column_break_a",
-	"custom_job_sheet_calc_ratio",
-	"custom_job_sheet_column_break_b",
-	"custom_job_sheet_calc_ratio_2",
-	"custom_job_sheet_column_break_c",
-	"custom_job_sheet_actual_ratio",
-	"custom_job_sheet_column_break_d",
-	"custom_job_sheet_remaining_width",
-	"custom_job_sheet_section_notes",
-	"custom_job_sheet_special_instructions",
-	"custom_job_sheet_column_break_notes",
-	"custom_job_sheet_remarks",
-	"custom_job_sheet_section_dims",
-	"custom_job_sheet_width",
-	"custom_job_sheet_column_break_ds",
-	"custom_job_sheet_ds",
-	"custom_job_sheet_column_break_ctr",
-	"custom_job_sheet_ctr",
-	"custom_job_sheet_column_break_ws",
-	"custom_job_sheet_ws",
-	"custom_job_sheet_section_mill",
-	"custom_job_sheet_mill",
-	"custom_job_sheet_column_break_spec",
-	"custom_job_sheet_specifications",
-	"custom_job_sheet_column_break_commodity",
-	"custom_job_sheet_commodity",
-	"custom_job_sheet_column_break_works",
-	"custom_job_sheet_works",
-	"custom_job_sheet_section_signatures",
-	"custom_job_sheet_planning",
-	"custom_job_sheet_column_break_sig_a",
-	"custom_job_sheet_sales",
-	"custom_job_sheet_column_break_sig_b",
-	"custom_job_sheet_production",
-	"custom_job_sheet_column_break_sig_c",
-	"custom_job_sheet_encoded_by",
 	"custom_job_sheet_report",
-	"job_sheet_report",
 )
 
 
 def ensure_sales_order_job_sheet_field_order():
-	"""Job Sheet tab fields + HTML report — always last on the form."""
+	"""Job Sheet tab + HTML report only — always last on the form."""
 	ps_name = "Sales Order-main-field_order"
 	if not frappe.db.exists("Property Setter", ps_name):
 		return
@@ -263,33 +223,17 @@ def ensure_sales_order_job_sheet_field_order():
 	meta = frappe.get_meta("Sales Order")
 	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
 
-	for fieldname in SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE:
+	# Drop any legacy job-sheet fieldnames from the order list
+	legacy = [
+		fn
+		for fn in order
+		if "job_sheet" in (fn or "") and fn not in SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE
+	]
+	for fieldname in list(SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE) + legacy:
 		while fieldname in order:
 			order.remove(fieldname)
 
-	tail = []
-	tab_added = False
-	for fieldname in SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE:
-		if fieldname in ("custom_job_sheet_tab", "job_sheet_tab"):
-			if tab_added:
-				continue
-			field = meta.get_field(fieldname)
-			if field and not field.hidden:
-				tail.append(fieldname)
-				tab_added = True
-			continue
-		if fieldname in ("custom_job_sheet_report", "job_sheet_report"):
-			continue
-		field = meta.get_field(fieldname)
-		if field and not field.hidden:
-			tail.append(fieldname)
-
-	for candidate in ("custom_job_sheet_report", "job_sheet_report"):
-		field = meta.get_field(candidate)
-		if field and not field.hidden:
-			tail.append(candidate)
-			break
-
+	tail = [fn for fn in SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE if meta.get_field(fn) and not meta.get_field(fn).hidden]
 	if not tail:
 		return
 

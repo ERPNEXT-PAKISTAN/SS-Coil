@@ -18,6 +18,7 @@
   "job_sheet_no",
   "column_break_wmcx",
   "sales_order_item",
+  "coil_production_line",
   "stock_entry",
   "column_break_bgis",
   "customer_name",
@@ -26,24 +27,6 @@
   "so_item",
   "section_break_fkea",
   "cutting_scheme",
-  "section_break_ezfe",
-  "input",
-  "column_break_fuog",
-  "column_break_pmky",
-  "section_break_lmaa",
-  "thickness",
-  "mother_coil_detail_section",
-  "input_coil",
-  "section_break_gydh",
-  "output",
-  "section_break_znud",
-  "job_output",
-  "grand_estimated_wt",
-  "dashboard_tab",
-  "order_status_report",
-  "daigrams_tab",
-  "daigrams_view",
-  "job_sheet_tab",
   "section_break_xqer",
   "machine",
   "column_break_kqkz",
@@ -61,6 +44,12 @@
   "special_instructions",
   "column_break_lnsp",
   "remarks",
+  "section_break_ezfe",
+  "input",
+  "column_break_fuog",
+  "column_break_pmky",
+  "section_break_lmaa",
+  "thickness",
   "section_break_qasa",
   "width",
   "column_break_cwla",
@@ -78,6 +67,13 @@
   "commodity",
   "column_break_yzap",
   "works",
+  "mother_coil_detail_section",
+  "input_coil",
+  "section_break_gydh",
+  "output",
+  "section_break_znud",
+  "job_output",
+  "grand_estimated_wt",
   "section_break_ifey",
   "planning",
   "column_break_aovo",
@@ -86,9 +82,18 @@
   "produciton",
   "column_break_ueot",
   "encoded_by",
+  "dashboard_tab",
+  "order_status_report",
+  "daigrams_tab",
+  "daigrams_view",
+  "job_sheet_tab",
   "job_sheet_report",
   "formula_tab",
-  "formulas"
+  "formulas",
+  "inspection_report_tab",
+  "company_detail",
+  "section_break_hgei",
+  "customer_order_detail"
  ],
  "fields": [
   {
@@ -145,6 +150,12 @@
    "fieldtype": "Link",
    "label": "Sales Order Item",
    "options": "Sales Order Item"
+  },
+  {
+   "fieldname": "coil_production_line",
+   "fieldtype": "Data",
+   "label": "Coil Production Line",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_wmcx",
@@ -240,7 +251,7 @@
   {
    "fieldname": "cutting_detail",
    "fieldtype": "Table",
-   "label": "Cutting Scheme",
+   "label": "Cutting Detail",
    "options": "Cutting Scheme"
   },
   {
@@ -404,7 +415,7 @@
   {
    "fieldname": "produciton",
    "fieldtype": "Link",
-   "label": "Production",
+   "label": "Produciton",
    "options": "Employee"
   },
   {
@@ -497,12 +508,31 @@
    "fieldname": "formulas",
    "fieldtype": "HTML",
    "label": "Formulas"
+  },
+  {
+   "fieldname": "inspection_report_tab",
+   "fieldtype": "Tab Break",
+   "label": "Inspection Report"
+  },
+  {
+   "fieldname": "company_detail",
+   "fieldtype": "HTML",
+   "label": "Company Detail"
+  },
+  {
+   "fieldname": "section_break_hgei",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "customer_order_detail",
+   "fieldtype": "HTML",
+   "label": "Customer Order Detail"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-28 19:12:32.885218",
+ "modified": "2026-07-29 02:38:58.416362",
  "modified_by": "techcraft986@gmail.com",
  "module": "SS Coil",
  "name": "SS Coil",

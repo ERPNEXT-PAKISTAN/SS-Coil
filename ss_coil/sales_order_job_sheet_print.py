@@ -197,7 +197,40 @@ def _so_items(doc):
 
 
 def _so_packing(doc):
+	"""Packing rows for Job Sheet print — prefer Coil Production (raw)."""
 	rows = []
+	try:
+		from ss_coil.coil_production import get_coil_production_rows, sales_order_has_coil_production
+
+		if sales_order_has_coil_production(doc):
+			for prod in get_coil_production_rows(doc):
+				if not any(
+					prod.get(field)
+					for field in (
+						"packing_type",
+						"packing_weightsize",
+						"no_of_pack",
+						"packing_remarks",
+						"packing_comments",
+					)
+				):
+					continue
+				raw_item = prod.get("raw_material_item") or prod.get("item_name") or prod.get("finish_good_item")
+				rows.append(
+					{
+						"item_label": raw_item,
+						"tag_no": prod.get("raw_material_tag_no") or prod.get("tag_no"),
+						"packing_type": prod.get("packing_type"),
+						"packing_weightsize": prod.get("packing_weightsize"),
+						"no_of_pack": prod.get("no_of_pack"),
+						"packing_remarks": prod.get("packing_remarks"),
+						"packing_comments": prod.get("packing_comments"),
+					}
+				)
+			return rows
+	except Exception:
+		pass
+
 	for item in doc.items:
 		if not any(
 			item.get(field)

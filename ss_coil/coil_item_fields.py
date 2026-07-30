@@ -154,9 +154,23 @@ def fill_stock_entry_item_entry_numbers(doc, method=None):
 
 
 def apply_ss_coil_trace_to_sales_order_item(ss_coil_doc):
-	"""Push Sub Tag No + Entry Number (+ primary Tag No) from SS Coil to Sales Order Item."""
+	"""Push Sub Tag No + Entry Number (+ primary Tag No) from SS Coil to SO.
+
+	Writes Coil Production Line first (when linked), then mirrors light trace
+	fields onto the Finish Good Sales Order Item for DN/SI.
+	"""
+	from ss_coil.coil_production import apply_ss_coil_trace_to_coil_production
+
+	apply_ss_coil_trace_to_coil_production(ss_coil_doc)
+
 	so_item = getattr(ss_coil_doc, "sales_order_item", None)
 	if not so_item or not frappe.db.exists("Sales Order Item", so_item):
+		return
+
+	# If production line already mirrored tags, skip duplicate SO Item write
+	# unless production table is absent / unresolved.
+	prod_name = getattr(ss_coil_doc, "coil_production_line", None)
+	if prod_name and frappe.db.exists("Coil Production Line", prod_name):
 		return
 
 	child_tags = [row.tag_no for row in (ss_coil_doc.job_output or []) if getattr(row, "tag_no", None)]

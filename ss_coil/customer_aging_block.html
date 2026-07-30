@@ -1,0 +1,20 @@
+<div id="customer-aging-dashboard" class="cad-shell">
+  <div class="cad-head">
+    <div><h2>Customer Aging</h2><p>Outstanding customer balances by age</p></div>
+    <button id="cad-refresh" class="cad-btn"><i class="fa fa-refresh"></i> Refresh</button>
+  </div>
+  <div class="cad-card cad-filters">
+    <label>Company<select id="cad-company"><option value="">All Companies</option></select></label>
+    <label>As On Date<input id="cad-as-on-date" type="date"></label>
+    <label>Balance Type<select id="cad-balance-type"><option value="all">All Balances</option><option value="greater">Greater Than Zero</option><option value="less">Less Than Zero</option></select></label>
+    <label>Customer Group<select id="cad-customer-group"><option value="">All Customer Groups</option></select></label>
+  </div>
+  <div id="cad-error" class="cad-error"></div>
+  <div id="cad-loading" class="cad-loading"><span></span> Loading customer balances…</div>
+  <div class="cad-card">
+    <div class="cad-card-head"><span>Customer Balance &amp; Aging</span><span id="cad-summary"></span></div>
+    <div class="cad-table-wrap">
+      <table class="cad-table" id="cad-table"></table>
+    </div>
+  </div>
+</div>

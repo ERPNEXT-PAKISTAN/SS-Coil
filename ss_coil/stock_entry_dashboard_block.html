@@ -1,0 +1,24 @@
+<div id="stock-production-dashboard" class="spd-shell">
+  <div class="spd-head">
+    <div><h2>Daily Production</h2><p>Finished goods produced from submitted Stock Entries</p></div>
+    <button id="spd-refresh" class="spd-btn"><i class="fa fa-refresh"></i> Refresh</button>
+  </div>
+
+  <div class="spd-card spd-filters">
+    <label>From Date<input id="spd-from" type="date"></label>
+    <label>To Date<input id="spd-to" type="date"></label>
+    <label>Stock Entry Type<select id="spd-type"><option value="Manufacture" selected>Manufacture</option></select></label>
+    <label>Item Group<select id="spd-group"><option value="">All</option></select></label>
+    <label>Period<select id="spd-period"><option value="daily" selected>Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select></label>
+  </div>
+
+  <div id="spd-error" class="spd-error"></div>
+  <div id="spd-loading" class="spd-loading"><span></span> Loading production data…</div>
+  <div class="spd-card spd-table-card">
+    <div class="spd-card-head"><span id="spd-matrix-title">Finished-Goods Production Matrix</span><span id="spd-summary"></span></div>
+    <div class="spd-table-wrap"><table class="spd-table" id="spd-matrix"></table></div>
+  </div>
+  <div class="spd-chart-grid" style="margin-top:16px">
+    <div class="spd-card"><div class="spd-card-head">Production by Period</div><div class="spd-chart"><canvas id="spd-bar"></canvas></div></div>
+  </div>
+</div>

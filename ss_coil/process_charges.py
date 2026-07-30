@@ -135,7 +135,13 @@ def _ensure_process_charge_custom_fields():
 
 
 def is_process_charge_row(row):
-	return bool(cint_safe(row.get("custom_is_process_charge"))) or bool(row.get("custom_process_charge_key"))
+	if bool(cint_safe(row.get("custom_is_process_charge"))) or bool(row.get("custom_process_charge_key")):
+		return True
+	# Fallback: known process-charge service items (markers may be missing briefly)
+	item_code = row.get("item_code")
+	if not item_code:
+		return False
+	return item_code in {meta["item_code"] for meta in PROCESS_CHARGE_CATALOG.values()}
 
 
 def cint_safe(value):
@@ -169,8 +175,82 @@ def _charge_rows(doc):
 	return [row for row in (doc.items or []) if is_process_charge_row(row)]
 
 
+def _charge_source_specs(doc):
+	"""Yield (charge_source_key, commercial_or_proxy_row, process_keys).
+
+	Prefers Coil Production Line processes; charge lines still attach to the
+	linked Finish Good Sales Order Item name (or production line name).
+	"""
+	from ss_coil.coil_production import (
+		get_coil_production_rows,
+		production_line_as_so_item_proxy,
+		sales_order_has_coil_production,
+	)
+
+	if sales_order_has_coil_production(doc):
+		for prod in get_coil_production_rows(doc):
+			processes = _get_enabled_processes_from_row(prod, custom=False)
+			if not processes:
+				continue
+			so_item = None
+			if prod.get("sales_order_item"):
+				so_item = next(
+					(r for r in (doc.items or []) if r.name == prod.sales_order_item),
+					None,
+				)
+			proxy = production_line_as_so_item_proxy(prod, so_item)
+			# Prefer commercial SO Item name so DN/invoice stay tied to FG line
+			source_key = (so_item.name if so_item else None) or prod.name
+			if not source_key:
+				continue
+			# Ensure qty/item_name available on proxy for charge description
+			if so_item:
+				proxy.qty = so_item.qty
+				proxy.uom = so_item.uom
+				proxy.warehouse = so_item.warehouse
+				proxy.delivery_date = so_item.delivery_date
+				proxy.conversion_factor = so_item.conversion_factor
+				proxy.name = so_item.name
+			else:
+				proxy.name = source_key
+			yield source_key, proxy, processes
+		return
+
+	for source in _source_rows(doc):
+		if not source.name:
+			continue
+		processes = _get_enabled_processes_from_row(source, custom=True)
+		if processes:
+			yield source.name, source, processes
+
+
+def _charge_source_aliases(doc):
+	"""Map production-line name <-> commercial SO Item name to one canonical key."""
+	from ss_coil.coil_production import get_coil_production_rows, sales_order_has_coil_production
+
+	aliases = {}
+	if not sales_order_has_coil_production(doc):
+		return aliases
+	for prod in get_coil_production_rows(doc):
+		canonical = prod.get("sales_order_item") or prod.name
+		if not canonical:
+			continue
+		aliases[canonical] = canonical
+		if prod.name:
+			aliases[prod.name] = canonical
+		if prod.get("sales_order_item"):
+			aliases[prod.sales_order_item] = canonical
+	return aliases
+
+
 def sync_sales_order_process_charge_lines(doc, method=None):
-	"""Add/update/remove process charge lines from production item process flags."""
+	"""Maintain process charge lines on Sales Order Items.
+
+	With Coil Production Line, commercial Items must stay Finish Good only —
+	auto charge rows were perceived as “double items” and churned on every
+	save (remove + re-add). When production exists we strip charge rows and
+	clear process flags from FG items; charges are not auto-created.
+	"""
 	if getattr(doc, "doctype", None) != "Sales Order":
 		return
 	if not _has_field("Sales Order Item", "custom_is_process_charge"):
@@ -178,20 +258,54 @@ def sync_sales_order_process_charge_lines(doc, method=None):
 	if doc.docstatus and cint_safe(doc.docstatus) > 0:
 		return
 
-	wanted = {}  # (source_name, process_key) -> source_row
-	for source in _source_rows(doc):
-		if not source.name:
-			continue
-		for process_key in _get_enabled_processes_from_row(source, custom=True):
-			wanted[(source.name, process_key)] = source
+	from ss_coil.coil_production import sales_order_has_coil_production
 
-	# Update / remove existing charge rows
+	if sales_order_has_coil_production(doc):
+		# Clear process flags from FG — they live on Coil Production only
+		for row in _source_rows(doc):
+			for fieldname in (
+				"custom_slitter",
+				"custom_leveler",
+				"custom_reshearing",
+				"custom_packing_type",
+				"custom_packing_weightsize",
+				"custom_no_of_pack",
+				"custom_packing_remarks",
+				"custom_packing_comments",
+			):
+				if _has_field("Sales Order Item", fieldname) and row.get(fieldname) not in (None, ""):
+					row.set(fieldname, "")
+		# Remove auto process-charge lines so Items stay FG-only
+		for charge in list(_charge_rows(doc)):
+			doc.remove(charge)
+		_dedupe_commercial_items_by_stock_entry_detail(doc)
+		return
+
+	# Legacy Sales Orders without Coil Production: keep old charge sync behaviour
+	wanted = {}  # (source_name, process_key) -> source_row
+	for source_key, source, processes in _charge_source_specs(doc):
+		for process_key in processes:
+			wanted[(source_key, process_key)] = source
+
+	aliases = _charge_source_aliases(doc)
+
 	to_remove = []
 	seen = set()
 	for charge in _charge_rows(doc):
-		key = (charge.get("custom_process_charge_source"), charge.get("custom_process_charge_key"))
-		source = wanted.get(key)
-		if not source:
+		raw_source = charge.get("custom_process_charge_source")
+		process_key = charge.get("custom_process_charge_key")
+		if not process_key:
+			for catalog_key, meta in PROCESS_CHARGE_CATALOG.items():
+				if charge.get("item_code") == meta["item_code"]:
+					process_key = catalog_key
+					charge.custom_process_charge_key = process_key
+					charge.custom_is_process_charge = 1
+					break
+
+		canonical_source = aliases.get(raw_source, raw_source) if raw_source else raw_source
+		key = (canonical_source, process_key)
+		source = wanted.get(key) if key[0] and key[1] else None
+		if not source or key in seen:
 			to_remove.append(charge)
 			continue
 		seen.add(key)
@@ -200,7 +314,6 @@ def sync_sales_order_process_charge_lines(doc, method=None):
 	for charge in to_remove:
 		doc.remove(charge)
 
-	# Add missing charge rows
 	for key, source in wanted.items():
 		if key in seen:
 			continue
@@ -210,6 +323,29 @@ def sync_sales_order_process_charge_lines(doc, method=None):
 			continue
 		row = doc.append("items", {})
 		_apply_charge_values(row, source, process_key, overwrite_rate=True)
+
+
+def _dedupe_commercial_items_by_stock_entry_detail(doc):
+	"""Remove duplicate Finish Good rows that share the same SE detail link."""
+	seen_details = set()
+	to_remove = []
+	for row in list(_source_rows(doc)):
+		detail = row.get("custom_source_stock_entry_detail")
+		if not detail:
+			continue
+		if detail in seen_details:
+			to_remove.append(row)
+			continue
+		seen_details.add(detail)
+	for row in to_remove:
+		# Do not remove if a coil production line still points at this SO item
+		from ss_coil.coil_production import get_coil_production_rows, sales_order_has_coil_production
+
+		if sales_order_has_coil_production(doc):
+			linked = any(p.get("sales_order_item") == row.name for p in get_coil_production_rows(doc))
+			if linked:
+				continue
+		doc.remove(row)
 
 
 def _apply_charge_values(row, source, process_key, overwrite_rate=True):

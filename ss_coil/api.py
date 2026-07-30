@@ -1058,8 +1058,10 @@ def _coerce_operation_link(value):
 
 
 def _operation_and_machine_from_sales_order_item(so_item, operation=None):
-	"""SS Coil operation + machine from SO Item process Operation links (not Workstation)."""
+	"""SS Coil operation + machine from SO Item / production process Operation links."""
 	configured = _get_enabled_processes_from_row(so_item, custom=True)
+	if not configured:
+		configured = _get_enabled_processes_from_row(so_item, custom=False)
 	process_key = _process_key_for_operation(operation, so_item)
 	if not process_key and configured:
 		process_key = configured[0]
@@ -1067,6 +1069,8 @@ def _operation_and_machine_from_sales_order_item(so_item, operation=None):
 		process_key = "slitter"
 
 	op_link = _coerce_operation_link(so_item.get(f"custom_{process_key}"))
+	if not op_link:
+		op_link = _coerce_operation_link(so_item.get(process_key))
 	if not op_link:
 		op_link = _coerce_operation_link(_label_for_process(process_key))
 	return op_link, op_link
@@ -2234,6 +2238,12 @@ def assign_sales_order_item_tags(doc, method=None):
 
 def sync_sales_order_item_tags_from_stock_entry(doc, method=None):
 	"""Copy mother-coil tag/batch from linked Stock Entry Detail onto SO items."""
+	from ss_coil.coil_production import sales_order_has_coil_production
+
+	# When Coil Production Line holds processes, do not push Slitter/Leveler
+	# onto commercial Items (that recreated duplicate process-charge lines).
+	copy_process = not sales_order_has_coil_production(doc)
+
 	for row in doc.items or []:
 		stock_entry = row.get("custom_source_stock_entry")
 		if not stock_entry:
@@ -2242,7 +2252,7 @@ def sync_sales_order_item_tags_from_stock_entry(doc, method=None):
 		se_row = _get_linked_stock_entry_detail_row(row, stock_entry)
 		if not se_row:
 			continue
-		_apply_stock_entry_row_tags_to_sales_order_item(row, se_row)
+		_apply_stock_entry_row_tags_to_sales_order_item(row, se_row, copy_process=copy_process)
 		_apply_finish_good_to_sales_order_row(row, se_row)
 
 
@@ -2277,7 +2287,7 @@ def _get_linked_stock_entry_detail_row(so_row, stock_entry):
 	return None
 
 
-def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row):
+def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row, copy_process=True):
 	tag = se_row.get("custom_tag_no") or _find_tag_by_batch(
 		se_row.get("batch_no"), se_row.get("item_code")
 	)
@@ -2315,7 +2325,10 @@ def _apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row):
 
 	_apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row)
 
-	# Copy process flags if present on SE and empty on SO
+	if not copy_process:
+		return
+
+	# Legacy: copy process flags onto SO Item when Coil Production is not used
 	for fieldname in ("custom_slitter", "custom_leveler", "custom_reshearing"):
 		if not _has_field("Sales Order Item", fieldname) or not _has_field(se_row.doctype, fieldname):
 			continue
@@ -4485,18 +4498,22 @@ def _copyable_fieldnames(source_doctype, target_doctype):
 def create_sales_order_from_stock_entry(source_name):
 	"""Build a new (unsaved) Sales Order pre-filled from a Stock Entry.
 
-	Copies every field that exists with the same fieldname on both doctypes
-	(parent-to-parent and Stock Entry Detail-to-Sales Order Item), so custom
-	coil fields (tag no, thickness/width/length, mill, spec, ...) carry over
-	as-is without a hand-maintained mapping list.
+	Commercial `items` = Finish Good (+ later process charges). Manufacturing
+	data (mother coil, tags, dims, processes) goes on Coil Production Line
+	(`custom_coil_production`) when that table is installed.
 
-	If a Stock Entry Detail row has Finish Good Item set, that FG becomes the
-	Sales Order item_code and the received mother coil is linked as Raw
-	Material Item / Tag (see _apply_finish_good_to_sales_order_row).
+	Legacy fallback: if the production table is missing, copies SE Detail
+	fields onto Sales Order Item as before.
 
-	Returns the doc for the client to open via frappe.model.open_mapped_doc -
+	Returns the doc for the client to open via frappe.model.open_mapped_doc —
 	nothing is inserted here; the user reviews/edits and saves it themselves.
 	"""
+	from ss_coil.coil_production import (
+		COIL_PRODUCTION_TABLE,
+		append_commercial_so_item_from_stock_entry_row,
+		append_production_line_from_stock_entry_row,
+	)
+
 	source = frappe.get_doc("Stock Entry", source_name)
 
 	sales_order = frappe.new_doc("Sales Order")
@@ -4517,21 +4534,27 @@ def create_sales_order_from_stock_entry(source_name):
 	if source.get("custom_invoice__igp_no") and _has_field("Sales Order", "custom_igp_no"):
 		sales_order.custom_igp_no = source.get("custom_invoice__igp_no")
 
-	item_fields = _copyable_fieldnames("Stock Entry Detail", "Sales Order Item")
-	for row in source.items:
-		so_row = sales_order.append("items", {})
-		for fieldname in item_fields:
-			value = row.get(fieldname)
-			if value not in (None, ""):
-				so_row.set(fieldname, value)
-		_apply_finish_good_to_sales_order_row(so_row, row)
-		_apply_stock_entry_row_tags_to_sales_order_item(so_row, row)
-		if not so_row.get("delivery_date"):
-			so_row.delivery_date = sales_order.transaction_date
-		if _has_field("Sales Order Item", "custom_source_stock_entry"):
-			so_row.custom_source_stock_entry = source.name
-		if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
-			so_row.custom_source_stock_entry_detail = row.name
+	use_production = _has_field("Sales Order", COIL_PRODUCTION_TABLE)
+	if use_production:
+		for row in source.items:
+			append_commercial_so_item_from_stock_entry_row(sales_order, row, source.name)
+			append_production_line_from_stock_entry_row(sales_order, row, source.name)
+	else:
+		item_fields = _copyable_fieldnames("Stock Entry Detail", "Sales Order Item")
+		for row in source.items:
+			so_row = sales_order.append("items", {})
+			for fieldname in item_fields:
+				value = row.get(fieldname)
+				if value not in (None, ""):
+					so_row.set(fieldname, value)
+			_apply_finish_good_to_sales_order_row(so_row, row)
+			_apply_stock_entry_row_tags_to_sales_order_item(so_row, row)
+			if not so_row.get("delivery_date"):
+				so_row.delivery_date = sales_order.transaction_date
+			if _has_field("Sales Order Item", "custom_source_stock_entry"):
+				so_row.custom_source_stock_entry = source.name
+			if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
+				so_row.custom_source_stock_entry_detail = row.name
 
 	if _has_field("Sales Order", "custom_source_stock_entries"):
 		sales_order.custom_source_stock_entries = source.name
@@ -4539,6 +4562,136 @@ def create_sales_order_from_stock_entry(source_name):
 	_apply_stock_entry_warehouse_to_sales_order(sales_order, source)
 
 	return sales_order
+
+
+@frappe.whitelist()
+def get_stock_entry_coil_field_map(stock_entry):
+	"""Return SE Detail → coil field values for re-applying onto mapped Sales Order rows.
+
+	Used after Create Sales Order opens, because item_code / get_item_details can
+	clear custom coil fields on Sales Order Item in the browser.
+	"""
+	if not stock_entry or not frappe.db.exists("Stock Entry", stock_entry):
+		return {}
+
+	source = frappe.get_doc("Stock Entry", stock_entry)
+	out = {}
+	for row in source.items or []:
+		payload = {
+			"item_code": row.get("custom_finish_good_item") or row.get("item_code"),
+			"qty": flt(row.get("qty")) or 1,
+			"warehouse": row.get("warehouse"),
+			"custom_source_stock_entry": stock_entry,
+			"custom_source_stock_entry_detail": row.name,
+			"custom_stock_source_type": STOCK_SOURCE_STOCK_ENTRY,
+		}
+		# Finish good commercial identity
+		finish_good = row.get("custom_finish_good_item")
+		raw_item = row.get("item_code")
+		if finish_good:
+			payload["item_code"] = finish_good
+			payload["custom_raw_material_item"] = raw_item
+		tag = row.get("custom_tag_no")
+		if tag:
+			payload["custom_raw_material_tag_no"] = tag
+			payload["custom_tag_no"] = tag
+			payload["custom_entry_no"] = stock_entry
+		batch_no = row.get("batch_no") or tag
+		if batch_no and frappe.db.exists("Batch", batch_no):
+			payload["custom_raw_material_batch_no"] = batch_no
+
+		for fieldname in COIL_INWARD_SO_FIELDNAMES:
+			if _has_field(row.doctype, fieldname) and row.get(fieldname) not in (None, ""):
+				payload[fieldname] = row.get(fieldname)
+
+		for fieldname in (
+			"custom_slitter",
+			"custom_leveler",
+			"custom_reshearing",
+			"custom_packing_type",
+			"custom_packing_weightsize",
+			"custom_no_of_pack",
+			"custom_packing_remarks",
+			"custom_packing_comments",
+			"custom_machine",
+			"custom_calc_ratio",
+			"custom_calc_ratio_2",
+			"custom_actual_ratio",
+			"custom_remaining_width",
+		):
+			if _has_field(row.doctype, fieldname) and row.get(fieldname) not in (None, ""):
+				payload[fieldname] = row.get(fieldname)
+
+		# Dimension
+		parts = []
+		for value in [payload.get("custom_thickness"), payload.get("custom_width"), payload.get("custom_length_c")]:
+			if value in (None, ""):
+				continue
+			text = _format_dimension_part(value)
+			if text:
+				parts.append(text)
+		if parts:
+			payload["custom_dimension"] = " x ".join(parts)
+
+		# Production-line shaped values (plain fieldnames)
+		prod = {
+			"finish_good_item": payload.get("item_code"),
+			"raw_material_item": payload.get("custom_raw_material_item"),
+			"raw_material_tag_no": payload.get("custom_raw_material_tag_no"),
+			"raw_material_batch_no": payload.get("custom_raw_material_batch_no"),
+			"stock_source_type": STOCK_SOURCE_STOCK_ENTRY,
+			"source_stock_entry": stock_entry,
+			"source_stock_entry_detail": row.name,
+			"entry_no": stock_entry,
+			"qty": payload.get("qty"),
+		}
+		for so_field, prod_field in (
+			("custom_mill", "mill"),
+			("custom_location", "location"),
+			("custom_ref_no", "ref_no"),
+			("custom_js_number", "js_number"),
+			("custom_hdgc_no", "hdgc_no"),
+			("custom_po_no", "po_no"),
+			("custom_thickness", "thickness"),
+			("custom_width", "width"),
+			("custom_length", "length"),
+			("custom_length_c", "length_c"),
+			("custom_dimension", "dimension"),
+			("custom_estimated_wt", "estimated_wt"),
+			("custom_qty_of_coil", "qty_of_coil"),
+			("custom_for_customer", "for_customer"),
+			("custom_commodity", "commodity"),
+			("custom_specification", "specification"),
+			("custom_condition", "condition"),
+			("custom_remarks", "remarks"),
+			("custom_comments", "comments"),
+			("custom_slitter", "slitter"),
+			("custom_leveler", "leveler"),
+			("custom_reshearing", "reshearing"),
+			("custom_packing_type", "packing_type"),
+			("custom_packing_weightsize", "packing_weightsize"),
+			("custom_no_of_pack", "no_of_pack"),
+			("custom_packing_remarks", "packing_remarks"),
+			("custom_packing_comments", "packing_comments"),
+		):
+			if payload.get(so_field) not in (None, ""):
+				prod[prod_field] = payload[so_field]
+
+		# Processes + packing belong on Coil Production only — strip from FG payload
+		for fieldname in (
+			"custom_slitter",
+			"custom_leveler",
+			"custom_reshearing",
+			"custom_packing_type",
+			"custom_packing_weightsize",
+			"custom_no_of_pack",
+			"custom_packing_remarks",
+			"custom_packing_comments",
+		):
+			payload.pop(fieldname, None)
+
+		out[row.name] = {"sales_order_item": payload, "coil_production": prod}
+	return out
 
 
 def _apply_finish_good_to_sales_order_row(so_row, se_row):
@@ -5010,12 +5163,61 @@ def _get_sales_order_item_row(source, sales_order_item=None):
 
 @frappe.whitelist()
 def get_sales_order_ss_coil_create_options(source_name):
-	"""Rows + configured processes for the Sales Order → SS Coil create dialog."""
+	"""Rows + configured processes for the Sales Order → SS Coil create dialog.
+
+	Prefers Coil Production Line rows when present; falls back to SO Items.
+	"""
+	from ss_coil.coil_production import get_coil_production_rows, sales_order_has_coil_production
+	from ss_coil.process_charges import is_process_charge_row
+
 	source = frappe.get_doc("Sales Order", source_name)
 	options = []
-	for row in source.items:
-		from ss_coil.process_charges import is_process_charge_row
 
+	if sales_order_has_coil_production(source):
+		for row in get_coil_production_rows(source):
+			processes = [_label_for_process(key) for key in _get_enabled_processes_from_row(row, custom=False)]
+			if not processes:
+				processes = ["Slitter"]
+			so_item_name = row.get("sales_order_item")
+			if _has_field("SS Coil", "coil_production_line") and row.name:
+				existing = frappe.get_all(
+					"SS Coil",
+					filters={"coil_production_line": row.name},
+					fields=["name", "operation", "order_status"],
+					order_by="modified desc",
+				)
+			elif so_item_name:
+				existing = frappe.get_all(
+					"SS Coil",
+					filters={"sales_order_item": so_item_name},
+					fields=["name", "operation", "order_status"],
+					order_by="modified desc",
+				)
+			else:
+				existing = frappe.get_all(
+					"SS Coil",
+					filters={"order_no": source.name},
+					fields=["name", "operation", "order_status"],
+					order_by="modified desc",
+					limit=20,
+				)
+			options.append(
+				{
+					"coil_production_line": row.name,
+					"sales_order_item": so_item_name,
+					"item_code": row.get("finish_good_item"),
+					"item_name": row.get("item_name"),
+					"qty": flt(row.get("qty")),
+					"dimension": row.get("dimension"),
+					"tag_no": row.get("raw_material_tag_no") or row.get("tag_no"),
+					"processes": processes,
+					"existing_ss_coils": existing,
+				}
+			)
+		if options:
+			return options
+
+	for row in source.items:
 		if is_process_charge_row(row):
 			continue
 		processes = [_label_for_process(key) for key in _get_enabled_processes_from_row(row, custom=True)]
@@ -5029,6 +5231,7 @@ def get_sales_order_ss_coil_create_options(source_name):
 		)
 		options.append(
 			{
+				"coil_production_line": None,
 				"sales_order_item": row.name,
 				"item_code": row.item_code,
 				"item_name": row.item_name,
@@ -5043,50 +5246,99 @@ def get_sales_order_ss_coil_create_options(source_name):
 
 
 @frappe.whitelist()
-def create_ss_coil_from_sales_order(source_name, sales_order_item=None, operation=None):
-	"""Build a new (unsaved) SS Coil from a Sales Order + Sales Order Item.
+def create_ss_coil_from_sales_order(
+	source_name, sales_order_item=None, operation=None, coil_production_line=None
+):
+	"""Build a new (unsaved) SS Coil from a Sales Order production row.
 
-	Mirrors picking order_no + sales_order_item on the SS Coil form: fills
-	Coil SO, input coil, cutting scheme, machine/ratios, and sets operation
-	to the first configured process (Slitter/Leveler/Reshearing) unless
-	operation is passed explicitly.
+	Uses Coil Production Line when present (preferred); otherwise Sales Order Item.
+	Fills Coil SO, input coil, cutting scheme, machine/ratios, and sets operation
+	to the first configured process unless operation is passed explicitly.
 	"""
+	from ss_coil.coil_production import (
+		find_production_line,
+		production_line_as_so_item_proxy,
+		sales_order_has_coil_production,
+	)
+
 	source = frappe.get_doc("Sales Order", source_name)
-	so_item = _get_sales_order_item_row(source, sales_order_item)
+	prod = None
+	so_item = None
+	proxy = None
+
+	if coil_production_line or sales_order_has_coil_production(source):
+		prod = find_production_line(
+			source,
+			coil_production_line=coil_production_line,
+			sales_order_item=sales_order_item,
+		)
+		if prod:
+			so_item_name = prod.get("sales_order_item") or sales_order_item
+			if so_item_name:
+				try:
+					so_item = _get_sales_order_item_row(source, so_item_name)
+				except Exception:
+					so_item = None
+			if not so_item and prod.get("finish_good_item"):
+				from ss_coil.process_charges import is_process_charge_row
+
+				for row in source.items or []:
+					if is_process_charge_row(row):
+						continue
+					if row.item_code == prod.finish_good_item:
+						so_item = row
+						break
+			proxy = production_line_as_so_item_proxy(prod, so_item)
+
+	if proxy is None:
+		so_item = _get_sales_order_item_row(source, sales_order_item)
+		proxy = so_item
 
 	ss_coil = frappe.new_doc("SS Coil")
 	ss_coil.order_no = source.name
-	ss_coil.sales_order_item = so_item.name
+	if so_item:
+		ss_coil.sales_order_item = so_item.name
+	elif proxy.get("name") and frappe.db.exists("Sales Order Item", proxy.get("name")):
+		ss_coil.sales_order_item = proxy.get("name")
+	if prod and _has_field("SS Coil", "coil_production_line"):
+		ss_coil.coil_production_line = prod.name
 	ss_coil.customer_name = source.customer_name
-	ss_coil.for_customer = source.get("custom_for_customer")
+	ss_coil.for_customer = source.get("custom_for_customer") or proxy.get("custom_for_customer")
 	ss_coil.order_received_date = source.transaction_date
 	ss_coil.sc_date = nowdate()
 	ss_coil.order_status = "Not Started"
-	op_link, machine = _operation_and_machine_from_sales_order_item(so_item, operation)
+	op_link, machine = _operation_and_machine_from_sales_order_item(proxy, operation)
 	if operation:
-		process_key = _process_key_for_operation(operation, so_item)
-		configured = _get_enabled_processes_from_row(so_item, custom=True)
-		if process_key and process_key not in configured and not so_item.get(f"custom_{process_key}"):
+		process_key = _process_key_for_operation(operation, proxy)
+		configured = _get_enabled_processes_from_row(proxy, custom=True)
+		if not configured and prod is not None:
+			configured = _get_enabled_processes_from_row(prod, custom=False)
+		has_flag = proxy.get(f"custom_{process_key}") if process_key else None
+		if not has_flag and prod is not None and process_key:
+			has_flag = prod.get(process_key)
+		if process_key and process_key not in configured and not has_flag:
 			frappe.throw(
-				_("Operation {0} is not configured on Sales Order Item {1}").format(
-					operation, so_item.get("item_code") or so_item.name
+				_("Operation {0} is not configured on production line / Sales Order Item {1}").format(
+					operation, proxy.get("item_code") or (so_item.name if so_item else "")
 				)
 			)
 	ss_coil.operation = op_link
-	ss_coil.machine = machine
-	ss_coil.calc_ratio = flt(so_item.get("custom_calc_ratio"))
-	ss_coil.calc_ratio_2 = flt(so_item.get("custom_calc_ratio_2"))
-	ss_coil.actual_ratio = flt(so_item.get("custom_actual_ratio"))
-	ss_coil.remaining_width = flt(so_item.get("custom_remaining_width"))
+	ss_coil.machine = machine or proxy.get("custom_machine")
+	ss_coil.calc_ratio = flt(proxy.get("custom_calc_ratio"))
+	ss_coil.calc_ratio_2 = flt(proxy.get("custom_calc_ratio_2"))
+	ss_coil.actual_ratio = flt(proxy.get("custom_actual_ratio"))
+	ss_coil.remaining_width = flt(proxy.get("custom_remaining_width"))
 
-	ss_coil.append("so_item", _coil_so_row_from_sales_order_item(so_item, source.name, operation))
-	input_row = _input_coil_row_from_sales_order_item(so_item, operation)
+	ss_coil.append("so_item", _coil_so_row_from_sales_order_item(proxy, source.name, operation))
+	input_row = _input_coil_row_from_sales_order_item(proxy, operation)
 	if input_row:
 		ss_coil.append("input_coil", input_row)
-	for scheme_row in _cutting_scheme_rows_for_sales_order_item(
-		so_item.name, operation=operation, sales_order=source.name
-	):
-		ss_coil.append("cutting_detail", scheme_row)
+	so_item_name = ss_coil.sales_order_item
+	if so_item_name:
+		for scheme_row in _cutting_scheme_rows_for_sales_order_item(
+			so_item_name, operation=operation, sales_order=source.name
+		):
+			ss_coil.append("cutting_detail", scheme_row)
 
 	sync_ss_coil_sales_order_item_fields(ss_coil)
 	_sync_job_output_rows_from_cutting_detail(ss_coil)
@@ -6664,22 +6916,13 @@ def setup_sales_order_cutting_scheme_fields():
 
 
 def setup_sales_order_job_sheet_fields():
-	"""Job Sheet tab last on SO; tab + HTML visible; create only if missing."""
+	"""One Job Sheet tab with a single full-width HTML report field."""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 	from ss_coil.form_layout import ensure_sales_order_job_sheet_field_order
 
-	for fn in ("custom_job_sheet_tab", "custom_job_sheet_report", "job_sheet_tab", "job_sheet_report"):
-		name = f"Sales Order-{fn}"
-		if frappe.db.exists("Custom Field", name):
-			frappe.db.set_value("Custom Field", name, "hidden", 0, update_modified=False)
-
-	has_html = frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_report") or frappe.db.exists(
-		"Custom Field", "Sales Order-job_sheet_report"
-	)
-	has_tab = frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_tab") or frappe.db.exists(
-		"Custom Field", "Sales Order-job_sheet_tab"
-	)
+	has_html = frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_report")
+	has_tab = frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_tab")
 
 	if not has_html:
 		insert_after = "custom_detail_status"
@@ -6701,7 +6944,7 @@ def setup_sales_order_job_sheet_fields():
 				"fieldname": "custom_job_sheet_report",
 				"label": "Job Sheet Report",
 				"fieldtype": "HTML",
-				"insert_after": "custom_job_sheet_tab" if not has_tab else insert_after,
+				"insert_after": "custom_job_sheet_tab",
 			}
 		)
 		create_custom_fields({"Sales Order": fields}, update=True)
@@ -6722,112 +6965,58 @@ def setup_sales_order_job_sheet_fields():
 			update=True,
 		)
 
-	_hide_duplicate_sales_order_job_sheet_fields()
-	_ensure_sales_order_job_sheet_tab_detail_fields()
+	_simplify_sales_order_job_sheet_layout()
 	ensure_sales_order_job_sheet_field_order()
 	frappe.clear_cache(doctype="Sales Order")
 	return {"status": "ok"}
 
 
-def _ensure_sales_order_job_sheet_tab_detail_fields():
-	"""Job Sheet tab: metrics, notes, dimensions, mill block, signatures (before HTML report)."""
-	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+def _simplify_sales_order_job_sheet_layout():
+	"""Keep only custom_job_sheet_tab + custom_job_sheet_report (one column).
 
-	tab_anchor = None
-	for candidate in ("custom_job_sheet_tab", "job_sheet_tab"):
-		if frappe.db.exists("Custom Field", f"Sales Order-{candidate}"):
-			tab_anchor = candidate
-			break
-	if not tab_anchor:
-		tab_anchor = "custom_job_sheet_tab"
+	Hides the duplicate Tab Break `custom_job_sheet` and all legacy Job Sheet
+	detail / column-break fields that made the form look like two Job Sheet tabs.
+	"""
+	keep = {"custom_job_sheet_tab", "custom_job_sheet_report"}
 
-	def _field(fieldname, label, fieldtype, insert_after, **extra):
-		return {
-			"fieldname": fieldname,
-			"label": label,
-			"fieldtype": fieldtype,
-			"insert_after": insert_after,
-			**extra,
-		}
-
-	spec = [
-		_field("custom_job_sheet_section_prep", "", "Section Break", tab_anchor),
-		_field("custom_job_sheet_machine", "Machine", "Data", "custom_job_sheet_section_prep"),
-		_field("custom_job_sheet_column_break_a", "", "Column Break", "custom_job_sheet_machine"),
-		_field("custom_job_sheet_calc_ratio", "Calc Ratio", "Float", "custom_job_sheet_column_break_a"),
-		_field("custom_job_sheet_column_break_b", "", "Column Break", "custom_job_sheet_calc_ratio"),
-		_field("custom_job_sheet_calc_ratio_2", "Calc Ratio 2", "Float", "custom_job_sheet_column_break_b"),
-		_field("custom_job_sheet_column_break_c", "", "Column Break", "custom_job_sheet_calc_ratio_2"),
-		_field("custom_job_sheet_actual_ratio", "Actual Ratio", "Float", "custom_job_sheet_column_break_c"),
-		_field("custom_job_sheet_column_break_d", "", "Column Break", "custom_job_sheet_actual_ratio"),
-		_field("custom_job_sheet_remaining_width", "Remaining Width", "Float", "custom_job_sheet_column_break_d"),
-		_field("custom_job_sheet_section_notes", "", "Section Break", "custom_job_sheet_remaining_width"),
-		_field("custom_job_sheet_special_instructions", "Special Instructions", "Small Text", "custom_job_sheet_section_notes"),
-		_field("custom_job_sheet_column_break_notes", "", "Column Break", "custom_job_sheet_special_instructions"),
-		_field("custom_job_sheet_remarks", "Remarks", "Small Text", "custom_job_sheet_column_break_notes"),
-		_field("custom_job_sheet_section_dims", "", "Section Break", "custom_job_sheet_remarks"),
-		_field("custom_job_sheet_width", "Width", "Float", "custom_job_sheet_section_dims"),
-		_field("custom_job_sheet_column_break_ds", "", "Column Break", "custom_job_sheet_width"),
-		_field("custom_job_sheet_ds", "DS", "Float", "custom_job_sheet_column_break_ds"),
-		_field("custom_job_sheet_column_break_ctr", "", "Column Break", "custom_job_sheet_ds"),
-		_field("custom_job_sheet_ctr", "CTR", "Float", "custom_job_sheet_column_break_ctr"),
-		_field("custom_job_sheet_column_break_ws", "", "Column Break", "custom_job_sheet_ctr"),
-		_field("custom_job_sheet_ws", "WS", "Float", "custom_job_sheet_column_break_ws"),
-		_field("custom_job_sheet_section_mill", "", "Section Break", "custom_job_sheet_ws"),
-		_field("custom_job_sheet_mill", "Mill", "Data", "custom_job_sheet_section_mill"),
-		_field("custom_job_sheet_column_break_spec", "", "Column Break", "custom_job_sheet_mill"),
-		_field("custom_job_sheet_specifications", "Specifications", "Data", "custom_job_sheet_column_break_spec"),
-		_field("custom_job_sheet_column_break_commodity", "", "Column Break", "custom_job_sheet_specifications"),
-		_field("custom_job_sheet_commodity", "Commodity", "Data", "custom_job_sheet_column_break_commodity"),
-		_field("custom_job_sheet_column_break_works", "", "Column Break", "custom_job_sheet_commodity"),
-		_field("custom_job_sheet_works", "Works", "Data", "custom_job_sheet_column_break_works"),
-		_field("custom_job_sheet_section_signatures", "", "Section Break", "custom_job_sheet_works"),
-		_field(
-			"custom_job_sheet_planning",
-			"Planning",
-			"Link",
-			"custom_job_sheet_section_signatures",
-			options="Employee",
-		),
-		_field("custom_job_sheet_column_break_sig_a", "", "Column Break", "custom_job_sheet_planning"),
-		_field("custom_job_sheet_sales", "Sales", "Link", "custom_job_sheet_column_break_sig_a", options="Employee"),
-		_field("custom_job_sheet_column_break_sig_b", "", "Column Break", "custom_job_sheet_sales"),
-		_field(
-			"custom_job_sheet_production",
-			"Production",
-			"Link",
-			"custom_job_sheet_column_break_sig_b",
-			options="Employee",
-		),
-		_field("custom_job_sheet_column_break_sig_c", "", "Column Break", "custom_job_sheet_production"),
-		_field(
-			"custom_job_sheet_encoded_by",
-			"Encoded By",
-			"Link",
-			"custom_job_sheet_column_break_sig_c",
-			options="Employee",
-		),
-	]
-
-	to_create = [f for f in spec if not frappe.db.exists("Custom Field", f"Sales Order-{f['fieldname']}")]
-	if to_create:
-		create_custom_fields({"Sales Order": to_create}, update=True)
-
-	report_after = "custom_job_sheet_encoded_by"
-	for fn in ("custom_job_sheet_report", "job_sheet_report"):
-		name = f"Sales Order-{fn}"
-		if frappe.db.exists("Custom Field", name):
-			frappe.db.set_value("Custom Field", name, "insert_after", report_after, update_modified=False)
-
-
-def _hide_duplicate_sales_order_job_sheet_fields():
-	"""If site uses job_sheet_report, hide the extra app HTML/tab pair only."""
-	if not frappe.db.exists("Custom Field", "Sales Order-job_sheet_report"):
-		return
-	for fn in ("custom_job_sheet_tab", "custom_job_sheet_report"):
+	for fn in ("custom_job_sheet", "job_sheet_tab", "job_sheet_report"):
 		name = f"Sales Order-{fn}"
 		if frappe.db.exists("Custom Field", name):
 			frappe.db.set_value("Custom Field", name, "hidden", 1, update_modified=False)
+
+	rows = frappe.get_all(
+		"Custom Field",
+		filters={"dt": "Sales Order", "fieldname": ["like", "%job_sheet%"]},
+		fields=["name", "fieldname"],
+	)
+	for row in rows:
+		fn = row.fieldname
+		if fn in keep:
+			frappe.db.set_value("Custom Field", row.name, "hidden", 0, update_modified=False)
+			continue
+		frappe.db.set_value("Custom Field", row.name, "hidden", 1, update_modified=False)
+
+	if frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_report") and frappe.db.exists(
+		"Custom Field", "Sales Order-custom_job_sheet_tab"
+	):
+		frappe.db.set_value(
+			"Custom Field",
+			"Sales Order-custom_job_sheet_report",
+			{"hidden": 0, "insert_after": "custom_job_sheet_tab"},
+			update_modified=False,
+		)
+	if frappe.db.exists("Custom Field", "Sales Order-custom_job_sheet_tab"):
+		frappe.db.set_value("Custom Field", "Sales Order-custom_job_sheet_tab", "hidden", 0, update_modified=False)
+
+
+def _ensure_sales_order_job_sheet_tab_detail_fields():
+	"""Deprecated: Job Sheet tab is HTML-only. Kept as no-op for old callers."""
+	return
+
+
+def _hide_duplicate_sales_order_job_sheet_fields():
+	"""Deprecated alias — use _simplify_sales_order_job_sheet_layout."""
+	_simplify_sales_order_job_sheet_layout()
 
 
 @frappe.whitelist()
@@ -6906,9 +7095,16 @@ def setup_sales_order_link_fields():
 def get_sales_order_detail_dashboard(sales_order):
 	doc = frappe.get_doc("Sales Order", sales_order)
 
+	from ss_coil.coil_production import get_coil_production_rows, sales_order_has_coil_production
+	from ss_coil.process_charges import is_process_charge_row
+
 	items = []
 	packing_details = []
+	use_production = sales_order_has_coil_production(doc)
+
 	for item in doc.items:
+		if is_process_charge_row(item):
+			continue
 		operation_rows = _build_sales_order_item_operation_rows(item.name)
 		item_status = item.get("custom_status") or ""
 		if item.name:
@@ -6955,7 +7151,8 @@ def get_sales_order_detail_dashboard(sales_order):
 				"packing_comments": item.get("custom_packing_comments"),
 			}
 		)
-		if any(
+		# Packing on FG items only when Coil Production is not used
+		if not use_production and any(
 			item.get(field)
 			for field in [
 				"custom_packing_type",
@@ -6975,6 +7172,39 @@ def get_sales_order_detail_dashboard(sales_order):
 					"no_of_pack": item.get("custom_no_of_pack"),
 					"packing_remarks": item.get("custom_packing_remarks"),
 					"packing_comments": item.get("custom_packing_comments"),
+					"source": "sales_order_item",
+				}
+			)
+
+	# Prefer Coil Production (mother coil / raw) for Packing Details
+	if use_production:
+		for prod in get_coil_production_rows(doc):
+			if not any(
+				prod.get(field)
+				for field in (
+					"packing_type",
+					"packing_weightsize",
+					"no_of_pack",
+					"packing_remarks",
+					"packing_comments",
+				)
+			):
+				continue
+			raw_item = prod.get("raw_material_item") or prod.get("item_name") or prod.get("finish_good_item")
+			packing_details.append(
+				{
+					"item_code": raw_item,
+					"item_name": raw_item,
+					"raw_material_item": prod.get("raw_material_item"),
+					"finish_good_item": prod.get("finish_good_item"),
+					"tag_no": prod.get("raw_material_tag_no") or prod.get("tag_no"),
+					"packing_type": prod.get("packing_type"),
+					"packing_weightsize": prod.get("packing_weightsize"),
+					"no_of_pack": prod.get("no_of_pack"),
+					"packing_remarks": prod.get("packing_remarks"),
+					"packing_comments": prod.get("packing_comments"),
+					"source": "coil_production",
+					"coil_production_line": prod.name,
 				}
 			)
 
@@ -7469,10 +7699,36 @@ def _save_so_production_plan_rows(sales_order, sales_order_item, process_key, ro
 
 
 @frappe.whitelist()
-def get_so_production_plans_for_item(sales_order, sales_order_item):
-	"""All process-specific cutting schemes for one Sales Order Item."""
+def get_so_production_plans_for_item(sales_order, sales_order_item=None, coil_production_line=None):
+	"""All process-specific cutting schemes for one production / SO item row.
+
+	Prefer Coil Production Line (raw/mother) when provided — processes and width
+	come from there. SO must be saved (real Sales Order Item name) before plans
+	can be created.
+	"""
+	if not sales_order or str(sales_order).startswith("new-"):
+		frappe.throw(_("Please save the Sales Order before managing Cutting Scheme."))
+
+	prod = None
+	if coil_production_line:
+		if str(coil_production_line).startswith("new-") or not frappe.db.exists(
+			"Coil Production Line", coil_production_line
+		):
+			frappe.throw(_("Please save the Sales Order before managing Cutting Scheme."))
+		prod = frappe.get_doc("Coil Production Line", coil_production_line)
+		sales_order_item = sales_order_item or prod.get("sales_order_item")
+
+	if not sales_order_item or str(sales_order_item).startswith("new-"):
+		frappe.throw(_("Please save the Sales Order before managing Cutting Scheme."))
+	if not frappe.db.exists("Sales Order Item", sales_order_item):
+		frappe.throw(_("Sales Order Item {0} was not found. Save the Sales Order first.").format(sales_order_item))
+
 	so_item = frappe.get_doc("Sales Order Item", sales_order_item)
-	processes = _processes_for_so_item_row(so_item)
+	if prod is not None:
+		processes = _get_enabled_processes_from_row(prod, custom=False) or ["slitter"]
+	else:
+		processes = _processes_for_so_item_row(so_item)
+
 	plans = {}
 	multi_process = _so_production_plan_process_key_enabled()
 	for process_key in processes:
@@ -7496,6 +7752,26 @@ def get_so_production_plans_for_item(sales_order, sales_order_item):
 		"processes": processes,
 		"plans": plans,
 		"process_key_enabled": multi_process,
+		"sales_order_item": sales_order_item,
+		"coil_production_line": coil_production_line,
+		"width": flt(prod.width) if prod is not None else flt(so_item.get("custom_width")),
+		"qty": flt(prod.qty) if prod is not None else flt(so_item.qty),
+		"meta": {
+			"item_name": (prod.item_name if prod is not None else None)
+			or so_item.item_name
+			or so_item.item_code,
+			"raw_material_item": prod.raw_material_item if prod is not None else so_item.get("custom_raw_material_item"),
+			"raw_material_tag_no": prod.raw_material_tag_no
+			if prod is not None
+			else so_item.get("custom_raw_material_tag_no"),
+			"tag_no": (prod.tag_no if prod is not None else None) or so_item.get("custom_tag_no"),
+			"ref_no": (prod.ref_no if prod is not None else None) or so_item.get("custom_ref_no"),
+			"thickness": (prod.thickness if prod is not None else None) or so_item.get("custom_thickness"),
+			"width": flt(prod.width) if prod is not None else flt(so_item.get("custom_width")),
+			"length": (prod.length if prod is not None else None) or so_item.get("custom_length"),
+			"length_c": (prod.length_c if prod is not None else None) or so_item.get("custom_length_c"),
+			"qty": flt(prod.qty) if prod is not None else flt(so_item.qty),
+		},
 	}
 
 
@@ -7515,8 +7791,26 @@ def save_so_production_plan(sales_order, sales_order_item, rows, process_key="sl
 
 
 @frappe.whitelist()
-def save_so_production_plans_for_item(sales_order, sales_order_item, plans):
+def save_so_production_plans_for_item(sales_order, sales_order_item=None, plans=None, coil_production_line=None):
 	"""Save multiple process cutting schemes from Manage Cutting Scheme dialog."""
+	if not sales_order or str(sales_order).startswith("new-"):
+		frappe.throw(_("Please save the Sales Order before managing Cutting Scheme."))
+
+	if coil_production_line and frappe.db.exists("Coil Production Line", coil_production_line):
+		prod = frappe.db.get_value(
+			"Coil Production Line",
+			coil_production_line,
+			["sales_order_item", "width"],
+			as_dict=True,
+		)
+		if prod and not sales_order_item:
+			sales_order_item = prod.sales_order_item
+
+	if not sales_order_item or str(sales_order_item).startswith("new-"):
+		frappe.throw(_("Please save the Sales Order before managing Cutting Scheme."))
+	if not frappe.db.exists("Sales Order Item", sales_order_item):
+		frappe.throw(_("Sales Order Item {0} was not found. Save the Sales Order first.").format(sales_order_item))
+
 	plans = frappe.parse_json(plans) if isinstance(plans, str) else (plans or {})
 	summary = {"status": "ok", "saved": []}
 	if not _so_production_plan_process_key_enabled():
@@ -7528,14 +7822,24 @@ def save_so_production_plans_for_item(sales_order, sales_order_item, plans):
 			summary["custom_remaining_width"] = result.get("custom_remaining_width")
 		if any(k for k in plans if k != "slitter" and plans.get(k)):
 			summary["migrate_required"] = True
-		return summary
+	else:
+		for process_key, rows in plans.items():
+			result = _save_so_production_plan_rows(sales_order, sales_order_item, process_key, rows)
+			summary["saved"].append(process_key)
+			if process_key == "slitter" and result.get("custom_calc_ratio") is not None:
+				summary["custom_calc_ratio"] = result.get("custom_calc_ratio")
+				summary["custom_remaining_width"] = result.get("custom_remaining_width")
 
-	for process_key, rows in plans.items():
-		result = _save_so_production_plan_rows(sales_order, sales_order_item, process_key, rows)
-		summary["saved"].append(process_key)
-		if process_key == "slitter" and result.get("custom_calc_ratio") is not None:
-			summary["custom_calc_ratio"] = result.get("custom_calc_ratio")
-			summary["custom_remaining_width"] = result.get("custom_remaining_width")
+	# Persist calc ratio / remaining width onto Coil Production Line (raw) when linked
+	if coil_production_line and frappe.db.exists("Coil Production Line", coil_production_line):
+		prod_updates = {}
+		if summary.get("custom_calc_ratio") is not None:
+			prod_updates["calc_ratio"] = summary["custom_calc_ratio"]
+		if summary.get("custom_remaining_width") is not None:
+			prod_updates["remaining_width"] = summary["custom_remaining_width"]
+		if prod_updates:
+			frappe.db.set_value("Coil Production Line", coil_production_line, prod_updates, update_modified=False)
+
 	return summary
 
 
@@ -7557,6 +7861,13 @@ def get_so_production_plan_rows(sales_order_item, operation=None, process_key=No
 
 @frappe.whitelist()
 def get_sales_order_cutting_scheme_report(sales_order):
+	"""Cutting scheme groups for a Sales Order.
+
+	When Coil Production exists, label groups by mother coil / raw (not Finish Good).
+	"""
+	from ss_coil.coil_production import get_coil_production_rows, sales_order_has_coil_production
+	from ss_coil.process_charges import is_process_charge_row
+
 	plan_fields = ["name", "sales_order_item"]
 	if _so_production_plan_process_key_enabled():
 		plan_fields.append("process_key")
@@ -7566,6 +7877,15 @@ def get_sales_order_cutting_scheme_report(sales_order):
 		fields=plan_fields,
 		order_by="sales_order_item asc, process_key asc",
 	)
+
+	so_doc = frappe.get_doc("Sales Order", sales_order) if frappe.db.exists("Sales Order", sales_order) else None
+	use_production = bool(so_doc and sales_order_has_coil_production(so_doc))
+	production_by_soi = {}
+	if use_production:
+		for prod in get_coil_production_rows(so_doc):
+			if prod.get("sales_order_item"):
+				production_by_soi[prod.sales_order_item] = prod
+
 	item_meta = {
 		d.name: d
 		for d in frappe.get_all(
@@ -7578,15 +7898,44 @@ def get_sales_order_cutting_scheme_report(sales_order):
 				"qty",
 				"custom_dimension",
 				"custom_tag_no",
+				"custom_raw_material_item",
+				"custom_raw_material_tag_no",
 				"custom_thickness",
 				"custom_width",
 				"custom_length_c",
 				"custom_length",
+				"custom_is_process_charge",
+				"custom_process_charge_key",
 			],
 		)
+		if not is_process_charge_row(d)
 	}
 
-	def _report_group_item_fields(item):
+	def _report_group_item_fields(item, prod=None):
+		if prod is not None:
+			thickness = prod.get("thickness")
+			width = prod.get("width")
+			length_c = prod.get("length_c") or DEFAULT_LENGTH_C
+			length = flt(prod.get("length"))
+			raw_item = prod.get("raw_material_item") or item.get("custom_raw_material_item")
+			raw_tag = prod.get("raw_material_tag_no") or item.get("custom_raw_material_tag_no")
+			fg = prod.get("finish_good_item") or item.get("item_code")
+			dimension = prod.get("dimension") or item.get("custom_dimension")
+			return {
+				# Keep Finish Good as the card title (same as before); raw lives in Coil Production.
+				"item_label": item.get("item_name") or fg or raw_item,
+				"qty": prod.get("qty") or item.get("qty"),
+				"dimension": dimension,
+				"tag_no": raw_tag or item.get("custom_tag_no") or prod.get("tag_no"),
+				"thickness": thickness,
+				"width": width,
+				"length_c": length_c,
+				"length": length,
+				"dimension_numeric": _build_dimension_string([thickness, width, length]) if length else "",
+				"raw_material_item": raw_item,
+				"finish_good_item": fg,
+			}
+
 		thickness = item.get("custom_thickness")
 		width = item.get("custom_width")
 		length_c = item.get("custom_length_c") or DEFAULT_LENGTH_C
@@ -7602,6 +7951,7 @@ def get_sales_order_cutting_scheme_report(sales_order):
 			"length": length,
 			"dimension_numeric": _build_dimension_string([thickness, width, length]) if length else "",
 		}
+
 	if not plans and not item_meta:
 		return []
 
@@ -7610,39 +7960,66 @@ def get_sales_order_cutting_scheme_report(sales_order):
 	for plan in plans:
 		doc = frappe.get_doc("SO Production Plan", plan.name)
 		item = item_meta.get(plan.sales_order_item, frappe._dict())
+		prod = production_by_soi.get(plan.sales_order_item)
 		process_key = (plan.get("process_key") if _so_production_plan_process_key_enabled() else None) or doc.get(
 			"process_key"
 		) or "slitter"
 		seen.add((plan.sales_order_item, process_key))
+		fields = _report_group_item_fields(item, prod)
 		result.append(
 			{
 				"plan_name": plan.name,
 				"sales_order_item": plan.sales_order_item,
+				"coil_production_line": prod.name if prod else None,
 				"process_key": process_key,
 				"process_label": _label_for_process(process_key),
-				**_report_group_item_fields(item),
-				"item_label": item.get("item_name") or item.get("item_code") or plan.sales_order_item,
+				**fields,
+				"item_label": fields.get("item_label") or plan.sales_order_item,
 				"rows": [row.as_dict() for row in doc.cutting_scheme],
 			}
 		)
 
+	# Process stubs so the report still shows Slitter/Leveler/Reshearing blocks
+	# even before detailed cutting rows are saved.
 	if _so_production_plan_process_key_enabled():
-		for item_name, item in item_meta.items():
-			so_item = frappe.get_doc("Sales Order Item", item_name)
-			for process_key in _processes_for_so_item_row(so_item):
-				if (item_name, process_key) in seen:
-					continue
-				result.append(
-					{
-						"plan_name": None,
-						"sales_order_item": item_name,
-						"process_key": process_key,
-						"process_label": _label_for_process(process_key),
-						**_report_group_item_fields(item),
-						"item_label": item.get("item_name") or item.get("item_code") or item_name,
-						"rows": [],
-					}
-				)
+		if use_production:
+			for prod in get_coil_production_rows(so_doc):
+				soi = prod.get("sales_order_item") or prod.name
+				item = item_meta.get(prod.get("sales_order_item"), frappe._dict())
+				for process_key in _get_enabled_processes_from_row(prod, custom=False):
+					if (soi, process_key) in seen:
+						continue
+					seen.add((soi, process_key))
+					fields = _report_group_item_fields(item, prod)
+					result.append(
+						{
+							"plan_name": None,
+							"sales_order_item": soi,
+							"coil_production_line": prod.name,
+							"process_key": process_key,
+							"process_label": _label_for_process(process_key),
+							**fields,
+							"item_label": fields.get("item_label") or prod.get("raw_material_item") or soi,
+							"rows": [],
+						}
+					)
+		else:
+			for item_name, item in item_meta.items():
+				so_item = frappe.get_doc("Sales Order Item", item_name)
+				for process_key in _processes_for_so_item_row(so_item):
+					if (item_name, process_key) in seen:
+						continue
+					result.append(
+						{
+							"plan_name": None,
+							"sales_order_item": item_name,
+							"process_key": process_key,
+							"process_label": _label_for_process(process_key),
+							**_report_group_item_fields(item),
+							"item_label": item.get("item_name") or item.get("item_code") or item_name,
+							"rows": [],
+						}
+					)
 
 	result.sort(key=lambda row: (row.get("sales_order_item") or "", row.get("process_key") or ""))
 	return result

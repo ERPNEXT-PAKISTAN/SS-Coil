@@ -21,6 +21,9 @@ frappe.ui.form.on("Stock Entry", {
 		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
 			add_coil_detail_print_button(frm);
 		});
+		if (typeof bind_ss_coil_entry_trace_formatters === "function") {
+			bind_ss_coil_entry_trace_formatters(frm, "items");
+		}
 		add_stock_entry_create_sales_order_button(frm);
 		add_stock_entry_tag_buttons(frm);
 		bind_live_stock_entry_dimension_events(frm);

@@ -10,6 +10,10 @@ frappe.ui.form.on("Sales Order", {
 		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
 			add_coil_detail_print_button(frm);
 		});
+		if (typeof bind_ss_coil_entry_trace_formatters === "function") {
+			bind_ss_coil_entry_trace_formatters(frm, "items");
+			bind_ss_coil_entry_trace_formatters(frm, "custom_coil_production");
+		}
 		hide_sales_order_job_sheet_extra_fields(frm);
 		render_sales_order_job_sheet_report(frm);
 		add_sales_order_job_sheet_print_button(frm);
@@ -727,6 +731,7 @@ const SO_ITEM_COIL_PRESERVE_FIELDS = [
 	"custom_sub_tag_no",
 	"custom_child_tag_no",
 	"custom_entry_no",
+	"custom_ss_coil",
 	"custom_mill",
 	"custom_location",
 	"custom_ref_no",

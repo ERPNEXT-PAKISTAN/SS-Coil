@@ -449,6 +449,7 @@ def apply_ss_coil_trace_to_coil_production(ss_coil_doc):
 		values["sub_tag_no"] = sub_tag_text
 	if entry_no:
 		values["entry_no"] = entry_no
+		values["ss_coil"] = entry_no
 
 	# Resolve production line row name
 	target = prod_name
@@ -470,7 +471,11 @@ def apply_ss_coil_trace_to_coil_production(ss_coil_doc):
 			target = names[0]
 
 	if target and values and frappe.db.exists("Coil Production Line", target):
-		frappe.db.set_value("Coil Production Line", target, values, update_modified=False)
+		# Only write fields that exist on Coil Production Line
+		meta = frappe.get_meta("Coil Production Line")
+		values = {k: v for k, v in values.items() if meta.has_field(k)}
+		if values:
+			frappe.db.set_value("Coil Production Line", target, values, update_modified=False)
 		# Mirror to SO Item for DN/SI
 		linked_so_item = frappe.db.get_value("Coil Production Line", target, "sales_order_item") or so_item
 		if linked_so_item and frappe.db.exists("Sales Order Item", linked_so_item):
@@ -484,6 +489,8 @@ def apply_ss_coil_trace_to_coil_production(ss_coil_doc):
 					so_values["custom_child_tag_no"] = sub_tag_text
 			if entry_no and _has_field("Sales Order Item", "custom_entry_no"):
 				so_values["custom_entry_no"] = entry_no
+			if entry_no and _has_field("Sales Order Item", "custom_ss_coil"):
+				so_values["custom_ss_coil"] = entry_no
 			if so_values:
 				frappe.db.set_value("Sales Order Item", linked_so_item, so_values, update_modified=False)
 
@@ -493,6 +500,8 @@ def apply_ss_coil_trace_to_coil_production(ss_coil_doc):
 			se_values = {}
 			if sub_tag_text and _has_field("Stock Entry Detail", "custom_sub_tag_no"):
 				se_values["custom_sub_tag_no"] = sub_tag_text
+			if entry_no and _has_field("Stock Entry Detail", "custom_ss_coil"):
+				se_values["custom_ss_coil"] = entry_no
 			if entry_no and _has_field("Stock Entry Detail", "custom_entry_no"):
 				existing = frappe.db.get_value("Stock Entry Detail", detail, "custom_entry_no")
 				se_parent = frappe.db.get_value("Stock Entry Detail", detail, "parent")

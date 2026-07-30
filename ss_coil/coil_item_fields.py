@@ -54,7 +54,25 @@ def setup_coil_item_trace_fields():
 					"insert_after": anchor,
 					"read_only": 1,
 					"in_list_view": 1 if dt in ("Stock Entry Detail", "Sales Order Item") else 0,
-					"description": "Stock Entry name on inward; latest SS Coil Job Sheet entry after processing.",
+					"description": "Stock Entry name on inward; latest SS Coil Job Sheet entry after processing. Clickable on the form grid.",
+				}
+			)
+			anchor = "custom_entry_no"
+		elif _field_exists(dt, "custom_entry_no"):
+			anchor = "custom_entry_no"
+
+		# Item-level Link to the SS Coil process entry (one SS Coil per line / process).
+		if dt in ("Sales Order Item", "Stock Entry Detail") and not _field_exists(dt, "custom_ss_coil"):
+			rows.append(
+				{
+					"fieldname": "custom_ss_coil",
+					"label": "SS Coil",
+					"fieldtype": "Link",
+					"options": "SS Coil",
+					"insert_after": anchor,
+					"read_only": 1,
+					"in_list_view": 1,
+					"description": "Linked SS Coil process entry for this item line.",
 				}
 			)
 		if rows:
@@ -119,6 +137,31 @@ def setup_coil_item_trace_fields():
 	if fields_by_dt:
 		create_custom_fields(fields_by_dt, update=True)
 
+	# Ensure list-view + label for existing Entry Number / SS Coil fields
+	for dt in ("Sales Order Item", "Stock Entry Detail"):
+		for fieldname, props in (
+			(
+				"custom_entry_no",
+				{
+					"in_list_view": 1,
+					"read_only": 1,
+					"description": "Stock Entry and/or SS Coil entry. Tokens are clickable on the form grid.",
+				},
+			),
+			(
+				"custom_ss_coil",
+				{
+					"in_list_view": 1,
+					"read_only": 1,
+					"label": "SS Coil",
+					"description": "Linked SS Coil process entry for this item line.",
+				},
+			),
+		):
+			name = f"{dt}-{fieldname}"
+			if frappe.db.exists("Custom Field", name):
+				frappe.db.set_value("Custom Field", name, props, update_modified=False)
+
 	# Prefer "Sub Tag No" wording on legacy Child Tag No
 	if frappe.db.exists("Custom Field", "Sales Order Item-custom_child_tag_no"):
 		frappe.db.set_value(
@@ -133,7 +176,66 @@ def setup_coil_item_trace_fields():
 
 	for dt in TRACE_CHILD_DOCTYPES:
 		frappe.clear_cache(doctype=dt)
+	frappe.clear_cache(doctype="Coil Production Line")
+	_backfill_ss_coil_links_from_entry_numbers()
 	return {"status": "ok", "doctypes": list(fields_by_dt.keys())}
+
+
+def _backfill_ss_coil_links_from_entry_numbers():
+	"""Fill custom_ss_coil / ss_coil from Entry Number when it already stores an SS Coil name."""
+	# Sales Order Item / Stock Entry Detail
+	for dt, link_field in (
+		("Sales Order Item", "custom_ss_coil"),
+		("Stock Entry Detail", "custom_ss_coil"),
+	):
+		if not _field_exists(dt, link_field) or not _field_exists(dt, "custom_entry_no"):
+			continue
+		rows = frappe.db.sql(
+			f"""
+			select name, custom_entry_no
+			from `tab{dt}`
+			where ifnull(custom_ss_coil, '') = ''
+			  and ifnull(custom_entry_no, '') != ''
+			limit 5000
+			""",
+			as_dict=True,
+		)
+		for row in rows:
+			token = _extract_ss_coil_token(row.custom_entry_no)
+			if token and frappe.db.exists("SS Coil", token):
+				frappe.db.set_value(dt, row.name, link_field, token, update_modified=False)
+
+	if frappe.db.exists("DocType", "Coil Production Line") and frappe.get_meta("Coil Production Line").has_field(
+		"ss_coil"
+	):
+		rows = frappe.db.sql(
+			"""
+			select name, entry_no
+			from `tabCoil Production Line`
+			where ifnull(ss_coil, '') = ''
+			  and ifnull(entry_no, '') != ''
+			limit 5000
+			""",
+			as_dict=True,
+		)
+		for row in rows:
+			token = _extract_ss_coil_token(row.entry_no)
+			if token and frappe.db.exists("SS Coil", token):
+				frappe.db.set_value("Coil Production Line", row.name, "ss_coil", token, update_modified=False)
+
+
+def _extract_ss_coil_token(entry_no):
+	if not entry_no:
+		return None
+	parts = [p.strip() for p in str(entry_no).split("/") if p.strip()]
+	for part in reversed(parts):
+		if part.upper().startswith("JS") and frappe.db.exists("SS Coil", part):
+			return part
+	# Single token that is an SS Coil
+	token = parts[-1] if parts else None
+	if token and frappe.db.exists("SS Coil", token):
+		return token
+	return None
 
 
 def _field_exists(doctype, fieldname):
@@ -186,8 +288,10 @@ def apply_ss_coil_trace_to_sales_order_item(ss_coil_doc):
 			values["custom_sub_tag_no"] = sub_tag_text
 		if _has_field("Sales Order Item", "custom_child_tag_no"):
 			values["custom_child_tag_no"] = sub_tag_text
-	if entry_no and _has_field("Sales Order Item", "custom_entry_no"):
-		values["custom_entry_no"] = entry_no
+			if entry_no and _has_field("Sales Order Item", "custom_entry_no"):
+				values["custom_entry_no"] = entry_no
+			if entry_no and _has_field("Sales Order Item", "custom_ss_coil"):
+				values["custom_ss_coil"] = entry_no
 
 	# Also push entry/sub tag onto linked Stock Entry Detail (item-level "here")
 	source_detail = frappe.db.get_value("Sales Order Item", so_item, "custom_source_stock_entry_detail")
@@ -195,6 +299,8 @@ def apply_ss_coil_trace_to_sales_order_item(ss_coil_doc):
 		se_values = {}
 		if sub_tag_text and _has_field("Stock Entry Detail", "custom_sub_tag_no"):
 			se_values["custom_sub_tag_no"] = sub_tag_text
+		if entry_no and _has_field("Stock Entry Detail", "custom_ss_coil"):
+			se_values["custom_ss_coil"] = entry_no
 		if entry_no and _has_field("Stock Entry Detail", "custom_entry_no"):
 			# Keep original SE name; show latest SS Coil after a separator once processing starts.
 			existing = frappe.db.get_value("Stock Entry Detail", source_detail, "custom_entry_no")
@@ -236,6 +342,7 @@ def copy_sales_order_trace_fields_to_row(target_row, so_item_name=None, sales_or
 		("custom_sub_tag_no", "custom_sub_tag_no"),
 		("custom_sub_tag_no", "custom_child_tag_no"),  # fallback source
 		("custom_entry_no", "custom_entry_no"),
+		("custom_ss_coil", "custom_ss_coil"),
 		("custom_slitter", "custom_slitter"),
 		("custom_leveler", "custom_leveler"),
 		("custom_reshearing", "custom_reshearing"),

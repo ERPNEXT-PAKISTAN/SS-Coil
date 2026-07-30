@@ -26,6 +26,7 @@
   "tag_no",
   "sub_tag_no",
   "entry_no",
+  "ss_coil",
   "section_dims",
   "mill",
   "location",
@@ -192,6 +193,15 @@
    "fieldname": "entry_no",
    "fieldtype": "Data",
    "label": "Entry Number",
+   "read_only": 1
+  },
+  {
+   "description": "Linked SS Coil process entry for this production line.",
+   "fieldname": "ss_coil",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SS Coil",
+   "options": "SS Coil",
    "read_only": 1
   },
   {

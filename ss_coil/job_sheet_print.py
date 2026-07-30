@@ -158,8 +158,8 @@ def _info_grid(pairs):
 			f"""
 			<td style="padding:0;vertical-align:top;">
 				<div style="background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:8px 9px;height:100%;box-sizing:border-box;min-height:52px;">
-					<div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748b;line-height:1.2;">{escape(str(label))}</div>
-					<div style="font-size:11px;font-weight:700;color:#0f172a;margin-top:4px;line-height:1.3;word-break:break-word;">{_esc(value)}</div>
+					<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#1e3a5f;line-height:1.25;">{escape(str(label))}</div>
+					<div style="font-size:13px;font-weight:700;color:#0f172a;margin-top:5px;line-height:1.3;word-break:break-word;">{_esc(value)}</div>
 				</div>
 			</td>"""
 		)

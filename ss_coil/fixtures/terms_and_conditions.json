@@ -1,0 +1,13 @@
+[
+ {
+  "doctype": "Terms and Conditions",
+  "name": "Sales Contract",
+  "title": "Sales Contract",
+  "disabled": 0,
+  "selling": 1,
+  "buying": 0,
+  "hr": 0,
+  "copy_attachments_to_transaction": 0,
+  "terms": "<div class=\"ql-editor read-mode\"><h2 style=\"text-align:center\"><strong>General Terms of Sales</strong></h2><table class=\"table table-bordered\"><tbody><tr><td>Tolerance</td><td>+/- 10% in Qty &amp; Amount</td></tr><tr><td>Delivery Note</td><td>{{ delivery_date or \"\" }}</td></tr><tr><td>Inspection</td><td>Mills Inspection is Final</td></tr><tr><td>Weight</td><td>Actual Weight of Coil/Theoretical weight of Sheet.</td></tr><tr><td>Mill</td><td>{% if custom_coil_production %}{{ custom_coil_production | map(attribute=\"mill\") | select | unique | join(\", \") }}{% else %}{{ custom_job_sheet_mill or \"\" }}{% endif %}</td></tr><tr><td>Insurance</td><td>To Be Covered by the Buyer.</td></tr><tr><td>Packing</td><td>SS Packing Standard</td></tr><tr><td>Delivery Terms</td><td>At {{ customer_name or customer or \"\" }}</td></tr></tbody></table></div>"
+ }
+]

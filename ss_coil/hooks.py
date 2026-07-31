@@ -29,6 +29,10 @@ fixtures = [
 		"dt": "Server Script",
 		"filters": [["reference_doctype", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Stock Entry", "Stock Entry Detail"]]],
 	},
+	{
+		"dt": "Terms and Conditions",
+		"filters": [["name", "in", ["Sales Contract"]]],
+	},
 ]
 
 # Apps

@@ -33,6 +33,10 @@ fixtures = [
 		"dt": "Terms and Conditions",
 		"filters": [["name", "in", ["Sales Contract"]]],
 	},
+	{
+		"dt": "Print Format",
+		"filters": [["name", "in", ["Sales Contract", "Sales Contract No Letterhead"]]],
+	},
 ]
 
 # Apps

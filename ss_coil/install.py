@@ -37,6 +37,7 @@ def run_post_install_setup():
 	sync_ss_coil_detail_print_format()
 	sync_stock_entry_sticker_print_formats()
 	sync_ss_coil_job_sheet_print_format()
+	sync_sales_contract_print_formats()
 	sync_ss_coil_desktop_icon()
 	sync_ss_coil_workspace()
 	frappe.db.commit()
@@ -205,3 +206,71 @@ def sync_ss_coil_job_sheet_print_format():
 		if html:
 			frappe.db.set_value("Print Format", name, "html", html, update_modified=False)
 	frappe.db.set_value("Print Format", name, margins, update_modified=False)
+
+
+def sync_sales_contract_print_formats():
+	"""Sales Contract (+ No Letterhead) print formats for Sales Order."""
+	import os
+
+	specs = (
+		("Sales Contract", "sales_contract"),
+		("Sales Contract No Letterhead", "sales_contract_no_letterhead"),
+	)
+	margins = {"margin_top": 10, "margin_bottom": 10, "margin_left": 10, "margin_right": 10}
+	for name, folder in specs:
+		json_path = frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder, f"{folder}.json")
+		html_path = frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder, f"{folder}.html")
+		if not os.path.exists(json_path) or not os.path.exists(html_path):
+			continue
+
+		if not frappe.db.exists("Print Format", name):
+			frappe.modules.import_file.import_file_by_path(json_path, force=True)
+		elif frappe.db.get_value("Print Format", name, "module") != "SS Coil":
+			# Take over site-created format with the same title
+			frappe.db.set_value(
+				"Print Format",
+				name,
+				{
+					"module": "SS Coil",
+					"doc_type": "Sales Order",
+					"custom_format": 1,
+					"print_format_type": "Jinja",
+					"standard": "No",
+					"disabled": 0,
+				},
+				update_modified=False,
+			)
+
+		if not frappe.db.exists("Print Format", name):
+			# Create manually if import skipped due to name clash
+			from frappe.modules.import_file import import_file_by_path
+
+			try:
+				import_file_by_path(json_path, force=True)
+			except Exception:
+				doc = frappe.new_doc("Print Format")
+				doc.name = name
+				doc.doc_type = "Sales Order"
+				doc.module = "SS Coil"
+				doc.custom_format = 1
+				doc.print_format_type = "Jinja"
+				doc.standard = "No"
+				doc.insert(ignore_permissions=True)
+
+		with open(html_path) as handle:
+			html = handle.read().strip()
+		if html and frappe.db.exists("Print Format", name):
+			frappe.db.set_value(
+				"Print Format",
+				name,
+				{
+					"html": html,
+					"css": "",
+					"custom_format": 1,
+					"print_format_type": "Jinja",
+					"doc_type": "Sales Order",
+					"disabled": 0,
+					**margins,
+				},
+				update_modified=False,
+			)

@@ -1,0 +1,146 @@
+{#- Sales Contract — WITH letterhead (Sales Order) -#}
+{%- set sc = build_sales_contract_lines(doc) -%}
+<style>
+	@page { size: A4; margin: 10mm; }
+	.sc-root { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; line-height: 1.35; }
+	.sc-root table { width: 100%; border-collapse: collapse; }
+	.sc-letterhead { margin-bottom: 8px; }
+	.sc-title {
+		text-align: center; font-size: 18px; font-weight: 800; letter-spacing: .08em;
+		text-transform: uppercase; margin: 6px 0 10px; border-bottom: 2px solid #111; padding-bottom: 4px;
+	}
+	.sc-meta td { padding: 2px 0; vertical-align: top; }
+	.sc-meta .label { font-weight: 700; text-transform: uppercase; font-size: 10px; }
+	.sc-parties { margin: 10px 0 12px; }
+	.sc-parties td { width: 50%; vertical-align: top; border: 1px solid #333; padding: 8px 10px; }
+	.sc-parties .party-title {
+		font-weight: 800; text-transform: uppercase; font-size: 10px;
+		border-bottom: 1px solid #999; margin-bottom: 6px; padding-bottom: 3px;
+	}
+	.sc-parties .party-name { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+	.sc-items th, .sc-items td { border: 1px solid #333; padding: 5px 4px; vertical-align: middle; }
+	.sc-items th {
+		background: #f0f0f0; font-size: 9px; text-transform: uppercase; font-weight: 800; text-align: center;
+	}
+	.sc-items td.num { text-align: right; white-space: nowrap; }
+	.sc-items td.ctr { text-align: center; }
+	.sc-items tfoot td { font-weight: 700; background: #fafafa; }
+	.sc-terms { margin-top: 14px; }
+	.sc-terms .ql-editor { padding: 0 !important; }
+	.sc-terms table { margin-top: 4px; }
+	.sc-terms td { border: 1px solid #333; padding: 5px 8px; }
+</style>
+
+<div class="sc-root">
+	{% if letter_head and not no_letterhead %}
+	<div class="sc-letterhead letter-head">{{ letter_head }}</div>
+	{% endif %}
+
+	<div class="sc-title">Sales Contract</div>
+
+	<table class="sc-meta">
+		<tr>
+			<td style="width:50%"><span class="label">SS Number</span>: <b>{{ doc.name }}</b></td>
+			<td style="width:50%; text-align:right">
+				<span class="label">Date</span>: <b>{{ frappe.utils.format_date(doc.transaction_date) }}</b>
+			</td>
+		</tr>
+	</table>
+
+	<table class="sc-parties">
+		<tr>
+			<td>
+				<div class="party-title">Buyer's Name &amp; Address</div>
+				<div class="party-name">{{ doc.customer_name or doc.customer }}</div>
+				<div>{{ doc.address_display or "" }}</div>
+				{% if doc.tax_id %}<div>NTN / Tax ID: {{ doc.tax_id }}</div>{% endif %}
+				{% if doc.contact_phone %}<div>Telephone: {{ doc.contact_phone }}</div>{% endif %}
+				{% if doc.contact_mobile and doc.contact_mobile != doc.contact_phone %}
+					<div>Mobile: {{ doc.contact_mobile }}</div>
+				{% endif %}
+			</td>
+			<td>
+				<div class="party-title">Seller's Name &amp; Address</div>
+				<div class="party-name">{{ doc.company }}</div>
+				{% if doc.company_address_display %}
+					<div>{{ doc.company_address_display }}</div>
+				{% elif doc.company_address %}
+					{% set ca = frappe.db.get_value(
+						"Address",
+						doc.company_address,
+						["address_line1","address_line2","city","state","pincode","country","phone"],
+						as_dict=True
+					) %}
+					{% if ca %}
+						<div>
+							{{ ca.address_line1 or "" }}{% if ca.address_line2 %}, {{ ca.address_line2 }}{% endif %}<br>
+							{{ ca.city or "" }}{% if ca.state %}, {{ ca.state }}{% endif %}
+							{% if ca.pincode %} {{ ca.pincode }}{% endif %}<br>
+							{{ ca.country or "" }}
+							{% if ca.phone %}<br>Telephone: {{ ca.phone }}{% endif %}
+						</div>
+					{% endif %}
+				{% endif %}
+				{% set company_tax = frappe.db.get_value("Company", doc.company, "tax_id") %}
+				{% if company_tax %}<div>NTN / Tax ID: {{ company_tax }}</div>{% endif %}
+			</td>
+		</tr>
+	</table>
+
+	<table class="sc-items">
+		<thead>
+			<tr>
+				<th style="width:4%">Sr.</th>
+				<th style="width:10%">Spec.</th>
+				<th style="width:6%">T</th>
+				<th style="width:12%">Size (mm)</th>
+				<th style="width:8%">Nbr of<br>Sheets/Coils</th>
+				<th style="width:10%">Total Qty</th>
+				<th style="width:6%">UOM</th>
+				<th style="width:8%">Unit Price</th>
+				<th style="width:10%">Amount</th>
+				<th style="width:10%">GST{% if sc.gst_rate %}<br>{{ sc.gst_rate }}%{% endif %}</th>
+				<th style="width:12%">Total Amount<br>({{ doc.currency }})</th>
+			</tr>
+		</thead>
+		<tbody>
+		{% for row in sc.rows %}
+			<tr>
+				<td class="ctr">{{ row.sr }}</td>
+				<td class="ctr">{{ row.spec }}</td>
+				<td class="ctr">{{ row.thickness }}</td>
+				<td class="ctr">{{ row.size }}</td>
+				<td class="ctr">{{ row.coils }}</td>
+				<td class="num">{{ "{:,.3f}".format(row.total_qty) }}</td>
+				<td class="ctr">{{ row.uom }}</td>
+				<td class="num">{{ "{:,.2f}".format(row.rate) }}</td>
+				<td class="num">{{ "{:,.2f}".format(row.amount) }}</td>
+				<td class="num">{% if sc.gst_rate %}{{ "{:,.2f}".format(row.gst_amount) }}{% else %}—{% endif %}</td>
+				<td class="num">{{ "{:,.2f}".format(row.line_total) }}</td>
+			</tr>
+		{% endfor %}
+		</tbody>
+		<tfoot>
+			<tr>
+				<td colspan="5" class="ctr">Total</td>
+				<td class="num">{{ "{:,.3f}".format(sc.total_qty) }}</td>
+				<td></td>
+				<td></td>
+				<td class="num">{{ "{:,.2f}".format(sc.total_amount) }}</td>
+				<td class="num">{% if sc.gst_rate %}{{ "{:,.2f}".format(sc.total_gst) }}{% else %}—{% endif %}</td>
+				<td class="num">{{ "{:,.2f}".format(sc.total_with_gst) }}</td>
+			</tr>
+		</tfoot>
+	</table>
+
+	<div class="sc-terms">
+		{%- if doc.terms -%}
+			{{ doc.terms }}
+		{%- elif doc.tc_name -%}
+			{%- set tc_terms = frappe.db.get_value("Terms and Conditions", doc.tc_name, "terms") -%}
+			{%- if tc_terms -%}
+				{{ frappe.render_template(tc_terms, doc) }}
+			{%- endif -%}
+		{%- endif -%}
+	</div>
+</div>

@@ -42,7 +42,10 @@ fixtures = [
 # Apps
 # ------------------
 
-# required_apps = []
+# SS Coil extends ERPNext documents (Sales Order, Stock Entry, Delivery Note,
+# and others), so installation must stop with a useful prerequisite error when
+# ERPNext is not installed on the target site.
+required_apps = ["erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
 add_to_apps_screen = [

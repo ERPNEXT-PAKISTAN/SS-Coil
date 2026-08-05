@@ -173,6 +173,15 @@ For this app, keeping screenshots inside `docs/screenshots/` is the best option 
 
 Use this only when `ss_coil` is **not** already in `apps/`.
 
+Prerequisites:
+
+- A working Frappe/ERPNext bench compatible with this app
+- ERPNext installed on the target site
+- Network access during `bench get-app` so Python packages can be downloaded
+
+The required `python-barcode` package is declared in `pyproject.toml` and is
+installed automatically by `bench get-app`.
+
 ```bash
 cd /home/frappe/frappe-bench
 bench get-app https://github.com/ERPNEXT-PAKISTAN/SS-Coil.git --branch main
@@ -181,6 +190,22 @@ bench --site your-site-name migrate
 bench build --app ss_coil
 bench --site your-site-name clear-cache
 ```
+
+If the app folder was downloaded before `python-barcode` was declared, refresh
+its Python requirements before retrying the interrupted installation:
+
+```bash
+cd /home/frappe/frappe-bench
+bench setup requirements --python
+bench --site your-site-name install-app ss_coil
+bench --site your-site-name migrate
+bench build --app ss_coil
+bench --site your-site-name clear-cache
+```
+
+Do not install the similarly named `barcode` package. This app requires the
+PyPI package named `python-barcode`, which provides the imported `barcode`
+Python module.
 
 Tag-related custom fields are created automatically during `install-app` and `migrate` via the app install hook.
 

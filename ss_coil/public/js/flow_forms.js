@@ -56,7 +56,7 @@ function flow_form_shell_html(title) {
 	</div>`;
 }
 
-function flow_map_field(df) {
+function flow_map_field(df, doctype) {
 	const field = {
 		fieldtype: df.fieldtype,
 		fieldname: df.fieldname,
@@ -70,6 +70,12 @@ function flow_map_field(df) {
 	if (/dimension$/i.test(df.fieldname)) {
 		field.read_only = 1;
 	}
+	// SS Coil Item row name is a Link; many users cannot read Sales Order Item directly.
+	if (doctype === "SS Coil" && df.fieldname === "sales_order_item") {
+		field.fieldtype = "Data";
+		field.read_only = 1;
+		delete field.options;
+	}
 	return field;
 }
 
@@ -82,7 +88,7 @@ function flow_build_parent_fields(meta) {
 	});
 	const fields = [{ fieldtype: "Section Break", fieldname: "section_details" }];
 	Object.keys(field_map).forEach((fieldname) => {
-		fields.push(flow_map_field(field_map[fieldname]));
+		fields.push(flow_map_field(field_map[fieldname], meta.doctype));
 	});
 	return fields;
 }
@@ -333,6 +339,24 @@ function flow_set_date_control_value(control, value) {
 	}
 }
 
+function flow_set_link_control_value(control, value) {
+	if (!control || value === undefined || value === null || value === "") {
+		return;
+	}
+	const link_value = String(value);
+	if (control.doc) {
+		control.doc[control.df.fieldname] = link_value;
+	}
+	control.value = link_value;
+	control.last_value = link_value;
+	if (control.$input) {
+		control.$input.val(link_value);
+	}
+	if (control.$link) {
+		control.$link.toggle(true);
+	}
+}
+
 function flow_set_parent_values(parent_fg, values) {
 	if (!parent_fg || !values) return;
 
@@ -344,6 +368,10 @@ function flow_set_parent_values(parent_fg, values) {
 		}
 		if (control.df.fieldtype === "Date") {
 			flow_set_date_control_value(control, value);
+			return;
+		}
+		if (control.df.fieldtype === "Link") {
+			flow_set_link_control_value(control, value);
 			return;
 		}
 		batch[fieldname] = flow_format_control_value(control, value);
@@ -696,4 +724,5 @@ ss_coil.flow_forms.get_linked_sales_order = function (ss_coil_name, callback) {
 };
 
 ss_coil.flow_forms.set_date_control_value = flow_set_date_control_value;
+ss_coil.flow_forms.set_link_control_value = flow_set_link_control_value;
 ss_coil.flow_forms.set_parent_values = flow_set_parent_values;

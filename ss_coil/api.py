@@ -8023,3 +8023,15 @@ def get_sales_order_cutting_scheme_report(sales_order):
 
 	result.sort(key=lambda row: (row.get("sales_order_item") or "", row.get("process_key") or ""))
 	return result
+
+
+def run_post_install_setup():
+	"""Re-run install/migrate setup (fields, layouts, print formats, workspace).
+
+	Use on a server after git pull when custom fields or JS look out of date:
+
+	    bench --site SITE execute ss_coil.api.run_post_install_setup
+	"""
+	from ss_coil.app_setup import run_post_install_setup as _run
+
+	return _run()

@@ -278,17 +278,28 @@ You should see the latest commit from `main`, for example:
 Run the setup command once, then clear cache:
 
 ```bash
-bench --site your-site-name execute ss_coil.install.run_post_install_setup
+bench --site your-site-name execute ss_coil.api.run_post_install_setup
 bench --site your-site-name clear-cache
 bench restart
 ```
 
-This runs the same post-migrate setup as `bench migrate` (custom fields, form layouts, print formats, workspace). You can also run individual helpers:
+This runs the same post-migrate setup as `bench migrate` (custom fields, form layouts, print formats, workspace). Alternatives:
 
 ```bash
+bench --site your-site-name execute ss_coil.install.run_post_install_setup
 bench --site your-site-name execute ss_coil.form_layout.sync_coil_form_layouts
 bench --site your-site-name execute ss_coil.api.setup_tag_origin_fields
 ```
+
+If you see `ModuleNotFoundError: No module named 'ss_coil.install'`, the app code is missing or the app folder is wrong. On the server run:
+
+```bash
+ls ~/frappe-bench/apps/ss_coil/ss_coil/install.py
+ls ~/frappe-bench/apps/ss_coil/ss_coil/app_setup.py
+cd ~/frappe-bench/apps/ss_coil && git pull origin main
+```
+
+The app folder must be named **`ss_coil`** (not `SS-Coil`). Then use `ss_coil.api.run_post_install_setup` which always works when `api.py` is present.
 
 This ensures fields such as these exist:
 

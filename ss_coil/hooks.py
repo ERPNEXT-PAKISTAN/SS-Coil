@@ -35,7 +35,24 @@ fixtures = [
 	},
 	{
 		"dt": "Print Format",
-		"filters": [["name", "in", ["Sales Contract", "Sales Contract No Letterhead"]]],
+		"filters": [
+			[
+				"name",
+				"in",
+				[
+					"Sales Contract",
+					"Sales Contract No Letterhead",
+					"Stock Entry Coil",
+					"Sales Order Coil",
+					"Stock Entry Sticker",
+					"Stock Entry Sticker Thermal",
+					"SS Coil Detail",
+					"SS Coil Job Sheet",
+					"SS Coil Sticker",
+					"SS Coil Sticker Thermal",
+				],
+			]
+		],
 	},
 ]
 

@@ -15,7 +15,9 @@ def run_post_install_setup():
 		setup_length_c_and_length_fields,
 		setup_sales_order_job_sheet_fields,
 		setup_ss_coil_machine_operation_link,
+		setup_stock_entry_sales_order_link_fields,
 		setup_tag_origin_fields,
+		setup_updatable_stock_entry_sales_order_property_setters,
 	)
 	from ss_coil.coil_item_fields import setup_coil_item_trace_fields
 	from ss_coil.coil_manufacture import setup_coil_manufacture_fields
@@ -25,6 +27,8 @@ def run_post_install_setup():
 	from ss_coil.workspace_sync import sync_ss_coil_workspace
 
 	setup_tag_origin_fields()
+	setup_stock_entry_sales_order_link_fields()
+	setup_updatable_stock_entry_sales_order_property_setters()
 	setup_coil_item_trace_fields()
 	setup_coil_manufacture_fields()
 	setup_coil_production_fields()

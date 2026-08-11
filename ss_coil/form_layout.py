@@ -73,18 +73,25 @@ def _apply_fixture_property_setters():
 
 
 def _sync_stock_entry_job_purpose_field():
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	field_spec = {
+		"fieldname": "custom_job_purpose",
+		"label": "Job Purpose",
+		"fieldtype": "Select",
+		"options": "Tolling\nOwn",
+		"insert_after": "purpose",
+	}
 	fieldname = "Stock Entry-custom_job_purpose"
+
 	if not frappe.db.exists("Custom Field", fieldname):
+		create_custom_fields({"Stock Entry": [field_spec]}, update=True)
 		return
+
 	frappe.db.set_value(
 		"Custom Field",
 		fieldname,
-		{
-			"fieldtype": "Select",
-			"options": "Tolling\nOwn",
-			"insert_after": "purpose",
-			"label": "Job Purpose",
-		},
+		field_spec,
 		update_modified=False,
 	)
 

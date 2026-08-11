@@ -43,12 +43,12 @@ def pdf_body_html(jenv, template, print_format, args):
 
 	# Bypass Print Designer for formats that rely on injected context / custom Jinja.
 	if print_format and print_format.name in (
-		{SS_COIL_JOB_SHEET_FORMAT} | SALES_CONTRACT_PRINT_FORMATS
+		{SS_COIL_JOB_SHEET_FORMAT, "Sales Invoice Format"} | SALES_CONTRACT_PRINT_FORMATS
 	):
 		return fw_pdf_body_html(template, args)
 
 	try:
-		from print_designer.print_designer.pdf import pdf_body_html as pd_pdf_body_html
+		from print_designer.pdf import pdf_body_html as pd_pdf_body_html
 
 		return pd_pdf_body_html(print_format=print_format, jenv=jenv, args=args, template=template)
 	except (ImportError, ModuleNotFoundError):

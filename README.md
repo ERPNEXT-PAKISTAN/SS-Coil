@@ -278,9 +278,16 @@ You should see the latest commit from `main`, for example:
 Run the setup command once, then clear cache:
 
 ```bash
-bench --site your-site-name execute ss_coil.api.setup_tag_origin_fields
-bench --site your-site-name execute ss_coil.form_layout.sync_coil_form_layouts
+bench --site your-site-name execute ss_coil.install.run_post_install_setup
 bench --site your-site-name clear-cache
+bench restart
+```
+
+This runs the same post-migrate setup as `bench migrate` (custom fields, form layouts, print formats, workspace). You can also run individual helpers:
+
+```bash
+bench --site your-site-name execute ss_coil.form_layout.sync_coil_form_layouts
+bench --site your-site-name execute ss_coil.api.setup_tag_origin_fields
 ```
 
 This ensures fields such as these exist:
@@ -292,6 +299,40 @@ This ensures fields such as these exist:
 - Stock Entry: `Job Purpose` as Select (`Tolling` / `Own`) with the same field/column layout as the source site
 
 Then hard-refresh the browser (`Ctrl+Shift+R`).
+
+### If **Data Entry** button or Stock Entry JS is missing
+
+The Data Entry dialog is **JavaScript**, not a database fixture. After `git pull` you must rebuild assets:
+
+```bash
+cd /home/frappe/frappe-bench/apps/ss_coil
+git log -1 --oneline   # should include Data Entry / stock_entry.js changes
+cd /home/frappe/frappe-bench
+bench build --app ss_coil
+bench --site your-site-name clear-cache
+bench restart
+```
+
+Verify in browser DevTools → Network that `stock_entry.js` loads on Stock Entry form.
+
+**Data Entry files in the app:**
+
+| Path | Role |
+|------|------|
+| `ss_coil/stock_entry_data_entry.py` | Field lists, meta API, save API |
+| `ss_coil/public/js/stock_entry.js` | Data Entry button + dialog UI |
+| `ss_coil/public/css/stock_entry_data_entry.css` | Dialog styling |
+| `ss_coil/hooks.py` | Loads JS/CSS on Stock Entry |
+
+### Why another server can look different
+
+| Layer | What it updates | When it runs |
+|-------|-----------------|--------------|
+| **Fixtures** (`fixtures/custom_field.json`, `property_setter.json`) | Custom fields, field order, property setters | `bench migrate` |
+| **after_migrate** (`install.py` → `run_post_install_setup`) | Extra fields, Job Purpose Select fix, print format HTML, workspace | `bench migrate` / `bench execute ss_coil.install.run_post_install_setup` |
+| **JS/CSS** (`public/js/stock_entry.js`, etc.) | Data Entry button, dialogs, client behaviour | `bench build --app ss_coil` + cache clear |
+
+If you only `git pull` without **`migrate` + `build` + `clear-cache` + `restart`**, fields and buttons stay on the old version. Old manually-created Custom Fields on that site can also block fixture types until `sync_coil_form_layouts` runs.
 
 ### Print formats
 

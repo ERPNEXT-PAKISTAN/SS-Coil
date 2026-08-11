@@ -3,6 +3,7 @@
 import frappe
 
 WORKSPACE_NAME = "SS Coil Space"
+SS_COIL_FLOW_PAGE = "ss-coil-flow"
 
 # Standalone DocTypes in the SS Coil module (exclude child tables).
 APP_DOCTYPES = (
@@ -31,6 +32,7 @@ SCRIPT_REPORTS = (
 )
 
 WORKSPACE_SHORTCUTS = (
+	{"type": "Page", "link_to": SS_COIL_FLOW_PAGE, "label": "SS Coil Flow", "color": "Orange", "doc_view": ""},
 	{"type": "DocType", "link_to": "SS Coil", "label": "SS Coil", "color": "Blue", "doc_view": "List"},
 	{"type": "DocType", "link_to": "Sales Order", "label": "Sales Order", "color": "Orange", "doc_view": "List"},
 	{"type": "DocType", "link_to": "Stock Entry", "label": "Stock Entry", "color": "Green", "doc_view": "List"},
@@ -45,6 +47,7 @@ WORKSPACE_SHORTCUTS = (
 
 SIDEBAR_ITEMS = (
 	{"type": "Link", "label": "Home", "link_to": WORKSPACE_NAME, "link_type": "Workspace", "icon": "home", "indent": 0, "child": 0},
+	{"type": "Link", "label": "SS Coil Flow", "link_to": SS_COIL_FLOW_PAGE, "link_type": "Page", "icon": "route", "indent": 0, "child": 0},
 	{"type": "Section Break", "label": "Production", "icon": "layers", "indent": 0, "child": 0, "collapsible": 1, "keep_closed": 0},
 	{"type": "Link", "label": "SS Coil", "link_to": "SS Coil", "link_type": "DocType", "icon": "layers", "indent": 1, "child": 1},
 	{"type": "Link", "label": "SO Production Plan", "link_to": "SO Production Plan", "link_type": "DocType", "icon": "", "indent": 1, "child": 1},
@@ -109,6 +112,20 @@ def sync_ss_coil_workspace():
 	ws = frappe.get_doc("Workspace", WORKSPACE_NAME)
 	ws.links = []
 
+	if frappe.db.exists("Page", SS_COIL_FLOW_PAGE):
+		ws.append(
+			"links",
+			{
+				"type": "Link",
+				"label": "SS Coil Flow",
+				"link_type": "Page",
+				"link_to": SS_COIL_FLOW_PAGE,
+				"onboard": 1,
+				"is_query_report": 0,
+				"hidden": 0,
+			},
+		)
+
 	ws.append("links", {"type": "Card Break", "label": "Planning & Production", "hidden": 0, "onboard": 0})
 	for dt in _existing_doctypes(APP_DOCTYPES):
 		_append_doctype_link(ws, dt, dt, onboard=1 if dt == "SS Coil" else 0)
@@ -141,6 +158,8 @@ def sync_ss_coil_workspace():
 			continue
 		if row["type"] == "Report" and not frappe.db.exists("Report", row["link_to"]):
 			continue
+		if row["type"] == "Page" and not frappe.db.exists("Page", row["link_to"]):
+			continue
 		ws.append("shortcuts", row)
 
 	ws.save(ignore_permissions=True)
@@ -160,6 +179,8 @@ def _sync_workspace_sidebar():
 		if row.get("link_type") == "DocType" and row.get("link_to") and not frappe.db.exists("DocType", row["link_to"]):
 			continue
 		if row.get("link_type") == "Report" and row.get("link_to") and not frappe.db.exists("Report", row["link_to"]):
+			continue
+		if row.get("link_type") == "Page" and row.get("link_to") and not frappe.db.exists("Page", row["link_to"]):
 			continue
 		doc.append("items", row)
 

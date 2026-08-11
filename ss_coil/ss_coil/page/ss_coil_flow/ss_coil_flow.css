@@ -1,0 +1,382 @@
+.ss-coil-flow-page {
+	--scf-accent: #1e3a5f;
+	--scf-accent-soft: rgba(30, 58, 95, 0.08);
+	--scf-accent-border: rgba(30, 58, 95, 0.22);
+	--scf-green: #059669;
+	--scf-card-bg: var(--card-bg, #fff);
+	--scf-muted: var(--text-muted, #64748b);
+	--scf-border: #e1e7ef;
+	width: 100%;
+	margin: 0;
+	padding: 0;
+}
+
+.ss-coil-flow-page .scf-shell {
+	width: 100%;
+	background: var(--scf-card-bg);
+	border: 1px solid var(--scf-border);
+	border-radius: 14px;
+	box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+	overflow: hidden;
+}
+
+.ss-coil-flow-page .scf-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 14px 18px;
+	border-bottom: 1px solid var(--scf-border);
+	background: linear-gradient(135deg, rgba(30, 58, 95, 0.07), transparent 72%);
+}
+
+.ss-coil-flow-page .scf-title-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.ss-coil-flow-page .scf-title {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--scf-accent);
+}
+
+.ss-coil-flow-page .scf-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	background: rgba(5, 150, 105, 0.12);
+	color: var(--scf-green);
+	border: 1px solid rgba(5, 150, 105, 0.22);
+}
+
+.ss-coil-flow-page .scf-badge-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+/* Flow track — full width, equal spread */
+.ss-coil-flow-page .scf-track-wrap {
+	width: 100%;
+	padding: 14px 16px 10px;
+	overflow-x: auto;
+	border-bottom: 1px solid var(--scf-border);
+	background: #eef2f7;
+	box-sizing: border-box;
+}
+
+.ss-coil-flow-page .scf-diagram {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	width: 100%;
+	min-width: 0;
+	gap: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+.ss-coil-flow-page .scf-start-branch {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	flex: 1.4 1 0;
+	min-width: 0;
+}
+
+.ss-coil-flow-page .scf-or-pill {
+	padding: 3px 7px;
+	border-radius: 999px;
+	font-size: 9px;
+	font-weight: 700;
+	color: var(--scf-muted);
+	background: #fff;
+	border: 1px solid var(--scf-border);
+	flex-shrink: 0;
+}
+
+.ss-coil-flow-page .scf-branch-merge {
+	width: 14px;
+	height: 48px;
+	position: relative;
+	flex-shrink: 0;
+}
+
+.ss-coil-flow-page .scf-branch-merge::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 6px;
+	bottom: 6px;
+	width: 10px;
+	border-top: 2px solid #cbd5e1;
+	border-bottom: 2px solid #cbd5e1;
+	border-right: 2px solid #cbd5e1;
+	border-radius: 0 10px 10px 0;
+}
+
+.ss-coil-flow-page .scf-h-arrow {
+	width: 24px;
+	height: 2px;
+	background: #94a3b8;
+	position: relative;
+	flex-shrink: 0;
+}
+
+.ss-coil-flow-page .scf-h-arrow::after {
+	content: "";
+	position: absolute;
+	right: -1px;
+	top: 50%;
+	transform: translateY(-50%);
+	border-top: 5px solid transparent;
+	border-bottom: 5px solid transparent;
+	border-left: 7px solid #94a3b8;
+}
+
+.ss-coil-flow-page .scf-step {
+	flex: 1 1 0;
+	min-width: 130px;
+	max-width: none;
+	width: auto;
+	background: #fff;
+	border: 1px solid #e1e7ef;
+	border-radius: 10px;
+	padding: 10px 10px 8px;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+	cursor: pointer;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+	box-sizing: border-box;
+}
+
+.ss-coil-flow-page .scf-start-branch .scf-step {
+	flex: 1 1 0;
+	min-width: 118px;
+}
+
+.ss-coil-flow-page .scf-step:hover,
+.ss-coil-flow-page .scf-step-active {
+	border-color: var(--scf-accent-border);
+	box-shadow: 0 8px 20px rgba(30, 58, 95, 0.12);
+}
+
+.ss-coil-flow-page .scf-step-active {
+	background: linear-gradient(180deg, rgba(30, 58, 95, 0.06), #fff 55%);
+}
+
+.ss-coil-flow-page .scf-step-top {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 4px;
+	margin-bottom: 5px;
+}
+
+.ss-coil-flow-page .scf-step-icon {
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 13px;
+	flex-shrink: 0;
+}
+
+.ss-coil-flow-page .scf-step-blue .scf-step-icon { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+.ss-coil-flow-page .scf-step-teal .scf-step-icon { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
+.ss-coil-flow-page .scf-step-orange .scf-step-icon { background: rgba(234, 88, 12, 0.12); color: #ea580c; }
+.ss-coil-flow-page .scf-step-purple .scf-step-icon { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
+.ss-coil-flow-page .scf-step-green .scf-step-icon { background: rgba(5, 150, 105, 0.12); color: #059669; }
+.ss-coil-flow-page .scf-step-navy .scf-step-icon { background: rgba(30, 58, 95, 0.12); color: #1e3a5f; }
+
+.ss-coil-flow-page .scf-step-open-wrap {
+	text-align: right;
+	margin-left: auto;
+	min-width: 36px;
+}
+
+.ss-coil-flow-page .scf-step-open-label {
+	display: block;
+	font-size: 8px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: #94a3b8;
+	line-height: 1.2;
+}
+
+.ss-coil-flow-page .scf-step-count {
+	text-align: right;
+	font-size: 17px;
+	font-weight: 800;
+	color: #1e3a5f;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+.ss-coil-flow-page .scf-step-label {
+	font-size: 8px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	color: var(--scf-muted);
+	text-transform: uppercase;
+}
+
+.ss-coil-flow-page .scf-step-title {
+	margin: 2px 0 7px;
+	font-size: 12px;
+	font-weight: 700;
+	color: #0f172a;
+	line-height: 1.25;
+}
+
+.ss-coil-flow-page .scf-step-links {
+	display: flex;
+	gap: 4px;
+}
+
+.ss-coil-flow-page .scf-btn-list {
+	background: rgba(37, 99, 235, 0.1) !important;
+	border-color: rgba(37, 99, 235, 0.35) !important;
+	color: #1d4ed8 !important;
+	font-weight: 700;
+	font-size: 10px;
+	padding: 2px 7px;
+	border-radius: 6px;
+}
+
+.ss-coil-flow-page .scf-btn-new {
+	background: rgba(5, 150, 105, 0.12) !important;
+	border-color: rgba(5, 150, 105, 0.35) !important;
+	color: #047857 !important;
+	font-weight: 700;
+	font-size: 10px;
+	padding: 2px 7px;
+	border-radius: 6px;
+}
+
+/* Work panel — full width */
+.ss-coil-flow-page .scf-work-panel {
+	width: 100%;
+	background: #eef2f7;
+	border-top: 1px solid var(--scf-border);
+	box-sizing: border-box;
+}
+
+.ss-coil-flow-page .scf-panel-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 11px 16px;
+	background: linear-gradient(135deg, #1e3a5f 0%, #0f2942 100%);
+	color: #fff;
+}
+
+.ss-coil-flow-page .scf-panel-head-left {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.ss-coil-flow-page .scf-panel-head .ss-coil-de-block-icon {
+	color: #93c5fd;
+}
+
+.ss-coil-flow-page .scf-panel-step {
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: rgba(255, 255, 255, 0.72);
+}
+
+.ss-coil-flow-page .scf-panel-title {
+	font-size: 15px;
+	font-weight: 700;
+	color: #fff;
+	margin-top: 1px;
+}
+
+.ss-coil-flow-page .scf-panel-meta {
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.78);
+}
+
+.ss-coil-flow-page .scf-saved-name {
+	font-weight: 800;
+	color: #fde68a;
+	margin-left: 4px;
+}
+
+.ss-coil-flow-page .scf-data-entry-host {
+	width: 100%;
+	min-height: 260px;
+	box-sizing: border-box;
+}
+
+.ss-coil-flow-page .scf-data-entry-host .ss-coil-de-inline-panel {
+	padding: 10px 14px 8px;
+	background: #eef2f7;
+}
+
+.ss-coil-flow-page .scf-panel-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 10px 14px 14px;
+	background: #fff;
+	border-top: 1px solid #e2e8f0;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.ss-coil-flow-page .scf-panel-actions-main {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.ss-coil-flow-page .scf-panel-actions-create {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-left: auto;
+}
+
+.ss-coil-flow-page .scf-panel-actions .btn-primary {
+	background: #1e3a5f;
+	border-color: #1e3a5f;
+	font-weight: 600;
+}
+
+.ss-coil-flow-page .scf-btn-accent {
+	background: rgba(234, 88, 12, 0.12);
+	border-color: rgba(234, 88, 12, 0.35);
+	color: #c2410c;
+	font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+	.ss-coil-flow-page .scf-diagram {
+		min-width: 980px;
+	}
+	.ss-coil-flow-page .scf-panel-actions-create {
+		margin-left: 0;
+		width: 100%;
+	}
+}

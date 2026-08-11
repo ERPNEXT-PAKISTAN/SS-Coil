@@ -82,32 +82,101 @@
 	max-width: 100% !important;
 }
 
+/* Compact parent fields — fixed widths, no stretch gaps */
 .ss-coil-de-grid-6 {
-	display: grid !important;
-	grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+	display: flex !important;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	justify-content: flex-start;
 	width: 100% !important;
 	max-width: 100% !important;
-	gap: 4px 10px;
-	align-items: start;
+	gap: 6px 8px;
 }
 
 .ss-coil-de-grid-6.form-column,
-.ss-coil-de-grid-6 .form-column {
-	width: 100% !important;
-	max-width: 100% !important;
+.ss-coil-de-grid-6 .form-column,
+.ss-coil-de-grid-6 .form-page,
+.ss-coil-de-grid-6 .form-section,
+.ss-coil-de-grid-6 .section-body {
+	width: auto !important;
+	max-width: none !important;
 	flex: none !important;
 	padding: 0 !important;
 	min-width: 0;
 }
 
-.ss-coil-de-grid-6 .column-break {
+/* Let nested Frappe layout wrappers participate in the parent flex row */
+.ss-coil-de-grid-6 .form-page,
+.ss-coil-de-grid-6 .form-column,
+.ss-coil-de-grid-6 .form-section,
+.ss-coil-de-grid-6 .section-body {
+	display: contents !important;
+}
+
+.ss-coil-de-grid-6 .column-break,
+.ss-coil-de-grid-6 .frappe-control[data-fieldtype="Section Break"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldtype="Column Break"],
+.ss-coil-de-grid-6 .section-head {
 	display: none !important;
 }
 
-.ss-coil-de-grid-6 > .frappe-control {
-	margin-bottom: 0;
-	width: 100%;
+.ss-coil-de-grid-6 > .frappe-control,
+.ss-coil-de-grid-6 .frappe-control {
+	flex: 0 0 auto;
+	margin: 0 !important;
+	padding: 0 !important;
+	width: 156px !important;
+	max-width: 156px !important;
 	min-width: 0;
+}
+
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="company"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="customer"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="supplier"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="customer_name"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="order_no"] {
+	width: 188px !important;
+	max-width: 188px !important;
+}
+
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="stock_entry_type"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_sales_order"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_customer"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_for_customer"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="sales_order_item"],
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="set_warehouse"] {
+	width: 168px !important;
+	max-width: 168px !important;
+}
+
+.ss-coil-de-grid-6 .frappe-control[data-fieldtype="Date"] {
+	width: 128px !important;
+	max-width: 128px !important;
+}
+
+.ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_mr_number"] {
+	width: 120px !important;
+	max-width: 120px !important;
+}
+
+.ss-coil-de-grid-6 .form-group {
+	margin: 0 !important;
+}
+
+.ss-coil-de-grid-6 .control-input-wrapper,
+.ss-coil-de-grid-6 .help-box {
+	margin: 0 !important;
+}
+
+.ss-coil-de-grid-6 .help-box:not(.hide-control) {
+	display: none;
+}
+
+.ss-coil-de-grid-6 .control-input,
+.ss-coil-de-grid-6 .control-value,
+.ss-coil-de-grid-6 .awesomplete {
+	width: 100% !important;
+	max-width: 100% !important;
 }
 
 .ss-coil-de-grid-6 .control-label {
@@ -126,9 +195,9 @@
 .ss-coil-de-grid-6 .control-input > select,
 .ss-coil-de-grid-6 .like-disabled-input {
 	width: 100% !important;
-	min-height: 26px;
-	font-size: 11.5px;
-	padding: 3px 7px;
+	min-height: 30px;
+	font-size: 12px;
+	padding: 5px 8px;
 	border-radius: 5px;
 	border-color: #cbd5e1;
 	transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -140,8 +209,28 @@
 	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
+.ss-coil-de-grid-6 .frappe-control[data-fieldtype="Check"] {
+	width: auto !important;
+	max-width: none !important;
+	min-width: 148px;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
 .ss-coil-de-grid-6 .checkbox {
-	margin-top: 6px;
+	margin: 0 !important;
+	padding-top: 0;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 30px;
+}
+
+.ss-coil-de-grid-6 .checkbox label {
+	margin: 0 !important;
+	white-space: nowrap;
+	line-height: 1.2;
 }
 
 /* Shared block chrome */
@@ -417,4 +506,154 @@ thead .ss-coil-de-sticky-right {
 	border: none;
 	background: none;
 	padding: 0;
+}
+
+/* Inline panel on SS Coil Flow page */
+.ss-coil-de-inline-panel.ss-coil-data-entry-dialog {
+	background: #eef2f7;
+}
+
+.ss-coil-de-inline-panel .ss-coil-de-shell {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.ss-coil-de-inline-panel .ss-coil-de-table-wrap {
+	max-height: min(52vh, 560px);
+	overflow: auto;
+}
+
+/* SS Coil Flow page — full width, tighter larger fields */
+body[data-page-route="ss-coil-flow"] .layout-main-section-wrapper,
+body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
+	max-width: none !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 {
+	gap: 8px 10px !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 > .frappe-control,
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 > .frappe-control,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control {
+	width: 168px !important;
+	max-width: 168px !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="company"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="customer"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="supplier"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="customer_name"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="order_no"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="company"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="customer"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="supplier"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="customer_name"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="order_no"] {
+	width: 204px !important;
+	max-width: 204px !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="stock_entry_type"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_sales_order"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_customer"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_for_customer"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="sales_order_item"],
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="set_warehouse"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="stock_entry_type"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_sales_order"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_customer"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_for_customer"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="sales_order_item"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="set_warehouse"] {
+	width: 182px !important;
+	max-width: 182px !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldtype="Date"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldtype="Date"] {
+	width: 138px !important;
+	max-width: 138px !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_mr_number"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldname="custom_mr_number"] {
+	width: 128px !important;
+	max-width: 128px !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .frappe-control[data-fieldtype="Check"],
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .frappe-control[data-fieldtype="Check"] {
+	min-width: 168px;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .checkbox,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .checkbox {
+	min-height: 34px;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .control-label,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .control-label {
+	font-size: 10px;
+	margin-bottom: 2px;
+	line-height: 1.2;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .input-with-feedback,
+.ss-coil-flow-page .ss-coil-de-grid-6 .control-input > select,
+.ss-coil-flow-page .ss-coil-de-grid-6 .like-disabled-input,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .input-with-feedback,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .control-input > select,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .like-disabled-input {
+	min-height: 34px !important;
+	font-size: 13px !important;
+	padding: 6px 9px !important;
+	border-radius: 6px !important;
+}
+
+.ss-coil-flow-page .ss-coil-de-grid-6 .checkbox,
+.ss-coil-de-inline-panel .ss-coil-de-grid-6 .checkbox {
+	font-size: 12px;
+}
+
+.ss-coil-flow-page .ss-coil-de-parent-block,
+.ss-coil-de-inline-panel .ss-coil-de-parent-block {
+	padding: 8px 10px 6px;
+	margin-bottom: 6px;
+}
+
+.ss-coil-flow-page .ss-coil-de-parent-block > .ss-coil-de-block-title,
+.ss-coil-de-inline-panel .ss-coil-de-parent-block > .ss-coil-de-block-title {
+	margin-bottom: 4px;
+	padding-bottom: 4px;
+}
+
+.ss-coil-flow-page .ss-coil-de-items-block {
+	padding: 10px 12px 12px;
+}
+
+.ss-coil-flow-page .ss-coil-de-table {
+	font-size: 12.5px;
+}
+
+.ss-coil-flow-page .ss-coil-de-table thead th {
+	padding: 7px 8px;
+	font-size: 11px;
+}
+
+.ss-coil-flow-page .ss-coil-de-table .form-control,
+.ss-coil-flow-page .ss-coil-de-table .input-with-feedback {
+	min-height: 30px;
+	font-size: 12px;
+}
+
+.ss-coil-de-inline-panel .ss-coil-de-parent-block,
+.ss-coil-de-inline-panel .ss-coil-de-items-block {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }

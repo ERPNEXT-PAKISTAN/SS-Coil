@@ -17,6 +17,7 @@ frappe.ui.form.on("Stock Entry", {
 	refresh(frm) {
 		ensure_inward_tag_batch_dialog_suppressed();
 		add_stock_entry_data_entry_button(frm);
+		maybe_open_stock_entry_data_entry_from_route(frm);
 		add_stock_entry_sticker_print_button(frm);
 		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
 			add_coil_detail_print_button(frm);
@@ -252,6 +253,14 @@ function add_stock_entry_data_entry_button(frm) {
 	});
 }
 
+function maybe_open_stock_entry_data_entry_from_route(frm) {
+	if (!frappe.route_options || !frappe.route_options.ss_coil_open_data_entry) {
+		return;
+	}
+	delete frappe.route_options.ss_coil_open_data_entry;
+	setTimeout(() => open_stock_entry_data_entry_dialog(frm), 350);
+}
+
 function add_stock_entry_create_sales_order_button(frm) {
 	if (frm.is_new() || !(frm.doc.items || []).length) return;
 
@@ -371,7 +380,37 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	},
 ];
 
-function show_stock_entry_data_entry_dialog(frm, meta) {
+function get_stock_entry_data_entry_shell_html() {
+	return `<div class="ss-coil-de-shell">
+		<div class="ss-coil-de-parent-block">
+			<div class="ss-coil-de-block-title">
+				<span class="ss-coil-de-block-icon">${frappe.utils.icon("file", "sm")}</span>
+				<span>${__("Stock Entry Details")}</span>
+			</div>
+			<div class="ss-coil-de-parent-fields"></div>
+		</div>
+		<div class="ss-coil-de-items-block">
+			<div class="ss-coil-de-block-title">
+				<span class="ss-coil-de-block-title-text">
+					<span class="ss-coil-de-block-icon">${frappe.utils.icon("stock", "sm")}</span>
+					<span>${__("Item Rows")}</span>
+					<span class="ss-coil-de-row-count badge">0</span>
+				</span>
+				<button type="button" class="btn btn-sm btn-primary ss-coil-de-add-row">
+					${frappe.utils.icon("add", "xs")} ${__("Add Row")}
+				</button>
+			</div>
+			<div class="ss-coil-de-table-wrap">
+				<table class="ss-coil-de-table">
+					<thead></thead>
+					<tbody></tbody>
+				</table>
+			</div>
+		</div>
+	</div>`;
+}
+
+function build_stock_entry_data_entry_state(frm, meta) {
 	const parent_field_map = {};
 	(meta.parent_sections || []).forEach((section) => {
 		(section.fields || []).forEach((df) => {
@@ -379,95 +418,161 @@ function show_stock_entry_data_entry_dialog(frm, meta) {
 		});
 	});
 
-	const state = {
+	return {
 		frm,
 		meta,
 		items: get_stock_entry_data_entry_initial_items(frm),
 		item_rows: [],
+		parent_field_map,
 	};
+}
+
+function normalize_stock_entry_date_value(value) {
+	if (!value) return value;
+	if (frappe.datetime.validate(value)) return value;
+	const system = frappe.datetime.user_to_str(String(value), false);
+	return frappe.datetime.validate(system) ? system : value;
+}
+
+function stock_entry_set_date_control_value(control, value) {
+	const system = normalize_stock_entry_date_value(value);
+	if (!control || !system || !control.$input) {
+		return;
+	}
+	if (control.doc) {
+		control.doc[control.df.fieldname] = system;
+	}
+	control.value = system;
+	control.last_value = system;
+	const display = control.format_for_input
+		? control.format_for_input(system)
+		: frappe.datetime.str_to_user(system, false, true);
+	control.$input.val(display);
+	if (control.datepicker) {
+		const dateObj = frappe.datetime.str_to_obj(system);
+		control.datepicker.date = dateObj;
+		if (Array.isArray(control.datepicker.selectedDates)) {
+			control.datepicker.selectedDates = [dateObj];
+		}
+	}
+}
+
+function apply_stock_entry_data_entry_parent_values(state, values) {
+	if (ss_coil.flow_forms && ss_coil.flow_forms.set_parent_values) {
+		ss_coil.flow_forms.set_parent_values(state.parent_fg, values);
+		return;
+	}
+	if (!state.parent_fg || !values) return;
+
+	const batch = {};
+	Object.entries(values).forEach(([fieldname, value]) => {
+		const control = state.parent_fg.fields_dict[fieldname];
+		if (!control || value === undefined || value === null || value === "") {
+			return;
+		}
+		if (control.df.fieldtype === "Date") {
+			stock_entry_set_date_control_value(control, value);
+			return;
+		}
+		batch[fieldname] = control.df.fieldtype === "Check" ? cint(value) : value;
+	});
+
+	if (Object.keys(batch).length) {
+		state.parent_fg.set_values(batch);
+	}
+}
+
+function setup_stock_entry_data_entry_ui(state, $root) {
+	state.$root = $root;
+	$root.html(get_stock_entry_data_entry_shell_html());
+
+	state.parent_fg = new frappe.ui.FieldGroup({
+		fields: build_stock_entry_data_entry_flat_fields(
+			STOCK_ENTRY_DATA_ENTRY_PARENT_FIELDS,
+			state.parent_field_map
+		),
+		body: null,
+		no_submit_on_enter: true,
+	});
+
+	const $parent_body = $root.find(".ss-coil-de-parent-fields");
+	state.parent_fg.body = $parent_body.get(0);
+	state.parent_fg.make();
+	apply_stock_entry_data_entry_parent_values(
+		state,
+		state.initial_parent_values || get_stock_entry_data_entry_parent_values(state.frm, state.meta)
+	);
+	if (state.mode === "flow_page" && !state.saved_name) {
+		const control = state.parent_fg.fields_dict.posting_date;
+		if (control) {
+			stock_entry_set_date_control_value(control, frappe.datetime.get_today());
+		}
+	}
+	apply_stock_entry_data_entry_grid_layout($parent_body);
+	Object.values(state.parent_fg.fields_dict || {}).forEach(relocate_stock_entry_data_entry_dropdown);
+
+	state.child_columns = build_stock_entry_data_entry_child_columns(state.meta.child_fields || []);
+	const $table = $root.find(".ss-coil-de-table");
+	render_stock_entry_data_entry_table_head(state, $table.find("thead"));
+	render_stock_entry_data_entry_item_rows(state, $table.find("tbody"));
+	update_stock_entry_data_entry_row_count(state);
+
+	$root.find(".ss-coil-de-add-row").on("click", () => {
+		const item = make_stock_entry_data_entry_item_row();
+		state.items.push(item);
+		append_stock_entry_data_entry_item_row(state, $table.find("tbody"), item, state.items.length - 1);
+		update_stock_entry_data_entry_row_count(state);
+		const $wrap = $root.find(".ss-coil-de-table-wrap");
+		$wrap.scrollTop($wrap[0].scrollHeight);
+	});
+}
+
+function show_stock_entry_data_entry_dialog(frm, meta) {
+	const state = build_stock_entry_data_entry_state(frm, meta);
 
 	const dialog = new frappe.ui.Dialog({
 		title: __("Data Entry"),
-		fields: [
-			{
-				fieldtype: "HTML",
-				fieldname: "parent_container",
-				options: `<div class="ss-coil-de-parent-block">
-					<div class="ss-coil-de-block-title">
-						<span class="ss-coil-de-block-icon">${frappe.utils.icon("file", "sm")}</span>
-						<span>${__("Stock Entry Details")}</span>
-					</div>
-					<div class="ss-coil-de-parent-fields"></div>
-				</div>`,
-			},
-			{
-				fieldtype: "HTML",
-				fieldname: "items_container",
-				options: `<div class="ss-coil-de-items-block">
-					<div class="ss-coil-de-block-title">
-						<span class="ss-coil-de-block-title-text">
-							<span class="ss-coil-de-block-icon">${frappe.utils.icon("stock", "sm")}</span>
-							<span>${__("Item Rows")}</span>
-							<span class="ss-coil-de-row-count badge">0</span>
-						</span>
-						<button type="button" class="btn btn-sm btn-primary ss-coil-de-add-row">
-							${frappe.utils.icon("add", "xs")} ${__("Add Row")}
-						</button>
-					</div>
-					<div class="ss-coil-de-table-wrap">
-						<table class="ss-coil-de-table">
-							<thead></thead>
-							<tbody></tbody>
-						</table>
-					</div>
-				</div>`,
-			},
-		],
+		fields: [{ fieldtype: "HTML", fieldname: "data_entry_host", options: "<div></div>" }],
 		primary_action_label: __("Save"),
 		primary_action() {
 			save_stock_entry_data_entry_from_dialog(state, dialog);
 		},
 	});
 
-	state.parent_fg = new frappe.ui.FieldGroup({
-		fields: build_stock_entry_data_entry_flat_fields(
-			STOCK_ENTRY_DATA_ENTRY_PARENT_FIELDS,
-			parent_field_map
-		),
-		body: null,
-		no_submit_on_enter: true,
-	});
-
 	apply_stock_entry_data_entry_dialog_layout(dialog);
 	dialog.show();
 
-	const $parent_body = dialog.$wrapper.find(".ss-coil-de-parent-fields");
-	state.parent_fg.body = $parent_body.get(0);
-	state.parent_fg.make();
-	state.parent_fg.set_values(get_stock_entry_data_entry_parent_values(frm, meta));
-	apply_stock_entry_data_entry_grid_layout($parent_body);
-	Object.values(state.parent_fg.fields_dict || {}).forEach(relocate_stock_entry_data_entry_dropdown);
-
-	state.child_columns = build_stock_entry_data_entry_child_columns(state.meta.child_fields || []);
-	const $table = dialog.$wrapper.find(".ss-coil-de-table");
-	render_stock_entry_data_entry_table_head(state, $table.find("thead"));
-	render_stock_entry_data_entry_item_rows(state, $table.find("tbody"));
-	update_stock_entry_data_entry_row_count(dialog, state);
-
-	dialog.$wrapper.find(".ss-coil-de-add-row").on("click", () => {
-		const item = make_stock_entry_data_entry_item_row();
-		state.items.push(item);
-		append_stock_entry_data_entry_item_row(state, $table.find("tbody"), item, state.items.length - 1);
-		update_stock_entry_data_entry_row_count(dialog, state);
-		const $wrap = dialog.$wrapper.find(".ss-coil-de-table-wrap");
-		$wrap.scrollTop($wrap[0].scrollHeight);
-	});
-
 	state.dialog = dialog;
+	setup_stock_entry_data_entry_ui(state, dialog.$wrapper.find('[data-fieldname="data_entry_host"]'));
 }
 
-function update_stock_entry_data_entry_row_count(dialog, state) {
-	dialog.$wrapper.find(".ss-coil-de-row-count").text(state.items.length);
+function update_stock_entry_data_entry_row_count(state) {
+	const $root = state.$root || (state.dialog && state.dialog.$wrapper);
+	if (!$root) return;
+	$root.find(".ss-coil-de-row-count").text(state.items.length);
+}
+
+function collect_stock_entry_data_entry_payload(state) {
+	const parent_data = state.parent_fg.get_values();
+	if (!parent_data) return null;
+
+	const items = [];
+	for (const row of state.item_rows) {
+		Object.keys(row.controls).forEach((fieldname) => {
+			row.item[fieldname] = row.controls[fieldname].get_value();
+		});
+		update_stock_entry_data_entry_row_dimension(row.item);
+		const item_payload = { ...row.item };
+		if (item_payload.__islocal) {
+			delete item_payload.name;
+		}
+		items.push(item_payload);
+	}
+
+	return {
+		...parent_data,
+		items: apply_stock_entry_data_entry_parent_to_items(parent_data, items),
+	};
 }
 
 function build_stock_entry_data_entry_grouped_fields(groups, field_map) {
@@ -579,32 +684,8 @@ function apply_stock_entry_data_entry_dialog_layout(dialog) {
 }
 
 function save_stock_entry_data_entry_from_dialog(state, dialog) {
-	const parent_data = state.parent_fg.get_values();
-	if (!parent_data) return;
-
-	const items = [];
-	for (const row of state.item_rows) {
-		Object.keys(row.controls).forEach((fieldname) => {
-			row.item[fieldname] = row.controls[fieldname].get_value();
-		});
-		update_stock_entry_data_entry_row_dimension(row.item);
-		const item_payload = { ...row.item };
-		if (item_payload.__islocal) {
-			// Rows added via "+ Add Row" carry a client-side placeholder name
-			// (frappe.utils.get_random) that never matches a real doc row.
-			// Sending it as-is makes the server think this is an update to an
-			// existing row, find no match, and silently skip it. Drop the
-			// fake name so the server correctly treats it as a new row.
-			delete item_payload.name;
-		}
-		items.push(item_payload);
-	}
-
-	const payload = {
-		...parent_data,
-		items: apply_stock_entry_data_entry_parent_to_items(parent_data, items),
-	};
-
+	const payload = collect_stock_entry_data_entry_payload(state);
+	if (!payload) return;
 	save_stock_entry_data_entry(state.frm, payload, dialog);
 }
 
@@ -683,11 +764,35 @@ function get_stock_entry_data_entry_initial_items(frm) {
 	});
 }
 
-function get_stock_entry_data_entry_parent_values(frm, meta) {
+function get_stock_entry_data_entry_default_parent_values(meta) {
 	const values = {};
+	const today = frappe.datetime.get_today();
 	(meta.parent_sections || []).forEach((section) => {
 		(section.fields || []).forEach((df) => {
-			values[df.fieldname] = frm.doc[df.fieldname];
+			if (df.default !== undefined && df.default !== null && df.default !== "") {
+				values[df.fieldname] = df.default;
+			}
+			if (df.fieldtype === "Date") {
+				values[df.fieldname] = today;
+			}
+		});
+	});
+	if (!values.company) {
+		values.company = frappe.defaults.get_user_default("company");
+	}
+	if (!values.purpose) {
+		values.purpose = "Material Receipt";
+	}
+	return values;
+}
+
+function get_stock_entry_data_entry_parent_values(frm, meta) {
+	const values = get_stock_entry_data_entry_default_parent_values(meta);
+	(meta.parent_sections || []).forEach((section) => {
+		(section.fields || []).forEach((df) => {
+			if (frm.doc[df.fieldname] !== undefined && frm.doc[df.fieldname] !== null && frm.doc[df.fieldname] !== "") {
+				values[df.fieldname] = frm.doc[df.fieldname];
+			}
 		});
 	});
 	return values;
@@ -792,7 +897,7 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 		state.item_rows = state.item_rows.filter((row) => row.item.name !== item.name);
 		$tr.remove();
 		renumber_stock_entry_data_entry_item_rows($tbody);
-		update_stock_entry_data_entry_row_count(state.dialog, state);
+		update_stock_entry_data_entry_row_count(state);
 	});
 
 	state.item_rows.push({ item, controls, $tr });
@@ -1063,3 +1168,139 @@ function set_stock_entry_dimension_from_values(cdt, cdn) {
 
 	frappe.model.set_value(cdt, cdn, "custom_dimension", parts.join(" x "));
 }
+
+frappe.provide("ss_coil.stock_entry_data_entry");
+
+function make_flow_page_stock_entry_frm() {
+	return {
+		doc: { doctype: "Stock Entry", items: [] },
+		is_new: () => true,
+		set_value(key, value) {
+			this.doc[key] = value;
+		},
+		add_child() {
+			return {
+				doctype: "Stock Entry Detail",
+				name: frappe.utils.get_random(10),
+			};
+		},
+		refresh_field() {},
+	};
+}
+
+ss_coil.stock_entry_data_entry.mount_inline = function ($container, handlers = {}) {
+	const $host = $($container);
+	if (!$host.length) return;
+
+	const boot = (meta, documentData) => {
+		const frm = make_flow_page_stock_entry_frm();
+		if (documentData) {
+			Object.assign(frm.doc, documentData);
+			frm.doc.items = documentData.items || [];
+		}
+
+		const state = build_stock_entry_data_entry_state(frm, meta);
+		state.mode = "flow_page";
+		if (documentData) {
+			state.saved_name = documentData.name;
+			state.initial_parent_values = get_stock_entry_data_entry_parent_values(frm, meta);
+		} else {
+			state.initial_parent_values = get_stock_entry_data_entry_default_parent_values(meta);
+		}
+
+		$host.html('<div class="ss-coil-de-inline-panel ss-coil-data-entry-dialog"></div>');
+		setup_stock_entry_data_entry_ui(state, $host.find(".ss-coil-de-inline-panel"));
+		$host.data("ss_coil_data_entry_state", state);
+
+		if (handlers.on_ready) {
+			handlers.on_ready(state);
+		}
+	};
+
+	if (handlers.document) {
+		$host.html(`<div class="ss-coil-de-inline-loading">${__("Loading data entry form…")}</div>`);
+		frappe.call({
+			method: "ss_coil.stock_entry_data_entry.get_stock_entry_data_entry_meta",
+			callback(r) {
+				if (!r.message) return;
+				boot(r.message, handlers.document);
+			},
+			error(r) {
+				frappe.msgprint((r && r.message) || __("Could not load Stock Entry form."));
+			},
+		});
+		return;
+	}
+
+	$host.html(`<div class="ss-coil-de-inline-loading">${__("Loading data entry form…")}</div>`);
+
+	frappe.call({
+		method: "ss_coil.stock_entry_data_entry.get_stock_entry_data_entry_meta",
+		callback(r) {
+			if (!r.message) return;
+			boot(r.message);
+		},
+	});
+};
+
+ss_coil.stock_entry_data_entry.collect_payload = collect_stock_entry_data_entry_payload;
+
+ss_coil.stock_entry_data_entry.save_inline = function ($container, handlers = {}) {
+	const state = $($container).data("ss_coil_data_entry_state");
+	if (!state) return;
+
+	const payload = collect_stock_entry_data_entry_payload(state);
+	if (!payload) return;
+
+	const method = state.saved_name
+		? "ss_coil.stock_entry_data_entry.save_stock_entry_data_entry"
+		: "ss_coil.stock_entry_data_entry.create_stock_entry_from_data_entry";
+
+	const args = state.saved_name
+		? { stock_entry: state.saved_name, data: payload }
+		: { data: payload };
+
+	return frappe.call({
+		method,
+		args,
+		freeze: true,
+		freeze_message: __("Saving Stock Entry..."),
+		callback(r) {
+			const name = (r.message && r.message.name) || state.saved_name;
+			state.saved_name = name;
+			if (handlers.on_saved) {
+				handlers.on_saved(name, state);
+			} else {
+				frappe.show_alert({
+					message: __("Stock Entry {0} saved", [name]),
+					indicator: "green",
+				});
+			}
+		},
+	});
+};
+
+ss_coil.stock_entry_data_entry.create_sales_order = function (stock_entry_name, handlers = {}) {
+	return frappe.call({
+		method: "ss_coil.api.create_sales_order_from_stock_entry",
+		args: { source_name: stock_entry_name },
+		freeze: true,
+		freeze_message: __("Creating Sales Order..."),
+		callback(r) {
+			if (!r.message) return;
+			const doc = r.message;
+			if (handlers.on_created) {
+				handlers.on_created(doc);
+			} else {
+				frappe.model.with_doctype("Sales Order", () => {
+					frappe.model.sync(doc);
+					frappe.set_route("Form", "Sales Order", doc.name);
+				});
+			}
+		},
+	});
+};
+
+ss_coil.stock_entry_data_entry.reset_inline = function ($container) {
+	ss_coil.stock_entry_data_entry.mount_inline($container);
+};

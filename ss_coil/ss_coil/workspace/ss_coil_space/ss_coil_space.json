@@ -16,6 +16,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "SS Coil Flow",
+   "link_count": 0,
+   "link_to": "ss-coil-flow",
+   "link_type": "Page",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Planning & Production",
    "link_count": 0,
    "link_type": "DocType",
@@ -204,7 +214,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-28 12:40:06.841493",
+ "modified": "2026-08-12 03:01:51.743571",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",
@@ -217,6 +227,13 @@
  "roles": [],
  "sequence_id": 18.0,
  "shortcuts": [
+  {
+   "color": "Orange",
+   "doc_view": "",
+   "label": "SS Coil Flow",
+   "link_to": "ss-coil-flow",
+   "type": "Page"
+  },
   {
    "color": "Blue",
    "doc_view": "List",

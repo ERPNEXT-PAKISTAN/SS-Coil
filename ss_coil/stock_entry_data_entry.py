@@ -9,6 +9,7 @@ onto the real Stock Entry doc.
 """
 
 import frappe
+from frappe.utils import cint, getdate
 
 PARENT_SECTIONS = [
 	{
@@ -131,6 +132,37 @@ def _all_parent_fieldnames():
 	return names
 
 
+def _serialize_flow_field_value(meta, fieldname, value):
+	df = meta.get_field(fieldname) if meta else None
+	if value in (None, ""):
+		return value
+	if df and df.fieldtype == "Date":
+		return getdate(value).strftime("%Y-%m-%d")
+	if df and df.fieldtype == "Check":
+		return 1 if cint(value) else 0
+	return value
+
+
+@frappe.whitelist()
+def get_stock_entry_data_entry_document(stock_entry):
+	"""Return parent + item values for loading into the data entry form."""
+	doc = frappe.get_doc("Stock Entry", stock_entry)
+	meta = frappe.get_meta("Stock Entry")
+	child_meta = frappe.get_meta("Stock Entry Detail")
+	parent = {}
+	for fieldname in _all_parent_fieldnames():
+		parent[fieldname] = _serialize_flow_field_value(meta, fieldname, doc.get(fieldname))
+
+	items = []
+	for row in doc.items:
+		item = {"name": row.name}
+		for fieldname in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS:
+			item[fieldname] = _serialize_flow_field_value(child_meta, fieldname, row.get(fieldname))
+		items.append(item)
+
+	return {"name": doc.name, **parent, "items": items}
+
+
 @frappe.whitelist()
 def save_stock_entry_data_entry(stock_entry, data):
 	"""Save parent and child values from the data entry dialog."""
@@ -158,6 +190,31 @@ def save_stock_entry_data_entry(stock_entry, data):
 				{k: row_data.get(k) for k in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS if k in row_data},
 			)
 			_sync_item_from_parent(doc, row)
+
+	for item in doc.items:
+		_sync_item_from_parent(doc, item)
+
+	doc.save()
+	return {"name": doc.name}
+
+
+@frappe.whitelist()
+def create_stock_entry_from_data_entry(data):
+	"""Create a new Stock Entry from the flow-page data entry form."""
+	data = frappe.parse_json(data) if isinstance(data, str) else data
+	doc = frappe.new_doc("Stock Entry")
+
+	for fieldname in _all_parent_fieldnames():
+		if fieldname in data:
+			doc.set(fieldname, data.get(fieldname))
+
+	for row_data in data.get("items") or []:
+		row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
+		row = doc.append(
+			"items",
+			{k: row_data.get(k) for k in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS if k in row_data},
+		)
+		_sync_item_from_parent(doc, row)
 
 	for item in doc.items:
 		_sync_item_from_parent(doc, item)

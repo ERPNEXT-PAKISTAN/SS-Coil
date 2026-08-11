@@ -21,6 +21,18 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "route",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "SS Coil Flow",
+   "link_to": "ss-coil-flow",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
    "icon": "layers",
    "indent": 0,
    "keep_closed": 0,
@@ -184,7 +196,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-29 15:54:10.590736",
+ "modified": "2026-08-12 03:01:52.864851",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",

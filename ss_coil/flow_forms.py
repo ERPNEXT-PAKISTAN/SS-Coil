@@ -8,6 +8,22 @@ from ss_coil.stock_entry_data_entry import (
 	get_stock_entry_data_entry_meta,
 )
 
+
+def _parse_optional_json(value):
+	"""Parse JSON from RPC args. Frappe sends JS null as an empty string."""
+	if value in (None, "", b"", "null", "None"):
+		return None
+	if isinstance(value, (dict, list)):
+		return value
+	if isinstance(value, (bytes, bytearray)):
+		value = value.decode("utf-8")
+	if isinstance(value, str):
+		stripped = value.strip()
+		if not stripped or stripped in ("null", "None"):
+			return None
+		return frappe.parse_json(stripped)
+	return value
+
 FLOW_FORM_CONFIGS = {
 	"Purchase Receipt": {
 		"title": "Purchase Receipt Details",
@@ -75,6 +91,11 @@ FLOW_FORM_CONFIGS = {
 			"custom_leveler",
 			"custom_reshearing",
 			"custom_source_stock_entry",
+			"custom_packing_type",
+			"custom_packing_weightsize",
+			"custom_no_of_pack",
+			"custom_packing_remarks",
+			"custom_packing_comments",
 		],
 		"defaults": {"transaction_date": "Today"},
 	},
@@ -250,7 +271,7 @@ def _extract_flow_form_document(doc, config):
 	parent_meta = frappe.get_meta(doc.doctype)
 	child_meta = frappe.get_meta(config["child_doctype"])
 
-	data = {"name": doc.name}
+	data = {"name": doc.name, "doctype": doc.doctype, "docstatus": cint(doc.docstatus)}
 	for fieldname in parent_fields:
 		data[fieldname] = _serialize_flow_field_value(parent_meta, fieldname, doc.get(fieldname))
 
@@ -261,7 +282,64 @@ def _extract_flow_form_document(doc, config):
 			item[fieldname] = _serialize_flow_field_value(child_meta, fieldname, row.get(fieldname))
 		rows.append(item)
 	data[child_table] = rows
+	if doc.doctype == "Sales Order":
+		_fill_so_item_packing_from_production(doc, data)
 	return data
+
+
+SO_PACKING_TO_PROD = {
+	"custom_packing_type": "packing_type",
+	"custom_packing_weightsize": "packing_weightsize",
+	"custom_no_of_pack": "no_of_pack",
+	"custom_packing_remarks": "packing_remarks",
+	"custom_packing_comments": "packing_comments",
+}
+
+
+def _matching_production_for_so_item(doc, so_row):
+	from ss_coil.coil_production import COIL_PRODUCTION_TABLE
+
+	if not frappe.get_meta("Sales Order").has_field(COIL_PRODUCTION_TABLE):
+		return []
+	prods = doc.get(COIL_PRODUCTION_TABLE) or []
+	matches = [p for p in prods if p.get("sales_order_item") == so_row.name]
+	if matches:
+		return matches
+	detail = so_row.get("custom_source_stock_entry_detail")
+	if detail:
+		return [p for p in prods if p.get("source_stock_entry_detail") == detail]
+	return []
+
+
+def _fill_so_item_packing_from_production(doc, data):
+	"""Show Coil Production packing on SO item rows when the commercial line is empty."""
+	items = data.get("items") or []
+	by_name = {row.name: row for row in (doc.items or [])}
+	for item in items:
+		so_row = by_name.get(item.get("name"))
+		if not so_row:
+			continue
+		for so_field, prod_field in SO_PACKING_TO_PROD.items():
+			if item.get(so_field) not in (None, ""):
+				continue
+			for prod in _matching_production_for_so_item(doc, so_row):
+				value = prod.get(prod_field)
+				if value not in (None, ""):
+					item[so_field] = value
+					break
+
+
+def _sync_sales_order_packing_to_production(doc):
+	if doc.doctype != "Sales Order":
+		return
+	for so_row in doc.items or []:
+		for prod in _matching_production_for_so_item(doc, so_row):
+			for so_field, prod_field in SO_PACKING_TO_PROD.items():
+				if not frappe.get_meta(prod.doctype).has_field(prod_field):
+					continue
+				value = so_row.get(so_field)
+				if value not in (None, ""):
+					prod.set(prod_field, value)
 
 
 @frappe.whitelist()
@@ -345,13 +423,14 @@ def _write_flow_form_doc(doc, config, data):
 		else:
 			doc.append(child_table, {k: row_data.get(k) for k in child_fields if k in row_data})
 
+	_sync_sales_order_packing_to_production(doc)
 	doc.save()
 	return doc
 
 
 @frappe.whitelist()
 def create_flow_form_document(doctype, data):
-	data = frappe.parse_json(data) if isinstance(data, str) else data
+	data = _parse_optional_json(data)
 	if doctype == "Stock Entry":
 		from ss_coil.stock_entry_data_entry import create_stock_entry_from_data_entry
 
@@ -363,12 +442,12 @@ def create_flow_form_document(doctype, data):
 
 	doc = frappe.new_doc(doctype)
 	_write_flow_form_doc(doc, config, data)
-	return {"name": doc.name, "doctype": doctype}
+	return {"name": doc.name, "doctype": doctype, "docstatus": cint(doc.docstatus)}
 
 
 @frappe.whitelist()
 def save_flow_form_document(doctype, name, data):
-	data = frappe.parse_json(data) if isinstance(data, str) else data
+	data = _parse_optional_json(data)
 	if doctype == "Stock Entry":
 		from ss_coil.stock_entry_data_entry import save_stock_entry_data_entry
 
@@ -380,7 +459,7 @@ def save_flow_form_document(doctype, name, data):
 
 	doc = frappe.get_doc(doctype, name)
 	_write_flow_form_doc(doc, config, data)
-	return {"name": doc.name, "doctype": doctype}
+	return {"name": doc.name, "doctype": doctype, "docstatus": cint(doc.docstatus)}
 
 
 def _is_local_doc_name(name):
@@ -471,8 +550,8 @@ def insert_mapped_flow_document(doctype, mapped_doc, data=None):
 	"""
 	if not doctype:
 		frappe.throw("Document type is required")
-	mapped_doc = frappe.parse_json(mapped_doc) if isinstance(mapped_doc, str) else mapped_doc
-	data = frappe.parse_json(data) if isinstance(data, str) else data
+	mapped_doc = _parse_optional_json(mapped_doc)
+	data = _parse_optional_json(data)
 	if not mapped_doc:
 		frappe.throw("Mapped document is required")
 
@@ -488,4 +567,45 @@ def insert_mapped_flow_document(doctype, mapped_doc, data=None):
 
 		doc.reload()
 		return _stock_entry_data_entry_response(doc)
-	return {"name": doc.name, "doctype": doctype}
+	return {"name": doc.name, "doctype": doctype, "docstatus": cint(doc.docstatus)}
+
+
+@frappe.whitelist()
+def submit_flow_form_document(doctype, name=None, data=None, mapped_doc=None):
+	"""Save the current flow form as a draft if needed, then submit.
+
+	SS Coil is not submittable — callers should hide Submit for that step.
+	"""
+	if not doctype:
+		frappe.throw("Document type is required")
+	meta = frappe.get_meta(doctype)
+	if not meta.is_submittable:
+		frappe.throw(f"{doctype} cannot be submitted")
+
+	data = _parse_optional_json(data)
+	mapped_doc = _parse_optional_json(mapped_doc)
+
+	if mapped_doc and _is_local_doc_name(name):
+		result = insert_mapped_flow_document(doctype, mapped_doc, data)
+		name = result.get("name")
+	elif _is_local_doc_name(name):
+		result = create_flow_form_document(doctype, data)
+		name = result.get("name")
+	elif name and cint(frappe.db.get_value(doctype, name, "docstatus")) == 0:
+		save_flow_form_document(doctype, name, data)
+
+	if not name:
+		frappe.throw("Could not save the document before submit")
+
+	doc = frappe.get_doc(doctype, name)
+	if cint(doc.docstatus) == 2:
+		frappe.throw("Cancelled documents cannot be submitted")
+	if cint(doc.docstatus) == 0:
+		doc.submit()
+		doc.reload()
+
+	if doctype == "Stock Entry":
+		from ss_coil.stock_entry_data_entry import _stock_entry_data_entry_response
+
+		return _stock_entry_data_entry_response(doc)
+	return {"name": doc.name, "doctype": doctype, "docstatus": cint(doc.docstatus)}

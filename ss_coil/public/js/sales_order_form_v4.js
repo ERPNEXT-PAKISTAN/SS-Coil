@@ -47,8 +47,8 @@ frappe.ui.form.on("Sales Order", {
 	},
 });
 
-const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
-const SS_COIL_DEFAULT_LENGTH_C = "C";
+window.SS_COIL_DEFAULT_WAREHOUSE = window.SS_COIL_DEFAULT_WAREHOUSE || "Stores - SSC";
+window.SS_COIL_DEFAULT_LENGTH_C = window.SS_COIL_DEFAULT_LENGTH_C || "C";
 
 const SO_JOB_SHEET_HTML_FIELD = "custom_job_sheet_report";
 
@@ -532,21 +532,21 @@ function style_coil_production_grid(frm) {
 		return;
 	}
 	const $wrap = $(grid.wrapper);
-	if ($wrap.data("ss-coil-grid-styled")) {
-		return;
-	}
-	$wrap.data("ss-coil-grid-styled", 1);
 	$wrap.find("style.ss-coil-prod-grid-style").remove();
 	$wrap.prepend(`<style class="ss-coil-prod-grid-style">
 		[data-fieldname="custom_coil_production"] .grid-heading-row {
-			background: linear-gradient(180deg, #243b53 0%, #2f4a66 100%) !important;
-			color: #f8fbff !important;
+			background: #e8eef5 !important;
+			color: #0f172a !important;
 			border-radius: 8px 8px 0 0;
 		}
 		[data-fieldname="custom_coil_production"] .grid-heading-row .grid-static-col,
 		[data-fieldname="custom_coil_production"] .grid-heading-row .row-check,
-		[data-fieldname="custom_coil_production"] .grid-heading-row .row-index {
-			color: #f8fbff !important;
+		[data-fieldname="custom_coil_production"] .grid-heading-row .row-index,
+		[data-fieldname="custom_coil_production"] .grid-heading-row .static-area,
+		[data-fieldname="custom_coil_production"] .grid-heading-row .col,
+		[data-fieldname="custom_coil_production"] .grid-heading-row span,
+		[data-fieldname="custom_coil_production"] .grid-heading-row label {
+			color: #0f172a !important;
 			font-weight: 700 !important;
 			font-size: 12px !important;
 			letter-spacing: .02em;
@@ -562,6 +562,13 @@ function style_coil_production_grid(frm) {
 			border: 1px solid #d7e3ef;
 			border-radius: 10px;
 			padding: 8px 10px 4px;
+		}
+		[data-fieldname="custom_coil_production"] .form-in-grid [data-fieldname="manage_cutting_scheme"] button,
+		[data-fieldname="custom_coil_production"] .form-in-grid [data-fieldname="manage_cutting_scheme"] .btn {
+			background: #0e7490 !important;
+			border-color: #155e75 !important;
+			color: #fff !important;
+			font-weight: 700;
 		}
 		[data-fieldname="custom_coil_production"] .ss-coil-cutting-preview {
 			max-width: 100%;
@@ -1668,6 +1675,10 @@ function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
 		},
 	});
 }
+
+frappe.provide("ss_coil");
+ss_coil.open_cutting_scheme_dialog = open_cutting_scheme_dialog;
+window.open_cutting_scheme_dialog = open_cutting_scheme_dialog;
 
 function sync_cutting_dialog_grid_to_cache(dialog, plan_cache, process_key) {
 	const field = get_cutting_scheme_field(dialog, process_key);

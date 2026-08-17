@@ -389,21 +389,6 @@ def append_commercial_so_item_from_stock_entry_row(sales_order, se_row, stock_en
 	if _has_field("Sales Order Item", "custom_stock_source_type"):
 		so_row.custom_stock_source_type = STOCK_SOURCE_STOCK_ENTRY
 
-	# Packing lives on Coil Production (mother coil / raw) — clear from FG item
-	for fieldname in (
-		"custom_packing_type",
-		"custom_packing_weightsize",
-		"custom_no_of_pack",
-		"custom_packing_remarks",
-		"custom_packing_comments",
-	):
-		if _has_field("Sales Order Item", fieldname):
-			so_row.set(fieldname, "")
-
-	# Do not leave mother-coil tag as SO output Tag No when raw tag is already set —
-	# keep raw on custom_raw_material_tag_no; seed Tag No only if empty (helper may set it).
-	# Leave as-is: helper seeds Tag No with mother tag until SS Coil assigns output.
-
 	return so_row
 
 

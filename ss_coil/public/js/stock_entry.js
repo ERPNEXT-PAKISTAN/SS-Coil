@@ -6,9 +6,9 @@
 // the parent/child field lists needing to stay in sync with
 // stock_entry_data_entry.py's meta endpoint.
 
-const SS_COIL_DEFAULT_WAREHOUSE = "Stores - SSC";
-const SS_COIL_DEFAULT_QTY_OF_COIL = 1;
-const SS_COIL_DEFAULT_LENGTH_C = "C";
+window.SS_COIL_DEFAULT_WAREHOUSE = window.SS_COIL_DEFAULT_WAREHOUSE || "Stores - SSC";
+window.SS_COIL_DEFAULT_QTY_OF_COIL = window.SS_COIL_DEFAULT_QTY_OF_COIL || 1;
+window.SS_COIL_DEFAULT_LENGTH_C = window.SS_COIL_DEFAULT_LENGTH_C || "C";
 
 frappe.ui.form.on("Stock Entry", {
 	setup(frm) {
@@ -394,7 +394,7 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	},
 	{
 		label: "Processing",
-		fields: ["custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments"],
+		fields: ["custom_finish_good_item", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments"],
 	},
 ];
 
@@ -799,7 +799,21 @@ function map_stock_entry_data_entry_field(df) {
 	if (df.fieldname === "custom_dimension") {
 		field.read_only = 1;
 	}
+	if (df.fieldname === "custom_finish_good_item") {
+		delete field.depends_on;
+		field.get_query = get_stock_entry_finish_good_item_query;
+	}
 	return field;
+}
+
+function get_stock_entry_finish_good_item_query() {
+	return {
+		filters: {
+			disabled: 0,
+			is_sales_item: 1,
+			custom_ss_coil_item_type: ["in", ["Finished Good", "Semi Finished"]],
+		},
+	};
 }
 
 function apply_stock_entry_data_entry_parent_to_items(parent_data, items) {
@@ -931,7 +945,11 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 					options: df.options,
 					reqd: df.reqd,
 					read_only: df.fieldname === "custom_dimension" ? 1 : df.read_only,
-					depends_on: df.depends_on,
+					depends_on: df.fieldname === "custom_finish_good_item" ? null : df.depends_on,
+					get_query:
+						df.fieldname === "custom_finish_good_item"
+							? get_stock_entry_finish_good_item_query
+							: df.get_query,
 					onchange: () => {
 						item[df.fieldname] = control.get_value();
 						if (dimension_fields.includes(df.fieldname)) {
@@ -964,7 +982,7 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 
 	const $remove_td = $('<td class="ss-coil-de-col-action ss-coil-de-sticky-right"></td>').appendTo($tr);
 	const $remove_btn = $(
-		`<button type="button" class="btn-reset ss-coil-de-remove-row" title="${__("Remove Row")}">${frappe.utils.icon("close", "sm")}</button>`
+		`<button type="button" class="btn-reset ss-coil-de-remove-row" title="${__("Remove Row")}">${frappe.utils.icon("close", "xs")}</button>`
 	).appendTo($remove_td);
 
 	$remove_btn.on("click", () => {
@@ -1394,7 +1412,7 @@ ss_coil.stock_entry_data_entry.save_inline = function ($container, handlers = {}
 			state.saved_name = name;
 			apply_saved_stock_entry_data_entry_rows(state, r.message);
 			if (handlers.on_saved) {
-				handlers.on_saved(name, state);
+				handlers.on_saved(name, r.message || {});
 			} else {
 				frappe.show_alert({
 					message: __("Stock Entry {0} saved", [name]),

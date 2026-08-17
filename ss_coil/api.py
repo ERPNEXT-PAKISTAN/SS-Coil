@@ -2375,6 +2375,7 @@ def _sales_order_item_tag_sync_values(so_row):
 		"item_name",
 		"stock_uom",
 		"uom",
+		"custom_finish_good_item",
 		"custom_raw_material_tag_no",
 		"custom_raw_material_batch_no",
 		"custom_raw_material_item",
@@ -2432,6 +2433,26 @@ def _coil_production_line_sync_values(prod):
 	from ss_coil.coil_production import SO_CUSTOM_TO_PROD
 
 	updates = {}
+	for fieldname in (
+		"finish_good_item",
+		"raw_material_item",
+		"item_name",
+		"qty",
+		"sales_order_item",
+		"raw_material_tag_no",
+		"raw_material_batch_no",
+		"stock_source_type",
+		"source_stock_entry",
+		"source_stock_entry_detail",
+	):
+		if not _has_field(prod.doctype, fieldname):
+			continue
+		value = prod.get(fieldname)
+		if value not in (None, ""):
+			updates[fieldname] = value
+		elif fieldname in ("raw_material_item", "raw_material_tag_no", "raw_material_batch_no"):
+			updates[fieldname] = value or ""
+
 	sync_custom = set(COIL_INWARD_SO_FIELDNAMES) | set(PROCESS_SO_FIELDS) | {
 		"custom_raw_material_tag_no",
 		"custom_raw_material_batch_no",
@@ -2444,6 +2465,8 @@ def _coil_production_line_sync_values(prod):
 	}
 	for custom_field, prod_field in SO_CUSTOM_TO_PROD.items():
 		if custom_field not in sync_custom:
+			continue
+		if prod_field in updates:
 			continue
 		if not _has_field(prod.doctype, prod_field):
 			continue
@@ -2584,6 +2607,12 @@ def _matching_coil_production_rows(sales_order, se_row, so_row=None):
 			matches.append(prod)
 			continue
 		if prod.get("source_stock_entry") == se_parent:
+			matches.append(prod)
+			continue
+		se_item = se_row.get("item_code")
+		if se_item and (
+			prod.get("raw_material_item") == se_item or prod.get("finish_good_item") == se_item
+		):
 			matches.append(prod)
 	return matches
 
@@ -4937,6 +4966,9 @@ def _apply_finish_good_to_sales_order_row(so_row, se_row):
 	if _has_field("Sales Order Item", "custom_raw_material_item") and raw_item:
 		so_row.custom_raw_material_item = raw_item
 
+	if _has_field("Sales Order Item", "custom_finish_good_item"):
+		so_row.custom_finish_good_item = finish_good
+
 	if _has_field("Sales Order Item", "custom_stock_source_type"):
 		so_row.custom_stock_source_type = STOCK_SOURCE_STOCK_ENTRY
 
@@ -4951,6 +4983,69 @@ def _apply_finish_good_to_sales_order_row(so_row, se_row):
 		and frappe.db.exists("Batch", batch_no)
 	):
 		so_row.custom_raw_material_batch_no = batch_no
+
+
+def _apply_finish_good_to_coil_production_row(prod, se_row):
+	"""Set Coil Production Finish Good + Mother Coil from a Stock Entry Detail row."""
+	if not prod or not se_row:
+		return
+
+	finish_good = se_row.get("custom_finish_good_item") if _has_field(se_row.doctype, "custom_finish_good_item") else None
+	raw_item = se_row.get("item_code")
+	if not finish_good:
+		return
+
+	if _has_field(prod.doctype, "finish_good_item"):
+		prod.finish_good_item = finish_good
+
+	fg_name = frappe.db.get_value("Item", finish_good, "item_name") if finish_good else None
+	if fg_name and _has_field(prod.doctype, "item_name"):
+		prod.item_name = fg_name
+
+	if finish_good == raw_item:
+		raw_item = None
+	if _has_field(prod.doctype, "raw_material_item"):
+		prod.raw_material_item = raw_item or ""
+
+	if _has_field(prod.doctype, "stock_source_type"):
+		prod.stock_source_type = STOCK_SOURCE_STOCK_ENTRY
+
+	tag = se_row.get("custom_tag_no") if _has_field(se_row.doctype, "custom_tag_no") else None
+	if tag and _has_field(prod.doctype, "raw_material_tag_no"):
+		prod.raw_material_tag_no = tag
+		if _has_field(prod.doctype, "entry_no"):
+			prod.entry_no = getattr(se_row, "parent", None) or prod.get("source_stock_entry")
+	batch_no = se_row.get("batch_no") or tag
+	if (
+		batch_no
+		and _has_field(prod.doctype, "raw_material_batch_no")
+		and frappe.db.exists("Batch", batch_no)
+	):
+		prod.raw_material_batch_no = batch_no
+
+	qty = se_row.get("qty")
+	if qty not in (None, "") and _has_field(prod.doctype, "qty") and not flt(prod.get("qty")):
+		prod.qty = flt(qty) or 1
+
+
+def _ensure_coil_production_from_stock_entry_row(sales_order, se_row, stock_entry_name, so_row=None):
+	"""Create a Coil Production Line when Sync finds an SE row with no production match."""
+	from ss_coil.coil_production import COIL_PRODUCTION_TABLE, append_production_line_from_stock_entry_row
+
+	if not _has_field("Sales Order", COIL_PRODUCTION_TABLE):
+		return None
+	prod = append_production_line_from_stock_entry_row(sales_order, se_row, stock_entry_name)
+	if not prod:
+		return None
+	if so_row and _has_field(prod.doctype, "sales_order_item"):
+		prod.sales_order_item = so_row.name
+	if not _is_saved_child_name(prod.name):
+		try:
+			prod.db_insert()
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "SS Coil create Coil Production Line on sync")
+			return prod
+	return prod
 
 
 @frappe.whitelist()
@@ -5618,7 +5713,15 @@ def _sync_linked_stock_entry_sales_order_lines(stock_entry_name, sales_order_nam
 				_apply_finish_good_to_sales_order_row(so_row, se_row)
 				_copy_coil_process_fields(se_row, so_row, fill_source_missing=True)
 				_sync_tags_between_stock_entry_and_sales_order(se_row, so_row, primary)
+			prod_rows = list(prod_rows or [])
+			if not prod_rows:
+				prod = _ensure_coil_production_from_stock_entry_row(
+					sales_order, se_row, stock_entry_name, so_row
+				)
+				if prod:
+					prod_rows = [prod]
 			for prod in prod_rows:
+				_apply_finish_good_to_coil_production_row(prod, se_row)
 				_copy_coil_process_fields(se_row, prod, fill_source_missing=True)
 				if so_row and _has_field(prod.doctype, "sales_order_item") and not prod.get("sales_order_item"):
 					prod.sales_order_item = so_row.name

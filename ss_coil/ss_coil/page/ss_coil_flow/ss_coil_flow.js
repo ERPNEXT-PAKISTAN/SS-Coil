@@ -3,20 +3,23 @@ frappe.provide("ss_coil");
 const SCF_STEP_CONFIG = {
 	"Stock Entry": {
 		step: "01",
-		save_label: __("Save Stock Entry"),
+		save_label: __("Save Draft"),
+		submit_label: __("Submit Stock Entry"),
 		next_label: __("Save & Create Sales Order"),
 		open_label: __("Open Stock Entry"),
 		create_actions: [{ id: "create_so", label: __("Create Sales Order"), accent: true }],
 	},
 	"Purchase Receipt": {
 		step: "01",
-		save_label: __("Save Purchase Receipt"),
+		save_label: __("Save Draft"),
+		submit_label: __("Submit Purchase Receipt"),
 		open_label: __("Open Purchase Receipt"),
 		create_actions: [],
 	},
 	"Sales Order": {
 		step: "02",
-		save_label: __("Save Sales Order"),
+		save_label: __("Save Draft"),
+		submit_label: __("Submit Sales Order"),
 		next_label: __("Save & Create SS Coil"),
 		open_label: __("Open Sales Order"),
 		create_actions: [
@@ -37,18 +40,25 @@ const SCF_STEP_CONFIG = {
 	},
 	"Delivery Note": {
 		step: "04",
-		save_label: __("Save Delivery Note"),
+		save_label: __("Save Draft"),
+		submit_label: __("Submit Delivery Note"),
 		next_label: __("Save & Create Sales Invoice"),
 		open_label: __("Open Delivery Note"),
 		create_actions: [{ id: "create_sales_invoice", label: __("Create Sales Invoice"), accent: true }],
 	},
 	"Sales Invoice": {
 		step: "05",
-		save_label: __("Save Sales Invoice"),
+		save_label: __("Save Draft"),
+		submit_label: __("Submit Sales Invoice"),
 		open_label: __("Open Sales Invoice"),
 		create_actions: [],
 	},
 };
+
+function scf_docstatus(value) {
+	const n = parseInt(value, 10);
+	return Number.isFinite(n) ? n : 0;
+}
 
 frappe.pages["ss-coil-flow"].on_page_load = function (wrapper) {
 	frappe.ui.make_app_page({
@@ -59,7 +69,9 @@ frappe.pages["ss-coil-flow"].on_page_load = function (wrapper) {
 
 	frappe.require("/assets/ss_coil/js/stock_entry.js", () => {
 		frappe.require("/assets/ss_coil/js/flow_forms.js", () => {
-			wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
+			frappe.require("/assets/ss_coil/js/sales_order.js", () => {
+				wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
+			});
 		});
 	});
 
@@ -75,6 +87,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		this.saved_docs = {};
 		this.pending_docs = {};
 		this.step_source = {};
+		this.docstatus_by_doctype = {};
 		this.render();
 		this.load_stats();
 		this.switch_form("Stock Entry");
@@ -110,6 +123,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 							<div class="scf-panel-meta">
 								<span class="scf-saved-label">${__("Saved")}:</span>
 								<span class="scf-saved-name">—</span>
+								<span class="scf-docstatus-badge"></span>
 							</div>
 						</div>
 						<div class="scf-data-entry-host"></div>
@@ -125,7 +139,10 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 									${frappe.utils.icon("reload", "xs")} ${__("Clear Form")}
 								</button>
 								<button type="button" class="btn btn-primary scf-btn-save">
-									${frappe.utils.icon("save", "xs")} ${__("Save Stock Entry")}
+									${frappe.utils.icon("save", "xs")} ${__("Save Draft")}
+								</button>
+								<button type="button" class="btn scf-btn-submit">
+									${frappe.utils.icon("tick", "xs")} ${__("Submit Stock Entry")}
 								</button>
 								<button type="button" class="btn scf-btn-next scf-btn-accent">
 									${__("Save & Create Sales Order")} ${frappe.utils.icon("right", "xs")}
@@ -144,8 +161,10 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		this.$panel_step = this.$main.find(".scf-panel-step");
 		this.$panel_title = this.$main.find(".scf-panel-title");
 		this.$saved_name = this.$main.find(".scf-saved-name");
+		this.$docstatus_badge = this.$main.find(".scf-docstatus-badge");
 		this.$data_host = this.$main.find(".scf-data-entry-host");
 		this.$btn_save = this.$main.find(".scf-btn-save");
+		this.$btn_submit = this.$main.find(".scf-btn-submit");
 		this.$btn_next = this.$main.find(".scf-btn-next");
 		this.$btn_open = this.$main.find(".scf-btn-open");
 		this.$btn_back = this.$main.find(".scf-btn-back");
@@ -154,6 +173,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		this.$main.find(".scf-refresh").on("click", () => this.load_stats());
 		this.$main.find(".scf-btn-load").on("click", () => this.load_form());
 		this.$main.find(".scf-btn-save").on("click", () => this.save_form(false));
+		this.$main.find(".scf-btn-submit").on("click", () => this.confirm_submit());
 		this.$main.find(".scf-btn-next").on("click", () => this.save_form(true));
 		this.$main.find(".scf-btn-reset").on("click", () => this.reset_form());
 		this.$main.find(".scf-btn-open").on("click", () => this.open_saved_doc());
@@ -170,7 +190,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 					{ step: "01", title: __("Purchase Receipt"), doctype: "Purchase Receipt", icon: "buying", count_key: "purchase_receipt", color: "teal" },
 				],
 			},
-			{ step: "02", title: __("Sales Order"), doctype: "Sales Order", icon: "sell", count_key: "sales_order", color: "orange" },
+			{ step: "02", title: __("Sales Order"), doctype: "Sales Order", icon: "sell", count_key: "sales_order", color: "amber" },
 			{ step: "03", title: __("SS Coil"), doctype: "SS Coil", icon: "layers", count_key: "ss_coil", color: "purple" },
 			{ step: "04", title: __("Delivery Note"), doctype: "Delivery Note", icon: "move", count_key: "delivery_note", color: "green" },
 			{ step: "05", title: __("Sales Invoice"), doctype: "Sales Invoice", icon: "accounting", count_key: "sales_invoice", color: "navy" },
@@ -261,7 +281,14 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		const config = SCF_STEP_CONFIG[doctype] || {};
 		this.$panel_step.text(`${__("Step")} ${config.step || ""}`);
 		this.$panel_title.text(`${doctype} — ${__("Data Entry")}`);
-		this.$btn_save.html(`${frappe.utils.icon("save", "xs")} ${config.save_label || __("Save")}`);
+		this.$btn_save.html(`${frappe.utils.icon("save", "xs")} ${config.save_label || __("Save Draft")}`);
+		if (config.submit_label) {
+			this.$btn_submit
+				.show()
+				.html(`${frappe.utils.icon("tick", "xs")} ${config.submit_label}`);
+		} else {
+			this.$btn_submit.hide();
+		}
 
 		if (config.next_label) {
 			this.$btn_next.show().html(`${config.next_label} ${frappe.utils.icon("right", "xs")}`);
@@ -276,6 +303,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 			delete this.saved_docs[doctype];
 			delete this.pending_docs[doctype];
 			delete this.step_source[doctype];
+			delete this.docstatus_by_doctype[doctype];
 			ss_coil.flow_forms.mount(this.$data_host, doctype);
 			this.update_saved_state(null);
 			this.update_nav_buttons();
@@ -285,6 +313,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		const pending = options.document || this.pending_docs[doctype];
 		if (pending) {
 			this.pending_docs[doctype] = pending;
+			this.docstatus_by_doctype[doctype] = scf_docstatus(pending.docstatus);
 			ss_coil.flow_forms.mount(this.$data_host, doctype, { document: pending });
 			const saved = ss_coil.flow_forms.is_local_doc(pending) ? null : pending.name;
 			this.update_saved_state(saved);
@@ -296,8 +325,9 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		if (saved_name) {
 			this.update_saved_state(saved_name);
 			ss_coil.flow_forms.load(this.$data_host, doctype, saved_name, {
-				on_loaded: (loaded_name) => {
+				on_loaded: (loaded_name, doc) => {
 					this.saved_docs[doctype] = loaded_name;
+					this.docstatus_by_doctype[doctype] = scf_docstatus(doc && doc.docstatus);
 					this.update_saved_state(loaded_name);
 				},
 			});
@@ -414,6 +444,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		delete this.saved_docs[this.active_doctype];
 		delete this.pending_docs[this.active_doctype];
 		delete this.step_source[this.active_doctype];
+		delete this.docstatus_by_doctype[this.active_doctype];
 		this.update_saved_state(null);
 		this.update_nav_buttons();
 		ss_coil.flow_forms.reset(this.$data_host, this.active_doctype);
@@ -422,8 +453,9 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 	load_form() {
 		ss_coil.flow_forms.prompt_load_document(this.active_doctype, (name) => {
 			ss_coil.flow_forms.load(this.$data_host, this.active_doctype, name, {
-				on_loaded: (loaded_name) => {
+				on_loaded: (loaded_name, doc) => {
 					this.saved_docs[this.active_doctype] = loaded_name;
+					this.docstatus_by_doctype[this.active_doctype] = scf_docstatus(doc && doc.docstatus);
 					delete this.pending_docs[this.active_doctype];
 					this.update_saved_state(loaded_name);
 					this.update_nav_buttons();
@@ -437,18 +469,53 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 	}
 
 	save_form(and_next) {
+		if (scf_docstatus(this.docstatus_by_doctype[this.active_doctype]) === 1) {
+			frappe.msgprint(__("This {0} is submitted. Open the document to amend.", [this.active_doctype]));
+			return;
+		}
 		ss_coil.flow_forms.save(this.$data_host, {
-			on_saved: (name) => {
+			on_saved: (name, result) => {
 				this.saved_docs[this.active_doctype] = name;
 				delete this.pending_docs[this.active_doctype];
+				this.docstatus_by_doctype[this.active_doctype] = scf_docstatus(result && result.docstatus);
 				this.update_saved_state(name);
 				this.update_nav_buttons();
 				frappe.show_alert({
-					message: __("{0} {1} saved", [this.active_doctype, name]),
+					message: __("{0} {1} saved as draft", [this.active_doctype, name]),
 					indicator: "green",
 				});
 				this.load_stats();
 				if (and_next) this.run_next_step(name);
+			},
+		});
+	}
+
+	confirm_submit() {
+		const config = SCF_STEP_CONFIG[this.active_doctype] || {};
+		if (!config.submit_label) return;
+		if (scf_docstatus(this.docstatus_by_doctype[this.active_doctype]) === 1) {
+			frappe.msgprint(__("This {0} is already submitted.", [this.active_doctype]));
+			return;
+		}
+		frappe.confirm(
+			__("Submit this {0}? It will be saved first, then submitted.", [this.active_doctype]),
+			() => this.submit_form()
+		);
+	}
+
+	submit_form() {
+		ss_coil.flow_forms.submit(this.$data_host, {
+			on_submitted: (name, result) => {
+				this.saved_docs[this.active_doctype] = name;
+				delete this.pending_docs[this.active_doctype];
+				this.docstatus_by_doctype[this.active_doctype] = scf_docstatus(result && result.docstatus) || 1;
+				this.update_saved_state(name);
+				this.update_nav_buttons();
+				frappe.show_alert({
+					message: __("{0} {1} submitted", [this.active_doctype, name]),
+					indicator: "green",
+				});
+				this.load_stats();
 			},
 		});
 	}
@@ -482,10 +549,38 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 				source && source.name ? __("New from {0}", [source.name]) : __("Unsaved")
 			);
 			this.$btn_open.prop("disabled", true);
+			this.update_docstatus_ui(null);
 			return;
 		}
 		this.$saved_name.text(name || "—");
 		this.$btn_open.prop("disabled", !name);
+		this.update_docstatus_ui(name);
+	}
+
+	update_docstatus_ui(name) {
+		if (!this.$docstatus_badge || !this.$docstatus_badge.length) return;
+		const config = SCF_STEP_CONFIG[this.active_doctype] || {};
+		const status = scf_docstatus(this.docstatus_by_doctype[this.active_doctype]);
+		const pending = this.pending_docs[this.active_doctype];
+		this.$docstatus_badge.removeClass("is-draft is-submitted");
+		if (!config.submit_label) {
+			this.$docstatus_badge.hide().text("");
+			this.$btn_save.prop("disabled", false);
+			return;
+		}
+		if (status === 1) {
+			this.$docstatus_badge.addClass("is-submitted").text(__("Submitted")).show();
+			this.$btn_save.prop("disabled", true);
+			this.$btn_submit.prop("disabled", true);
+			return;
+		}
+		if (name || pending) {
+			this.$docstatus_badge.addClass("is-draft").text(__("Draft")).show();
+		} else {
+			this.$docstatus_badge.hide().text("");
+		}
+		this.$btn_save.prop("disabled", false);
+		this.$btn_submit.prop("disabled", false);
 	}
 
 	update_nav_buttons() {

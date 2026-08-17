@@ -175,14 +175,67 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
 	min-width: 118px;
 }
 
-.ss-coil-flow-page .scf-step:hover,
-.ss-coil-flow-page .scf-step-active {
+.ss-coil-flow-page .scf-step:hover {
 	border-color: var(--scf-accent-border);
 	box-shadow: 0 8px 20px rgba(30, 58, 95, 0.12);
 }
 
 .ss-coil-flow-page .scf-step-active {
-	background: linear-gradient(180deg, rgba(30, 58, 95, 0.06), #fff 55%);
+	border-width: 2px;
+	box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+	transform: translateY(-1px);
+}
+
+.ss-coil-flow-page .scf-step-active .scf-step-title,
+.ss-coil-flow-page .scf-step-active .scf-step-count {
+	color: #fff;
+}
+
+.ss-coil-flow-page .scf-step-active .scf-step-label,
+.ss-coil-flow-page .scf-step-active .scf-step-open-label {
+	color: rgba(255, 255, 255, 0.82);
+}
+
+.ss-coil-flow-page .scf-step-active .scf-step-icon {
+	background: rgba(255, 255, 255, 0.22);
+	color: #fff;
+}
+
+.ss-coil-flow-page .scf-step-active.scf-step-blue {
+	background: #2563eb;
+	border-color: #1d4ed8;
+}
+.ss-coil-flow-page .scf-step-active.scf-step-teal {
+	background: #0d9488;
+	border-color: #0f766e;
+}
+.ss-coil-flow-page .scf-step-active.scf-step-amber {
+	background: #0e7490;
+	border-color: #155e75;
+}
+.ss-coil-flow-page .scf-step-active.scf-step-purple {
+	background: #7c3aed;
+	border-color: #6d28d9;
+}
+.ss-coil-flow-page .scf-step-active.scf-step-green {
+	background: #059669;
+	border-color: #047857;
+}
+.ss-coil-flow-page .scf-step-active.scf-step-navy {
+	background: #1e3a5f;
+	border-color: #0f2942;
+}
+
+.ss-coil-flow-page .scf-step-active .scf-btn-list {
+	background: #fff !important;
+	border-color: transparent !important;
+	color: #1d4ed8 !important;
+}
+
+.ss-coil-flow-page .scf-step-active .scf-btn-new {
+	background: #ecfdf5 !important;
+	border-color: transparent !important;
+	color: #047857 !important;
 }
 
 .ss-coil-flow-page .scf-step-top {
@@ -211,7 +264,7 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
 
 .ss-coil-flow-page .scf-step-blue .scf-step-icon { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
 .ss-coil-flow-page .scf-step-teal .scf-step-icon { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
-.ss-coil-flow-page .scf-step-orange .scf-step-icon { background: rgba(234, 88, 12, 0.12); color: #ea580c; }
+.ss-coil-flow-page .scf-step-amber .scf-step-icon { background: rgba(14, 116, 144, 0.12); color: #0e7490; }
 .ss-coil-flow-page .scf-step-purple .scf-step-icon { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
 .ss-coil-flow-page .scf-step-green .scf-step-icon { background: rgba(5, 150, 105, 0.12); color: #059669; }
 .ss-coil-flow-page .scf-step-navy .scf-step-icon { background: rgba(30, 58, 95, 0.12); color: #1e3a5f; }
@@ -350,6 +403,31 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
 	margin-left: 4px;
 }
 
+.ss-coil-flow-page .scf-docstatus-badge {
+	display: none;
+	margin-left: 8px;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.ss-coil-flow-page .scf-docstatus-badge.is-draft {
+	display: inline-flex;
+	background: rgba(253, 230, 138, 0.2);
+	color: #fde68a;
+	border: 1px solid rgba(253, 230, 138, 0.45);
+}
+
+.ss-coil-flow-page .scf-docstatus-badge.is-submitted {
+	display: inline-flex;
+	background: rgba(16, 185, 129, 0.22);
+	color: #6ee7b7;
+	border: 1px solid rgba(110, 231, 183, 0.45);
+}
+
 .ss-coil-flow-page .scf-data-entry-host {
 	width: 100%;
 	min-height: 0;
@@ -374,8 +452,11 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
 	box-sizing: border-box;
 }
 
-.ss-coil-flow-page .scf-btn-back {
-	font-weight: 600;
+.ss-coil-flow-page .scf-panel-actions-main {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
 }
 
 .ss-coil-flow-page .scf-panel-actions-create {
@@ -385,17 +466,65 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
 	margin-left: auto;
 }
 
-.ss-coil-flow-page .scf-panel-actions .btn-primary {
-	background: #1e3a5f;
-	border-color: #1e3a5f;
-	font-weight: 600;
+.ss-coil-flow-page .scf-panel-actions .btn {
+	font-weight: 700;
+	border-width: 1px;
 }
 
-.ss-coil-flow-page .scf-btn-accent {
-	background: rgba(234, 88, 12, 0.12);
-	border-color: rgba(234, 88, 12, 0.35);
-	color: #c2410c;
-	font-weight: 700;
+.ss-coil-flow-page .scf-btn-back {
+	background: #475569 !important;
+	border-color: #334155 !important;
+	color: #fff !important;
+}
+
+.ss-coil-flow-page .scf-btn-load {
+	background: #2563eb !important;
+	border-color: #1d4ed8 !important;
+	color: #fff !important;
+}
+
+.ss-coil-flow-page .scf-btn-reset {
+	background: #64748b !important;
+	border-color: #475569 !important;
+	color: #fff !important;
+}
+
+.ss-coil-flow-page .scf-panel-actions .scf-btn-save,
+.ss-coil-flow-page .scf-panel-actions .btn-primary.scf-btn-save {
+	background: #1e3a5f !important;
+	border-color: #0f2942 !important;
+	color: #fff !important;
+}
+
+.ss-coil-flow-page .scf-btn-submit {
+	background: #059669 !important;
+	border-color: #047857 !important;
+	color: #fff !important;
+}
+
+.ss-coil-flow-page .scf-btn-accent,
+.ss-coil-flow-page .scf-btn-next {
+	background: #ea580c !important;
+	border-color: #c2410c !important;
+	color: #fff !important;
+}
+
+.ss-coil-flow-page .scf-btn-open {
+	background: #0d9488 !important;
+	border-color: #0f766e !important;
+	color: #fff !important;
+}
+
+.ss-coil-flow-page .scf-btn-open:disabled {
+	background: #cbd5e1 !important;
+	border-color: #94a3b8 !important;
+	color: #64748b !important;
+}
+
+.ss-coil-flow-page .scf-create-action:not(.scf-btn-accent) {
+	background: #4f46e5 !important;
+	border-color: #4338ca !important;
+	color: #fff !important;
 }
 
 @media (max-width: 1100px) {

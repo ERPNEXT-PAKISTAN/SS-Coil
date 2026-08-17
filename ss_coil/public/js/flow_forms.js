@@ -1,7 +1,7 @@
 frappe.provide("ss_coil.flow_forms");
 
 const FLOW_CHILD_GROUPS = [
-	{ label: "Item", fields: ["item_code", "qty", "rate", "received_qty"] },
+	{ label: "Item", fields: ["item_code", "custom_finish_good_item", "custom_raw_material_item", "qty", "rate", "received_qty"] },
 	{
 		label: "Identification",
 		fields: ["custom_tag_no", "custom_raw_material_tag_no", "tag_no", "custom_ref_no", "custom_mill", "custom_location", "location"],
@@ -12,7 +12,7 @@ const FLOW_CHILD_GROUPS = [
 	},
 	{
 		label: "Specification",
-		fields: ["custom_finish_good_item", "custom_raw_material_item", "custom_commodity", "custom_condition", "custom_specification", "custom_estimated_wt", "custom_qty_of_coil", "estimated_wt", "estimated_qty"],
+		fields: ["custom_commodity", "custom_condition", "custom_specification", "custom_estimated_wt", "custom_qty_of_coil", "estimated_wt", "estimated_qty"],
 	},
 	{
 		label: "References",
@@ -21,6 +21,21 @@ const FLOW_CHILD_GROUPS = [
 	{
 		label: "Processing",
 		fields: ["slitter", "leveler", "reshearing", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments"],
+	},
+	{
+		label: "Packing",
+		fields: [
+			"custom_packing_type",
+			"custom_packing_weightsize",
+			"custom_no_of_pack",
+			"custom_packing_remarks",
+			"custom_packing_comments",
+			"packing_type",
+			"packing_weightsize",
+			"no_of_pack",
+			"packing_remarks",
+			"packing_comments",
+		],
 	},
 ];
 
@@ -199,7 +214,11 @@ function flow_append_item_row(state, $tbody, item, idx) {
 					options: df.options,
 					reqd: df.reqd,
 					read_only: /dimension$/i.test(df.fieldname) ? 1 : df.read_only,
-					depends_on: df.depends_on,
+					depends_on: df.fieldname === "custom_finish_good_item" ? null : df.depends_on,
+					get_query:
+						df.fieldname === "custom_finish_good_item" && typeof get_stock_entry_finish_good_item_query === "function"
+							? get_stock_entry_finish_good_item_query
+							: df.get_query,
 					onchange: () => {
 						item[df.fieldname] = control.get_value();
 					},
@@ -215,7 +234,16 @@ function flow_append_item_row(state, $tbody, item, idx) {
 		});
 	});
 	const $remove_td = $('<td class="ss-coil-de-col-action ss-coil-de-sticky-right"></td>').appendTo($tr);
-	$(`<button type="button" class="btn-reset ss-coil-de-remove-row" title="${__("Remove Row")}">${frappe.utils.icon("close", "sm")}</button>`)
+	if (state.doctype === "Sales Order" && !cint(item.custom_is_process_charge) && !item.custom_process_charge_key) {
+		$(`<button type="button" class="btn btn-xs ss-coil-de-plan-row" title="${__("Manage Cutting Scheme")}">${__("Cutting")}</button>`)
+			.appendTo($remove_td)
+			.on("click", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				ss_coil.flow_forms.open_cutting_scheme(state, item);
+			});
+	}
+	$(`<button type="button" class="btn-reset ss-coil-de-remove-row" title="${__("Remove Row")}">${frappe.utils.icon("close", "xs")}</button>`)
 		.appendTo($remove_td)
 		.on("click", () => {
 			if (state.items.length <= 1) {
@@ -512,7 +540,7 @@ ss_coil.flow_forms.load = function ($container, doctype, name, handlers = {}) {
 				document: r.message,
 				on_ready(state) {
 					if (handlers.on_loaded) {
-						handlers.on_loaded(r.message.name, state);
+						handlers.on_loaded(r.message.name, r.message);
 					}
 					if (handlers.on_ready) {
 						handlers.on_ready(state);
@@ -611,7 +639,7 @@ ss_coil.flow_forms.save = function ($container, handlers = {}) {
 				state.saved_name = name;
 				$host.removeData("ss_coil_flow_mapped_doc");
 				if (handlers.on_saved) {
-					handlers.on_saved(name, state);
+					handlers.on_saved(name, r.message || {});
 				} else {
 					frappe.show_alert({ message: __("{0} {1} saved", [doctype, name]), indicator: "green" });
 				}
@@ -637,7 +665,7 @@ ss_coil.flow_forms.save = function ($container, handlers = {}) {
 			const name = (r.message && r.message.name) || state.saved_name;
 			state.saved_name = name;
 			if (handlers.on_saved) {
-				handlers.on_saved(name, state);
+				handlers.on_saved(name, r.message || {});
 			} else {
 				frappe.show_alert({ message: __("{0} {1} saved", [doctype, name]), indicator: "green" });
 			}
@@ -648,6 +676,93 @@ ss_coil.flow_forms.save = function ($container, handlers = {}) {
 ss_coil.flow_forms.open_document = function (doctype, name) {
 	if (!name) return;
 	frappe.set_route("Form", doctype, name);
+};
+
+ss_coil.flow_forms.open_cutting_scheme = function (state, item) {
+	const sales_order = state && state.saved_name;
+	const row_name = item && item.name;
+	if (!sales_order || ss_coil.flow_forms.is_local_name(sales_order)) {
+		frappe.msgprint(__("Save the Sales Order first, then open Cutting Scheme for this row."));
+		return;
+	}
+	if (!row_name || item.__islocal || ss_coil.flow_forms.is_local_name(row_name)) {
+		frappe.msgprint(__("Save the Sales Order so this item row has a real name, then plan cutting."));
+		return;
+	}
+
+	const opener = () => ss_coil.open_cutting_scheme_dialog || window.open_cutting_scheme_dialog;
+
+	const open = () => {
+		const dialog_fn = opener();
+		if (typeof dialog_fn !== "function") {
+			frappe.msgprint(__("Cutting Scheme planner is not loaded. Refresh the page and try again."));
+			return;
+		}
+		frappe.model.with_doc("Sales Order", sales_order, () => {
+			const doc = frappe.get_doc("Sales Order", sales_order);
+			if (!doc || !locals["Sales Order Item"] || !locals["Sales Order Item"][row_name]) {
+				frappe.msgprint(__("Item row not found on {0}. Reload and try again.", [sales_order]));
+				return;
+			}
+			const frm = {
+				doc,
+				doctype: "Sales Order",
+				is_new: () => false,
+				reload_doc() {},
+				refresh_field() {},
+				fields_dict: {},
+			};
+			dialog_fn(frm, "Sales Order Item", row_name);
+		});
+	};
+
+	if (typeof opener() === "function") {
+		open();
+		return;
+	}
+	frappe.require("/assets/ss_coil/js/sales_order.js", open);
+};
+
+ss_coil.flow_forms.submit = function ($container, handlers = {}) {
+	const $host = $($container);
+	const doctype = $host.data("ss_coil_flow_doctype");
+	const mapped_doc = $host.data("ss_coil_flow_mapped_doc");
+	const state =
+		doctype === "Stock Entry"
+			? $host.data("ss_coil_data_entry_state")
+			: $host.data("ss_coil_flow_form_state");
+	if (!state) return;
+
+	const payload =
+		doctype === "Stock Entry" && ss_coil.stock_entry_data_entry
+			? ss_coil.stock_entry_data_entry.collect_payload(state)
+			: flow_collect_payload(state);
+	if (!payload) return;
+
+	return frappe.call({
+		method: "ss_coil.flow_forms.submit_flow_form_document",
+		args: {
+			doctype,
+			name: state.saved_name || null,
+			data: payload,
+			mapped_doc: mapped_doc && !state.saved_name ? mapped_doc : undefined,
+		},
+		freeze: true,
+		freeze_message: __("Submitting {0}...", [doctype]),
+		callback(r) {
+			const name = (r.message && r.message.name) || state.saved_name;
+			state.saved_name = name;
+			$host.removeData("ss_coil_flow_mapped_doc");
+			if (handlers.on_submitted) {
+				handlers.on_submitted(name, r.message || {});
+			} else {
+				frappe.show_alert({
+					message: __("{0} {1} submitted", [doctype, name]),
+					indicator: "green",
+				});
+			}
+		},
+	});
 };
 
 ss_coil.flow_forms.create_ss_coil_from_sales_order = function (sales_order_name, handlers = {}) {

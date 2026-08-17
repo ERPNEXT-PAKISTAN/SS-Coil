@@ -401,9 +401,60 @@
 }
 
 .ss-coil-de-table .ss-coil-de-col-action {
-	width: 34px;
-	min-width: 34px;
+	width: 108px;
+	min-width: 108px;
 	text-align: center;
+	white-space: nowrap;
+	vertical-align: middle;
+	overflow: hidden;
+	background: #fff !important;
+	box-shadow: -8px 0 10px -6px rgba(15, 23, 42, 0.18);
+	z-index: 8;
+}
+
+.ss-coil-de-table thead .ss-coil-de-col-action {
+	background: #f1f5f9 !important;
+	z-index: 9;
+}
+
+.ss-coil-de-table thead tr.ss-coil-de-group-row .ss-coil-de-col-action {
+	background: #e5edf9 !important;
+}
+
+.ss-coil-de-item-row:nth-child(even) .ss-coil-de-col-action {
+	background: #fafbfd !important;
+}
+
+.ss-coil-de-item-row:hover .ss-coil-de-col-action {
+	background: #eef4ff !important;
+}
+
+.ss-coil-de-plan-row {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 22px;
+	background: #0e7490 !important;
+	border: 1px solid #155e75 !important;
+	color: #fff !important;
+	font-size: 10px;
+	font-weight: 700;
+	padding: 0 8px;
+	margin-right: 4px;
+	border-radius: 6px;
+	line-height: 1;
+	vertical-align: middle;
+}
+
+.ss-coil-de-plan-row .control-label,
+.ss-coil-de-remove-row .control-label,
+.ss-coil-de-col-action .control-label,
+.ss-coil-de-col-action .help-box,
+.ss-coil-de-table .control-label,
+.ss-coil-de-table .help-box,
+.ss-coil-de-table .label-area,
+.ss-coil-de-table .form-group > label {
+	display: none !important;
 }
 
 .ss-coil-de-sticky {
@@ -428,8 +479,10 @@ thead .ss-coil-de-sticky-right {
 	min-width: 108px;
 }
 
-.ss-coil-de-table td[data-fieldname="item_code"] {
-	min-width: 260px;
+.ss-coil-de-table td[data-fieldname="item_code"],
+.ss-coil-de-table td[data-fieldname="custom_finish_good_item"],
+.ss-coil-de-table td[data-fieldname="custom_raw_material_item"] {
+	min-width: 220px;
 }
 
 .ss-coil-de-table td[data-fieldname="custom_specification"],
@@ -487,24 +540,44 @@ thead .ss-coil-de-sticky-right {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
-	height: 24px;
-	border-radius: 50%;
-	border: none;
-	background: transparent;
-	color: #94a3b8;
+	width: 22px;
+	height: 22px;
+	min-width: 22px;
+	border-radius: 6px;
+	border: 1px solid #b91c1c;
+	background: #dc2626 !important;
+	color: #fff !important;
 	cursor: pointer;
+	line-height: 1;
+	vertical-align: middle;
 	transition: background 0.15s ease, color 0.15s ease;
 }
 
 .ss-coil-de-remove-row:hover {
-	background: #fee2e2;
-	color: #dc2626;
+	background: #b91c1c !important;
+	color: #fff !important;
+}
+
+.ss-coil-de-remove-row svg,
+.ss-coil-de-remove-row use {
+	width: 10px;
+	height: 10px;
+	fill: currentColor;
+	stroke: currentColor;
 }
 
 .btn-reset {
 	border: none;
-	background: none;
+	background: transparent;
+	padding: 0;
+}
+
+button.btn-reset.ss-coil-de-remove-row {
+	width: 22px;
+	height: 22px;
+	min-width: 22px;
+	border: 1px solid #b91c1c;
+	background: #dc2626 !important;
 	padding: 0;
 }
 
@@ -661,4 +734,23 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 	border: 1px solid #e2e8f0;
 	border-radius: 10px;
 	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+[data-fieldname="custom_coil_production"] .grid-heading-row,
+[data-fieldname="custom_coil_production"] .grid-heading-row .grid-static-col,
+[data-fieldname="custom_coil_production"] .grid-heading-row .row-check,
+[data-fieldname="custom_coil_production"] .grid-heading-row .row-index,
+[data-fieldname="custom_coil_production"] .grid-heading-row .static-area,
+[data-fieldname="custom_coil_production"] .grid-heading-row .col,
+[data-fieldname="custom_coil_production"] .grid-heading-row span,
+[data-fieldname="custom_coil_production"] .grid-heading-row label {
+	color: #0f172a !important;
+}
+
+[data-fieldname="custom_coil_production"] .form-in-grid [data-fieldname="manage_cutting_scheme"] button,
+[data-fieldname="custom_coil_production"] .form-in-grid [data-fieldname="manage_cutting_scheme"] .btn {
+	background: #0e7490 !important;
+	border-color: #155e75 !important;
+	color: #fff !important;
+	font-weight: 700;
 }

@@ -63,6 +63,7 @@ CHILD_FIELDS_SYNCED_FROM_PARENT = {
 
 CHILD_FIELD_COLUMNS = {
 	"item_code": 2,
+	"custom_finish_good_item": 2,
 	"custom_specification": 2,
 	"custom_dimension": 2,
 	"custom_comments": 2,
@@ -220,6 +221,8 @@ def _prepare_data_entry_stock_entry(doc, data):
 def _stock_entry_data_entry_response(doc):
 	return {
 		"name": doc.name,
+		"doctype": "Stock Entry",
+		"docstatus": cint(doc.docstatus),
 		"items": [
 			{
 				"name": row.name,
@@ -283,7 +286,7 @@ def get_stock_entry_data_entry_document(stock_entry):
 			item[fieldname] = _serialize_flow_field_value(child_meta, fieldname, row.get(fieldname))
 		items.append(item)
 
-	return {"name": doc.name, **parent, "items": items}
+	return {"name": doc.name, "docstatus": cint(doc.docstatus), **parent, "items": items}
 
 
 @frappe.whitelist()

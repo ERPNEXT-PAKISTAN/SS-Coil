@@ -377,8 +377,7 @@ def append_commercial_so_item_from_stock_entry_row(sales_order, se_row, stock_en
 
 	# Finish Good becomes item_code; SE item_code becomes raw material (+ tag/batch)
 	_apply_finish_good_to_sales_order_row(so_row, se_row)
-	# Process flags stay on Coil Production Line — not on commercial FG item
-	_apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row, copy_process=False)
+	_apply_stock_entry_row_tags_to_sales_order_item(so_row, se_row, copy_process=True)
 
 	if not so_row.get("delivery_date"):
 		so_row.delivery_date = sales_order.transaction_date
@@ -389,12 +388,6 @@ def append_commercial_so_item_from_stock_entry_row(sales_order, se_row, stock_en
 		so_row.custom_source_stock_entry_detail = se_row.name
 	if _has_field("Sales Order Item", "custom_stock_source_type"):
 		so_row.custom_stock_source_type = STOCK_SOURCE_STOCK_ENTRY
-
-	# Clear process flags copied via same-named field dump — they live on production
-	for proc in PROCESS_FIELDS:
-		so_field = f"custom_{proc}"
-		if _has_field("Sales Order Item", so_field):
-			so_row.set(so_field, "")
 
 	# Packing lives on Coil Production (mother coil / raw) — clear from FG item
 	for fieldname in (

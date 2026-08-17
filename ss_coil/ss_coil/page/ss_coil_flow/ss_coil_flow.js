@@ -57,7 +57,7 @@ frappe.pages["ss-coil-flow"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	frappe.require("/assets/ss_coil/js/stock_entry.js?v=17", () => {
+	frappe.require("/assets/ss_coil/js/stock_entry.js", () => {
 		frappe.require("/assets/ss_coil/js/flow_forms.js", () => {
 			wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
 		});
@@ -73,6 +73,8 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		this.$main = $(this.wrapper).find(".layout-main-section");
 		this.active_doctype = "Stock Entry";
 		this.saved_docs = {};
+		this.pending_docs = {};
+		this.step_source = {};
 		this.render();
 		this.load_stats();
 		this.switch_form("Stock Entry");
@@ -113,6 +115,9 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 						<div class="scf-data-entry-host"></div>
 						<div class="scf-panel-actions">
 							<div class="scf-panel-actions-main">
+								<button type="button" class="btn btn-default btn-sm scf-btn-back" style="display: none;">
+									${frappe.utils.icon("left", "xs")} ${__("Back")}
+								</button>
 								<button type="button" class="btn btn-default btn-sm scf-btn-load">
 									${frappe.utils.icon("search", "xs")} ${__("Load Saved")}
 								</button>
@@ -143,6 +148,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		this.$btn_save = this.$main.find(".scf-btn-save");
 		this.$btn_next = this.$main.find(".scf-btn-next");
 		this.$btn_open = this.$main.find(".scf-btn-open");
+		this.$btn_back = this.$main.find(".scf-btn-back");
 		this.$actions_create = this.$main.find(".scf-panel-actions-create");
 
 		this.$main.find(".scf-refresh").on("click", () => this.load_stats());
@@ -151,6 +157,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		this.$main.find(".scf-btn-next").on("click", () => this.save_form(true));
 		this.$main.find(".scf-btn-reset").on("click", () => this.reset_form());
 		this.$main.find(".scf-btn-open").on("click", () => this.open_saved_doc());
+		this.$main.find(".scf-btn-back").on("click", () => this.go_back());
 		this.bind_step_actions();
 	}
 
@@ -215,7 +222,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		});
 		this.$main.on("click", ".scf-step-new", (e) => {
 			e.stopPropagation();
-			this.switch_form($(e.currentTarget).data("doctype"));
+			this.switch_form($(e.currentTarget).data("doctype"), { reset: true });
 		});
 		this.$main.on("click", ".scf-step", (e) => {
 			if ($(e.target).closest(".scf-step-list, .scf-step-new").length) return;
@@ -246,7 +253,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		);
 	}
 
-	switch_form(doctype) {
+	switch_form(doctype, options = {}) {
 		this.active_doctype = doctype;
 		this.$main.find(".scf-step").removeClass("scf-step-active");
 		this.$main.find(`.scf-step[data-doctype="${doctype}"]`).addClass("scf-step-active");
@@ -264,17 +271,58 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 
 		this.$btn_open.text(config.open_label || __("Open Document"));
 		this.render_create_actions(doctype);
-		this.update_saved_state(this.saved_docs[doctype]);
+
+		if (options.reset) {
+			delete this.saved_docs[doctype];
+			delete this.pending_docs[doctype];
+			delete this.step_source[doctype];
+			ss_coil.flow_forms.mount(this.$data_host, doctype);
+			this.update_saved_state(null);
+			this.update_nav_buttons();
+			return;
+		}
+
+		const pending = options.document || this.pending_docs[doctype];
+		if (pending) {
+			this.pending_docs[doctype] = pending;
+			ss_coil.flow_forms.mount(this.$data_host, doctype, { document: pending });
+			const saved = ss_coil.flow_forms.is_local_doc(pending) ? null : pending.name;
+			this.update_saved_state(saved);
+			this.update_nav_buttons();
+			return;
+		}
+
+		const saved_name = this.saved_docs[doctype];
+		if (saved_name) {
+			this.update_saved_state(saved_name);
+			ss_coil.flow_forms.load(this.$data_host, doctype, saved_name, {
+				on_loaded: (loaded_name) => {
+					this.saved_docs[doctype] = loaded_name;
+					this.update_saved_state(loaded_name);
+				},
+			});
+			this.update_nav_buttons();
+			return;
+		}
 
 		ss_coil.flow_forms.mount(this.$data_host, doctype);
+		this.update_saved_state(null);
+		this.update_nav_buttons();
 	}
 
 	get_saved_or_warn() {
-		const name = this.saved_docs[this.active_doctype];
+		let name = this.saved_docs[this.active_doctype];
 		if (!name) {
+			const state =
+				this.$data_host.data("ss_coil_data_entry_state") ||
+				this.$data_host.data("ss_coil_flow_form_state");
+			name = state && state.saved_name;
+		}
+		if (!name || (ss_coil.flow_forms.is_local_name && ss_coil.flow_forms.is_local_name(name))) {
 			frappe.msgprint(__("Save {0} first, then use create actions.", [this.active_doctype]));
 			return null;
 		}
+		this.saved_docs[this.active_doctype] = name;
 		return name;
 	}
 
@@ -292,7 +340,8 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 
 	run_create_action_impl(action_id, saved) {
 		const handlers = {
-			on_created: (doc) => this.on_mapped_doc_created(doc),
+			on_created: (doc) =>
+				this.on_mapped_doc_created(doc, { doctype: this.active_doctype, name: saved }),
 		};
 
 		switch (action_id) {
@@ -339,21 +388,34 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		}
 	}
 
-	on_mapped_doc_created(doc) {
+	on_mapped_doc_created(doc, source) {
 		if (!doc || !doc.doctype) return;
-		ss_coil.flow_forms.sync_mapped_doc(doc.doctype, doc, {
-			on_created: (synced) => {
-				frappe.show_alert({
-					message: __("{0} prepared — review and save", [synced.doctype]),
-					indicator: "green",
-				});
-			},
+		const doctype = doc.doctype;
+		this.pending_docs[doctype] = doc;
+		if (source && source.doctype && source.name) {
+			this.step_source[doctype] = source;
+		} else if (this.active_doctype && this.saved_docs[this.active_doctype]) {
+			this.step_source[doctype] = {
+				doctype: this.active_doctype,
+				name: this.saved_docs[this.active_doctype],
+			};
+		}
+		this.switch_form(doctype, { document: doc });
+		const from_name = (this.step_source[doctype] && this.step_source[doctype].name) || "";
+		frappe.show_alert({
+			message: from_name
+				? __("{0} prepared from {1} — review and save here", [doctype, from_name])
+				: __("{0} prepared — review and save", [doctype]),
+			indicator: "blue",
 		});
 	}
 
 	reset_form() {
 		delete this.saved_docs[this.active_doctype];
+		delete this.pending_docs[this.active_doctype];
+		delete this.step_source[this.active_doctype];
 		this.update_saved_state(null);
+		this.update_nav_buttons();
 		ss_coil.flow_forms.reset(this.$data_host, this.active_doctype);
 	}
 
@@ -362,7 +424,9 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 			ss_coil.flow_forms.load(this.$data_host, this.active_doctype, name, {
 				on_loaded: (loaded_name) => {
 					this.saved_docs[this.active_doctype] = loaded_name;
+					delete this.pending_docs[this.active_doctype];
 					this.update_saved_state(loaded_name);
+					this.update_nav_buttons();
 					frappe.show_alert({
 						message: __("{0} {1} loaded", [this.active_doctype, loaded_name]),
 						indicator: "blue",
@@ -376,7 +440,9 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		ss_coil.flow_forms.save(this.$data_host, {
 			on_saved: (name) => {
 				this.saved_docs[this.active_doctype] = name;
+				delete this.pending_docs[this.active_doctype];
 				this.update_saved_state(name);
+				this.update_nav_buttons();
 				frappe.show_alert({
 					message: __("{0} {1} saved", [this.active_doctype, name]),
 					indicator: "green",
@@ -388,37 +454,75 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 	}
 
 	run_next_step(saved_name) {
+		const source = { doctype: this.active_doctype, name: saved_name };
 		if (this.active_doctype === "Stock Entry") {
 			ss_coil.flow_forms.create_sales_order_from_stock_entry(saved_name, {
-				on_created: (doc) => {
-					this.saved_docs["Sales Order"] = doc.name;
-					this.on_mapped_doc_created(doc);
-				},
+				on_created: (doc) => this.on_mapped_doc_created(doc, source),
 			});
 			return;
 		}
 		if (this.active_doctype === "Sales Order") {
 			ss_coil.flow_forms.open_create_ss_coil_dialog(saved_name, {
-				on_created: (doc) => {
-					this.saved_docs["SS Coil"] = doc.name;
-					this.on_mapped_doc_created(doc);
-				},
+				on_created: (doc) => this.on_mapped_doc_created(doc, source),
 			});
 			return;
 		}
 		if (this.active_doctype === "Delivery Note") {
 			ss_coil.flow_forms.create_sales_invoice_from_delivery_note(saved_name, {
-				on_created: (doc) => {
-					this.saved_docs["Sales Invoice"] = doc.name;
-					this.on_mapped_doc_created(doc);
-				},
+				on_created: (doc) => this.on_mapped_doc_created(doc, source),
 			});
 		}
 	}
 
 	update_saved_state(name) {
+		const pending = this.pending_docs[this.active_doctype];
+		const source = this.step_source[this.active_doctype];
+		if (!name && pending) {
+			this.$saved_name.text(
+				source && source.name ? __("New from {0}", [source.name]) : __("Unsaved")
+			);
+			this.$btn_open.prop("disabled", true);
+			return;
+		}
 		this.$saved_name.text(name || "—");
 		this.$btn_open.prop("disabled", !name);
+	}
+
+	update_nav_buttons() {
+		if (!this.$btn_back || !this.$btn_back.length) return;
+		const source = this.step_source[this.active_doctype];
+		const prev = this.get_previous_step();
+		if (source || prev) {
+			const label = source
+				? __("Back to {0}", [source.doctype])
+				: __("Back to {0}", [prev]);
+			this.$btn_back
+				.show()
+				.html(`${frappe.utils.icon("left", "xs")} ${label}`);
+		} else {
+			this.$btn_back.hide();
+		}
+	}
+
+	get_previous_step() {
+		const order = {
+			"Sales Order": ["Stock Entry", "Purchase Receipt"],
+			"SS Coil": ["Sales Order"],
+			"Delivery Note": ["SS Coil", "Sales Order"],
+			"Sales Invoice": ["Delivery Note"],
+		};
+		const prevs = order[this.active_doctype] || [];
+		return prevs.find((dt) => this.saved_docs[dt] || this.pending_docs[dt]) || prevs[0] || null;
+	}
+
+	go_back() {
+		const source = this.step_source[this.active_doctype];
+		if (source && source.doctype) {
+			this.switch_form(source.doctype);
+			return;
+		}
+		const prev = this.get_previous_step();
+		if (prev) this.switch_form(prev);
 	}
 
 	open_saved_doc() {

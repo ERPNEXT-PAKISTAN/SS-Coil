@@ -234,11 +234,29 @@ function add_sales_order_create_stock_entry_button(frm) {
 							});
 						});
 						frm.refresh_field("items");
+						const prodUpdates = msg.production_updates || {};
+						(frm.doc.custom_coil_production || []).forEach((row) => {
+							const patch = prodUpdates[row.name];
+							if (!patch) return;
+							Object.keys(patch).forEach((fieldname) => {
+								row[fieldname] = patch[fieldname];
+							});
+						});
+						if (Object.keys(prodUpdates).length && frm.fields_dict.custom_coil_production) {
+							frm.refresh_field("custom_coil_production");
+						}
 						const lineCount = Object.keys(itemUpdates).length;
+						const seCount = Object.keys(msg.stock_entry_updates || {}).length;
+						const prodCount = Object.keys(prodUpdates).length;
+						let message = __("Stock Entry links synced");
+						if (lineCount || seCount || prodCount) {
+							message = __(
+								"Coil/process fields synced ({0} Sales Order, {1} Stock Entry, {2} production)",
+								[lineCount, seCount, prodCount]
+							);
+						}
 						frappe.show_alert({
-							message: lineCount
-								? __("Stock Entry links and tags synced ({0} line(s))", [lineCount])
-								: __("Stock Entry links synced"),
+							message,
 							indicator: "green",
 						});
 					},

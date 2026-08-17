@@ -374,11 +374,8 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
 	box-sizing: border-box;
 }
 
-.ss-coil-flow-page .scf-panel-actions-main {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	align-items: center;
+.ss-coil-flow-page .scf-btn-back {
+	font-weight: 600;
 }
 
 .ss-coil-flow-page .scf-panel-actions-create {

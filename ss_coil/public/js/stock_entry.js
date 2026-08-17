@@ -313,14 +313,32 @@ function add_stock_entry_create_sales_order_button(frm) {
 							frm.doc.custom_invoice__igp_no = msg.custom_invoice__igp_no;
 							frm.refresh_field("custom_invoice__igp_no");
 						}
+						const seUpdates = msg.stock_entry_updates || {};
+						(frm.doc.items || []).forEach((row) => {
+							const patch = seUpdates[row.name];
+							if (!patch) return;
+							Object.keys(patch).forEach((fieldname) => {
+								row[fieldname] = patch[fieldname];
+							});
+						});
+						if (Object.keys(seUpdates).length) {
+							frm.refresh_field("items");
+						}
 						const updated = (msg.sales_orders_updated || []).length;
 						const tagLines = Object.values(msg.item_updates_by_sales_order || {}).reduce(
 							(n, rows) => n + Object.keys(rows || {}).length,
 							0,
 						);
+						const prodLines = Object.values(msg.production_updates_by_sales_order || {}).reduce(
+							(n, rows) => n + Object.keys(rows || {}).length,
+							0,
+						);
 						let alert = __("Sales Order links synced");
-						if (tagLines) {
-							alert = __("Sales Order links and {0} item field(s) synced", [tagLines]);
+						if (tagLines || prodLines) {
+							alert = __("Sales Order coil/process fields synced ({0} item, {1} production)", [
+								tagLines,
+								prodLines,
+							]);
 						} else if (updated) {
 							alert = __("Sales Order links synced ({0} order(s))", [updated]);
 						}
@@ -1259,17 +1277,28 @@ ss_coil.stock_entry_data_entry.mount_inline = function ($container, handlers = {
 			Object.assign(frm.doc, documentData);
 			frm.doc.items = (documentData.items || []).map((row) => ({
 				...row,
-				__islocal: 0,
+				__islocal: ss_coil.flow_forms && ss_coil.flow_forms.is_local_doc
+					? ss_coil.flow_forms.is_local_doc(documentData)
+					: !documentData.name || String(documentData.name).startsWith("new-"),
 			}));
 		}
 
 		const state = build_stock_entry_data_entry_state(frm, meta);
 		state.mode = "flow_page";
 		if (documentData) {
-			state.saved_name = documentData.name;
+			const local = ss_coil.flow_forms && ss_coil.flow_forms.is_local_doc
+				? ss_coil.flow_forms.is_local_doc(documentData)
+				: !documentData.name || String(documentData.name).startsWith("new-");
+			state.saved_name = local ? null : documentData.name;
 			state.initial_parent_values = get_stock_entry_data_entry_parent_values(frm, meta);
+			if (local) {
+				$host.data("ss_coil_flow_mapped_doc", documentData);
+			} else {
+				$host.removeData("ss_coil_flow_mapped_doc");
+			}
 		} else {
 			state.initial_parent_values = get_stock_entry_data_entry_default_parent_values(meta);
+			$host.removeData("ss_coil_flow_mapped_doc");
 		}
 
 		$host.html('<div class="ss-coil-de-inline-panel ss-coil-data-entry-dialog"></div>');
@@ -1381,10 +1410,16 @@ ss_coil.stock_entry_data_entry.create_sales_order = function (stock_entry_name, 
 		method: "ss_coil.api.create_sales_order_from_stock_entry",
 		args: { source_name: stock_entry_name },
 		freeze: true,
-		freeze_message: __("Creating Sales Order..."),
+		freeze_message: __("Preparing Sales Order..."),
 		callback(r) {
-			if (!r.message) return;
+			if (!r.message) {
+				frappe.msgprint(__("Could not prepare a Sales Order from this Stock Entry."));
+				return;
+			}
 			const doc = r.message;
+			if (!doc.doctype) {
+				doc.doctype = "Sales Order";
+			}
 			if (handlers.on_created) {
 				handlers.on_created(doc);
 			} else {
@@ -1393,6 +1428,9 @@ ss_coil.stock_entry_data_entry.create_sales_order = function (stock_entry_name, 
 					frappe.set_route("Form", "Sales Order", doc.name);
 				});
 			}
+		},
+		error(r) {
+			frappe.msgprint((r && r.message) || __("Could not create Sales Order from this Stock Entry."));
 		},
 	});
 };

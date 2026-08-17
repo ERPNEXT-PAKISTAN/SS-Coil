@@ -510,6 +510,8 @@ function setup_stock_entry_data_entry_ui(state, $root) {
 	}
 	apply_stock_entry_data_entry_grid_layout($parent_body);
 	Object.values(state.parent_fg.fields_dict || {}).forEach(relocate_stock_entry_data_entry_dropdown);
+	bind_stock_entry_data_entry_header_events(state);
+	apply_stock_entry_data_entry_type_defaults(state);
 
 	state.child_columns = build_stock_entry_data_entry_child_columns(state.meta.child_fields || []);
 	const $table = $root.find(".ss-coil-de-table");
@@ -552,9 +554,67 @@ function update_stock_entry_data_entry_row_count(state) {
 	$root.find(".ss-coil-de-row-count").text(state.items.length);
 }
 
+function is_material_receipt_stock_entry_type(value) {
+	return (value || "") === "Material Receipt";
+}
+
+function apply_stock_entry_data_entry_type_defaults(state, opts = {}) {
+	if (!state.parent_fg) {
+		return;
+	}
+	const type_ctrl = state.parent_fg.fields_dict.stock_entry_type;
+	const tag_ctrl = state.parent_fg.fields_dict.custom_create_tag_numbers;
+	const purpose_ctrl = state.parent_fg.fields_dict.purpose;
+	const type_val = (type_ctrl && type_ctrl.get_value()) || "";
+	const is_receipt = is_material_receipt_stock_entry_type(type_val);
+
+	if (tag_ctrl) {
+		if (is_receipt) {
+			tag_ctrl.set_value(1);
+		} else if (opts.from_change) {
+			tag_ctrl.set_value(0);
+		}
+	}
+
+	if (!opts.from_change && state.saved_name) {
+		return;
+	}
+
+	if (is_receipt && purpose_ctrl) {
+		purpose_ctrl.set_value("Material Receipt");
+		return;
+	}
+	if (type_val && purpose_ctrl) {
+		frappe.db.get_value("Stock Entry Type", type_val, "purpose", (r) => {
+			if (r && r.purpose) {
+				purpose_ctrl.set_value(r.purpose);
+			}
+		});
+	}
+}
+
+function bind_stock_entry_data_entry_header_events(state) {
+	const type_ctrl = state.parent_fg && state.parent_fg.fields_dict.stock_entry_type;
+	if (!type_ctrl) {
+		return;
+	}
+	const original = type_ctrl.df.onchange;
+	type_ctrl.df.onchange = function () {
+		if (typeof original === "function") {
+			original.apply(this, arguments);
+		}
+		apply_stock_entry_data_entry_type_defaults(state, { from_change: true });
+	};
+}
+
 function collect_stock_entry_data_entry_payload(state) {
 	const parent_data = state.parent_fg.get_values();
 	if (!parent_data) return null;
+
+	const tag_ctrl = state.parent_fg.fields_dict.custom_create_tag_numbers;
+	if (tag_ctrl) {
+		parent_data.custom_create_tag_numbers = cint(tag_ctrl.get_value());
+	}
 
 	const items = [];
 	for (const row of state.item_rows) {
@@ -780,9 +840,10 @@ function get_stock_entry_data_entry_default_parent_values(meta) {
 	if (!values.company) {
 		values.company = frappe.defaults.get_user_default("company");
 	}
-	if (!values.purpose) {
-		values.purpose = "Material Receipt";
-	}
+	values.stock_entry_type = "Material Receipt";
+	values.purpose = "Material Receipt";
+	values.custom_job_purpose = "Tolling";
+	values.custom_create_tag_numbers = 1;
 	return values;
 }
 
@@ -1196,7 +1257,10 @@ ss_coil.stock_entry_data_entry.mount_inline = function ($container, handlers = {
 		const frm = make_flow_page_stock_entry_frm();
 		if (documentData) {
 			Object.assign(frm.doc, documentData);
-			frm.doc.items = documentData.items || [];
+			frm.doc.items = (documentData.items || []).map((row) => ({
+				...row,
+				__islocal: 0,
+			}));
 		}
 
 		const state = build_stock_entry_data_entry_state(frm, meta);
@@ -1243,6 +1307,37 @@ ss_coil.stock_entry_data_entry.mount_inline = function ($container, handlers = {
 	});
 };
 
+function apply_saved_stock_entry_data_entry_rows(state, saved) {
+	const saved_items = (saved && saved.items) || [];
+	let saved_idx = 0;
+	(state.item_rows || []).forEach((row) => {
+		if (!row.item || !row.item.item_code) {
+			return;
+		}
+		const saved_row = saved_items[saved_idx];
+		saved_idx += 1;
+		if (!saved_row) {
+			return;
+		}
+		if (saved_row.name) {
+			row.item.name = saved_row.name;
+			row.item.__islocal = 0;
+			if (row.$tr) {
+				row.$tr.attr("data-row-name", saved_row.name);
+			}
+		}
+		if (saved_row.custom_tag_no) {
+			row.item.custom_tag_no = saved_row.custom_tag_no;
+			if (row.controls && row.controls.custom_tag_no) {
+				row.controls.custom_tag_no.set_value(saved_row.custom_tag_no);
+			}
+		}
+	});
+	if (state.items && state.item_rows) {
+		state.items = state.item_rows.map((row) => row.item);
+	}
+}
+
 ss_coil.stock_entry_data_entry.collect_payload = collect_stock_entry_data_entry_payload;
 
 ss_coil.stock_entry_data_entry.save_inline = function ($container, handlers = {}) {
@@ -1268,6 +1363,7 @@ ss_coil.stock_entry_data_entry.save_inline = function ($container, handlers = {}
 		callback(r) {
 			const name = (r.message && r.message.name) || state.saved_name;
 			state.saved_name = name;
+			apply_saved_stock_entry_data_entry_rows(state, r.message);
 			if (handlers.on_saved) {
 				handlers.on_saved(name, state);
 			} else {

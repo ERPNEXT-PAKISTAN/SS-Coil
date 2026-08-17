@@ -5685,8 +5685,9 @@ def setup_tag_origin_fields():
 				"fieldname": "custom_ss_coil_section",
 				"label": "SS Coil",
 				"fieldtype": "Section Break",
-				"insert_after": "description",
-				"collapsible": 1,
+				"insert_after": "asset_naming_series",
+				"collapsible": 0,
+				"module": "SS Coil",
 			},
 			{
 				"fieldname": "custom_ss_coil_item_type",
@@ -5694,14 +5695,33 @@ def setup_tag_origin_fields():
 				"fieldtype": "Select",
 				"insert_after": "custom_ss_coil_section",
 				"options": "\nRaw Material\nFinished Good\nSemi Finished",
+				"module": "SS Coil",
+			},
+			{
+				"fieldname": "custom_default_raw_material_item",
+				"label": "Default Raw Material Item",
+				"fieldtype": "Link",
+				"insert_after": "custom_ss_coil_item_type",
+				"options": "Item",
+				"depends_on": "eval:['Finished Good','Semi Finished'].includes(doc.custom_ss_coil_item_type)",
+				"description": "Default raw material used when this finished/semi-finished item is added to a Sales Order.",
+				"module": "SS Coil",
+			},
+			{
+				"fieldname": "custom_ss_coil_column_break",
+				"label": "",
+				"fieldtype": "Column Break",
+				"insert_after": "custom_default_raw_material_item",
+				"module": "SS Coil",
 			},
 			{
 				"fieldname": "custom_create_tag_on_receipt",
 				"label": "Create Tag on Receipt",
 				"fieldtype": "Check",
-				"insert_after": "custom_ss_coil_item_type",
+				"insert_after": "custom_ss_coil_column_break",
 				"default": "0",
 				"description": "When checked, inward rows for this item auto-enable tag creation on Purchase Receipt and Material Receipt Stock Entry.",
+				"module": "SS Coil",
 			},
 			{
 				"fieldname": "custom_use_tag_as_batch_no",
@@ -5716,15 +5736,7 @@ def setup_tag_origin_fields():
 					"Batch + Batch Number Series, or manual Batch No entry) control batching for "
 					"this item instead."
 				),
-			},
-			{
-				"fieldname": "custom_default_raw_material_item",
-				"label": "Default Raw Material Item",
-				"fieldtype": "Link",
-				"insert_after": "custom_create_tag_on_receipt",
-				"options": "Item",
-				"depends_on": "eval:['Finished Good','Semi Finished'].includes(doc.custom_ss_coil_item_type)",
-				"description": "Default raw material used when this finished/semi-finished item is added to a Sales Order.",
+				"module": "SS Coil",
 			},
 		],
 		"Sales Order Item": [
@@ -5860,6 +5872,11 @@ def setup_tag_origin_fields():
 			},
 		],
 	}
+	item_fields = custom_fields.pop("Item", None)
+	if item_fields:
+		# Item meta on this site can include unrelated custom fields with invalid
+		# Link options; skip full doctype validation so SS Coil layout still applies.
+		create_custom_fields({"Item": item_fields}, update=True, ignore_validate=True)
 	create_custom_fields(custom_fields, update=True)
 
 	for doctype, description in {

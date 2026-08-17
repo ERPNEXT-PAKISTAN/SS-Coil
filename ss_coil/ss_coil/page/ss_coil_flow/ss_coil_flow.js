@@ -57,7 +57,7 @@ frappe.pages["ss-coil-flow"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	frappe.require("/assets/ss_coil/js/stock_entry.js", () => {
+	frappe.require("/assets/ss_coil/js/stock_entry.js?v=17", () => {
 		frappe.require("/assets/ss_coil/js/flow_forms.js", () => {
 			wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
 		});
@@ -190,14 +190,16 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		return `
 			<div class="scf-step scf-step-${color || "blue"}" data-doctype="${frappe.utils.escape_html(doctype)}">
 				<div class="scf-step-top">
-					<span class="scf-step-icon">${frappe.utils.icon(icon, "md")}</span>
+					<span class="scf-step-icon">${frappe.utils.icon(icon, "sm")}</span>
+					<div class="scf-step-heading">
+						<div class="scf-step-label">${__("Step")} ${step}</div>
+						<h4 class="scf-step-title">${title}</h4>
+					</div>
 					<div class="scf-step-open-wrap">
 						<span class="scf-step-open-label">${__("open")}</span>
 						<div class="scf-step-count" data-count-key="${count_key || ""}">—</div>
 					</div>
 				</div>
-				<div class="scf-step-label">${__("Step")} ${step}</div>
-				<h4 class="scf-step-title">${title}</h4>
 				<div class="scf-step-links">
 					<button type="button" class="btn btn-xs scf-btn-list scf-step-list" data-doctype="${frappe.utils.escape_html(doctype)}">${__("List")}</button>
 					<button type="button" class="btn btn-xs scf-btn-new scf-step-new" data-doctype="${frappe.utils.escape_html(doctype)}">${__("New")}</button>

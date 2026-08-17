@@ -163,11 +163,13 @@ row: thickness/width/length, mill, spec, tags, etc).
   - Item rows render as a spreadsheet-style `<table>` (not Frappe's grid),
     grouped into columns via `STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS`.
   - **Gotcha**: rows added via "+ Add Row" get a client-side placeholder
-    `name` (`frappe.utils.get_random(10)`, with `__islocal: 1`). On save,
-    that fake name must be stripped before sending to the server — otherwise
-    the server-side save function (which matches rows by `name` to decide
-    "update existing" vs "append new") mistakes it for an existing row,
-    finds no match, and silently drops it. See `save_stock_entry_data_entry_from_dialog`.
+    `name` (`frappe.utils.get_random(10)`, with `__islocal: 1`). The client
+    strips that fake name on save. The server matches by real child `name`
+    first, then reuses unmatched existing rows in order, and only appends
+    leftovers — a second save must **update**, never duplicate rows. After
+    save the server returns child `name` / `custom_tag_no` so the client
+    can clear `__islocal` and show assigned tags. See
+    `save_stock_entry_data_entry` and `save_inline`.
 
 ## Sticker / QR printing
 
@@ -557,6 +559,15 @@ Functions named `setup_*` or `_migrate_*`/`_update_*_field_order` (e.g.
 Setters idempotently. They're called from `install.py`'s `after_install`/
 `after_migrate` hooks, **not** on every request — safe to re-run, but not
 meant to run per-document.
+
+Item custom fields owned by this app (`custom_ss_coil_section`, item type,
+default raw material, create-tag / use-tag-as-batch checks, plus one column
+break) live in an **SS Coil** section that is always the **2nd section** on
+the Item Details tab (after the default first section that ends at
+`asset_naming_series`). Default Item fields / columns / sections are not
+reordered. Fixtures export only those Item fields — not other apps' Item
+customizations. `ensure_item_ss_coil_field_order` in `form_layout.py`
+re-applies this on migrate.
 
 ## File map
 

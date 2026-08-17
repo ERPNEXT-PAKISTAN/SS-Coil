@@ -11,6 +11,16 @@
 	padding: 0;
 }
 
+body[data-page-route="ss-coil-flow"] .page-head,
+body[data-page-route="Workspaces/ss-coil-flow"] .page-head {
+	min-height: 40px;
+}
+
+body[data-page-route="ss-coil-flow"] .layout-main-section,
+body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
+	padding-top: 4px;
+}
+
 .ss-coil-flow-page .scf-shell {
 	width: 100%;
 	background: var(--scf-card-bg);
@@ -24,8 +34,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 16px;
-	padding: 14px 18px;
+	gap: 10px;
+	padding: 6px 12px;
 	border-bottom: 1px solid var(--scf-border);
 	background: linear-gradient(135deg, rgba(30, 58, 95, 0.07), transparent 72%);
 }
@@ -39,18 +49,19 @@
 
 .ss-coil-flow-page .scf-title {
 	margin: 0;
-	font-size: 20px;
+	font-size: 15px;
 	font-weight: 700;
 	color: var(--scf-accent);
+	line-height: 1.2;
 }
 
 .ss-coil-flow-page .scf-badge {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	padding: 4px 10px;
+	gap: 5px;
+	padding: 2px 8px;
 	border-radius: 999px;
-	font-size: 11px;
+	font-size: 10px;
 	font-weight: 700;
 	background: rgba(5, 150, 105, 0.12);
 	color: var(--scf-green);
@@ -67,7 +78,7 @@
 /* Flow track — full width, equal spread */
 .ss-coil-flow-page .scf-track-wrap {
 	width: 100%;
-	padding: 14px 16px 10px;
+	padding: 6px 10px;
 	overflow-x: auto;
 	border-bottom: 1px solid var(--scf-border);
 	background: #eef2f7;
@@ -106,8 +117,8 @@
 }
 
 .ss-coil-flow-page .scf-branch-merge {
-	width: 14px;
-	height: 48px;
+	width: 12px;
+	height: 34px;
 	position: relative;
 	flex-shrink: 0;
 }
@@ -146,13 +157,13 @@
 
 .ss-coil-flow-page .scf-step {
 	flex: 1 1 0;
-	min-width: 130px;
+	min-width: 120px;
 	max-width: none;
 	width: auto;
 	background: #fff;
 	border: 1px solid #e1e7ef;
-	border-radius: 10px;
-	padding: 10px 10px 8px;
+	border-radius: 8px;
+	padding: 5px 8px 4px;
 	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 	cursor: pointer;
 	transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -176,20 +187,25 @@
 
 .ss-coil-flow-page .scf-step-top {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	justify-content: space-between;
-	gap: 4px;
-	margin-bottom: 5px;
+	gap: 6px;
+	margin-bottom: 3px;
+}
+
+.ss-coil-flow-page .scf-step-heading {
+	flex: 1 1 auto;
+	min-width: 0;
 }
 
 .ss-coil-flow-page .scf-step-icon {
-	width: 28px;
-	height: 28px;
-	border-radius: 8px;
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 13px;
+	font-size: 12px;
 	flex-shrink: 0;
 }
 
@@ -218,10 +234,10 @@
 
 .ss-coil-flow-page .scf-step-count {
 	text-align: right;
-	font-size: 17px;
+	font-size: 14px;
 	font-weight: 800;
 	color: #1e3a5f;
-	line-height: 1.1;
+	line-height: 1.05;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -234,11 +250,14 @@
 }
 
 .ss-coil-flow-page .scf-step-title {
-	margin: 2px 0 7px;
+	margin: 0;
 	font-size: 12px;
 	font-weight: 700;
 	color: #0f172a;
-	line-height: 1.25;
+	line-height: 1.15;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .ss-coil-flow-page .scf-step-links {
@@ -278,16 +297,26 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 16px;
-	padding: 11px 16px;
+	gap: 12px;
+	padding: 5px 12px;
 	background: linear-gradient(135deg, #1e3a5f 0%, #0f2942 100%);
 	color: #fff;
+	min-height: 0;
 }
 
 .ss-coil-flow-page .scf-panel-head-left {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 8px;
+	min-width: 0;
+}
+
+.ss-coil-flow-page .scf-panel-head-left > div {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 6px 8px;
+	min-width: 0;
 }
 
 .ss-coil-flow-page .scf-panel-head .ss-coil-de-block-icon {
@@ -303,10 +332,11 @@
 }
 
 .ss-coil-flow-page .scf-panel-title {
-	font-size: 15px;
+	font-size: 13px;
 	font-weight: 700;
 	color: #fff;
-	margin-top: 1px;
+	margin-top: 0;
+	line-height: 1.2;
 }
 
 .ss-coil-flow-page .scf-panel-meta {
@@ -322,12 +352,12 @@
 
 .ss-coil-flow-page .scf-data-entry-host {
 	width: 100%;
-	min-height: 260px;
+	min-height: 0;
 	box-sizing: border-box;
 }
 
 .ss-coil-flow-page .scf-data-entry-host .ss-coil-de-inline-panel {
-	padding: 10px 14px 8px;
+	padding: 6px 10px 4px;
 	background: #eef2f7;
 }
 
@@ -336,8 +366,8 @@
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
-	gap: 10px;
-	padding: 10px 14px 14px;
+	gap: 8px;
+	padding: 6px 10px 8px;
 	background: #fff;
 	border-top: 1px solid #e2e8f0;
 	width: 100%;

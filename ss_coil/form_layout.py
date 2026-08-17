@@ -23,12 +23,14 @@ def sync_coil_form_layouts():
 	_ensure_stock_entry_detail_field_order()
 	ensure_ss_coil_job_sheet_field_order()
 	ensure_sales_order_job_sheet_field_order()
+	ensure_item_ss_coil_field_order()
 	frappe.clear_cache(doctype="Stock Entry")
 	frappe.clear_cache(doctype="Stock Entry Detail")
 	frappe.clear_cache(doctype="Sales Order")
 	frappe.clear_cache(doctype="Sales Order Item")
 	frappe.clear_cache(doctype="Purchase Receipt Item")
 	frappe.clear_cache(doctype="SS Coil")
+	frappe.clear_cache(doctype="Item")
 
 
 def _apply_fixture_property_setters():
@@ -245,4 +247,78 @@ def ensure_sales_order_job_sheet_field_order():
 		return
 
 	order.extend(tail)
+	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+
+
+# Last standard field of Item Details tab, first section. SS Coil is the 2nd section.
+ITEM_SS_COIL_SECTION_ANCHOR = "asset_naming_series"
+ITEM_SS_COIL_FIELD_SEQUENCE = (
+	"custom_ss_coil_section",
+	"custom_ss_coil_item_type",
+	"custom_default_raw_material_item",
+	"custom_ss_coil_column_break",
+	"custom_create_tag_on_receipt",
+	"custom_use_tag_as_batch_no",
+)
+ITEM_SS_COIL_INSERT_AFTER = {
+	"custom_ss_coil_section": ITEM_SS_COIL_SECTION_ANCHOR,
+	"custom_ss_coil_item_type": "custom_ss_coil_section",
+	"custom_default_raw_material_item": "custom_ss_coil_item_type",
+	"custom_ss_coil_column_break": "custom_default_raw_material_item",
+	"custom_create_tag_on_receipt": "custom_ss_coil_column_break",
+	"custom_use_tag_as_batch_no": "custom_create_tag_on_receipt",
+}
+
+
+def ensure_item_ss_coil_field_order():
+	"""Keep SS Coil fields in the 2nd Details section; leave default Item layout alone."""
+	for fieldname, insert_after in ITEM_SS_COIL_INSERT_AFTER.items():
+		name = f"Item-{fieldname}"
+		if frappe.db.exists("Custom Field", name):
+			frappe.db.set_value(
+				"Custom Field",
+				name,
+				{"insert_after": insert_after, "module": "SS Coil"},
+				update_modified=False,
+			)
+
+	ps_name = "Item-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	if not order:
+		return
+
+	for fieldname in ITEM_SS_COIL_FIELD_SEQUENCE:
+		while fieldname in order:
+			order.remove(fieldname)
+
+	meta = frappe.get_meta("Item")
+	block = [fn for fn in ITEM_SS_COIL_FIELD_SEQUENCE if meta.get_field(fn)]
+	if not block:
+		return
+
+	insert_at = 0
+	if ITEM_SS_COIL_SECTION_ANCHOR in order:
+		insert_at = order.index(ITEM_SS_COIL_SECTION_ANCHOR) + 1
+	else:
+		for idx, fieldname in enumerate(order):
+			df = meta.get_field(fieldname)
+			if df and df.fieldtype == "Section Break":
+				insert_at = idx
+				break
+
+	for offset, fieldname in enumerate(block):
+		order.insert(insert_at + offset, fieldname)
+
+	# Keep the next standard Item section after SS Coil so it is not injected
+	# back between asset_naming_series and this app's section.
+	next_standard_section = "section_break_zlmj"
+	after_block = insert_at + len(block)
+	if next_standard_section in order:
+		order.remove(next_standard_section)
+	if meta.get_field(next_standard_section):
+		order.insert(after_block, next_standard_section)
+
 	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)

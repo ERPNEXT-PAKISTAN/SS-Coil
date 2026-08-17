@@ -516,11 +516,11 @@ thead .ss-coil-de-sticky-right {
 .ss-coil-de-inline-panel .ss-coil-de-shell {
 	display: flex;
 	flex-direction: column;
-	gap: 14px;
+	gap: 8px;
 }
 
 .ss-coil-de-inline-panel .ss-coil-de-table-wrap {
-	max-height: min(52vh, 560px);
+	max-height: min(62vh, 680px);
 	overflow: auto;
 }
 
@@ -532,7 +532,7 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 
 .ss-coil-flow-page .ss-coil-de-grid-6,
 .ss-coil-de-inline-panel .ss-coil-de-grid-6 {
-	gap: 8px 10px !important;
+	gap: 4px 8px !important;
 }
 
 .ss-coil-flow-page .ss-coil-de-grid-6 > .frappe-control,
@@ -592,14 +592,14 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 
 .ss-coil-flow-page .ss-coil-de-grid-6 .checkbox,
 .ss-coil-de-inline-panel .ss-coil-de-grid-6 .checkbox {
-	min-height: 34px;
+	min-height: 28px;
 }
 
 .ss-coil-flow-page .ss-coil-de-grid-6 .control-label,
 .ss-coil-de-inline-panel .ss-coil-de-grid-6 .control-label {
-	font-size: 10px;
-	margin-bottom: 2px;
-	line-height: 1.2;
+	font-size: 9px;
+	margin-bottom: 1px;
+	line-height: 1.15;
 }
 
 .ss-coil-flow-page .ss-coil-de-grid-6 .input-with-feedback,
@@ -608,10 +608,10 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 .ss-coil-de-inline-panel .ss-coil-de-grid-6 .input-with-feedback,
 .ss-coil-de-inline-panel .ss-coil-de-grid-6 .control-input > select,
 .ss-coil-de-inline-panel .ss-coil-de-grid-6 .like-disabled-input {
-	min-height: 34px !important;
-	font-size: 13px !important;
-	padding: 6px 9px !important;
-	border-radius: 6px !important;
+	min-height: 28px !important;
+	font-size: 12px !important;
+	padding: 3px 7px !important;
+	border-radius: 5px !important;
 }
 
 .ss-coil-flow-page .ss-coil-de-grid-6 .checkbox,
@@ -621,18 +621,23 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 
 .ss-coil-flow-page .ss-coil-de-parent-block,
 .ss-coil-de-inline-panel .ss-coil-de-parent-block {
-	padding: 8px 10px 6px;
-	margin-bottom: 6px;
+	padding: 4px 8px 4px;
+	margin-bottom: 4px;
 }
 
 .ss-coil-flow-page .ss-coil-de-parent-block > .ss-coil-de-block-title,
 .ss-coil-de-inline-panel .ss-coil-de-parent-block > .ss-coil-de-block-title {
-	margin-bottom: 4px;
-	padding-bottom: 4px;
+	margin-bottom: 2px;
+	padding-bottom: 2px;
+	font-size: 10px;
 }
 
 .ss-coil-flow-page .ss-coil-de-items-block {
-	padding: 10px 12px 12px;
+	padding: 8px 10px 10px;
+}
+
+.ss-coil-flow-page .ss-coil-de-table-wrap {
+	max-height: calc(100vh - 268px);
 }
 
 .ss-coil-flow-page .ss-coil-de-table {

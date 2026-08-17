@@ -108,6 +108,129 @@ def _sync_item_from_parent(doc, item):
 			item.set(child_field, parent_value)
 
 
+def _is_material_receipt_stock_entry(doc):
+	if (doc.get("purpose") or "") == "Material Receipt":
+		return True
+	stock_entry_type = (doc.get("stock_entry_type") or "").strip()
+	if stock_entry_type == "Material Receipt":
+		return True
+	if stock_entry_type and frappe.db.exists("Stock Entry Type", stock_entry_type):
+		return frappe.db.get_value("Stock Entry Type", stock_entry_type, "purpose") == "Material Receipt"
+	return False
+
+
+def _sync_stock_entry_type_purpose(doc):
+	stock_entry_type = (doc.get("stock_entry_type") or "").strip()
+	if not stock_entry_type:
+		return
+	if stock_entry_type == "Material Receipt":
+		doc.purpose = "Material Receipt"
+		return
+	if frappe.db.exists("Stock Entry Type", stock_entry_type):
+		purpose = frappe.db.get_value("Stock Entry Type", stock_entry_type, "purpose")
+		if purpose:
+			doc.purpose = purpose
+
+
+def _apply_parent_fields(doc, data):
+	for fieldname in _all_parent_fieldnames():
+		if fieldname in data:
+			doc.set(fieldname, data.get(fieldname))
+	_sync_stock_entry_type_purpose(doc)
+
+
+def _parse_item_rows(data):
+	items = []
+	for row_data in data.get("items") or []:
+		row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
+		if not row_data or not row_data.get("item_code"):
+			continue
+		items.append(row_data)
+	return items
+
+
+def _apply_item_fields(row, row_data):
+	for fieldname in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS:
+		if fieldname in row_data:
+			row.set(fieldname, row_data.get(fieldname))
+
+
+def _existing_item_by_name(doc, row_name):
+	if not row_name:
+		return None
+	return next((item for item in doc.items if item.name == row_name), None)
+
+
+def _sync_stock_entry_items(doc, data):
+	"""Update existing item rows in place. Never append a row that already exists.
+
+	Flow-page rows keep a client-only `__islocal` name after the first save, so
+	the payload often has no real child `name`. Match by real name first, then
+	reuse unmatched existing rows in order, then append leftovers, then remove
+	rows the form no longer has.
+	"""
+	incoming = _parse_item_rows(data)
+	used_rows = []
+
+	for row_data in incoming:
+		row = _existing_item_by_name(doc, row_data.get("name"))
+		if row is not None and row in used_rows:
+			row = None
+		if row is None:
+			row = next((item for item in doc.items if item not in used_rows), None)
+		if row is None:
+			row = doc.append(
+				"items",
+				{k: row_data.get(k) for k in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS if k in row_data},
+			)
+		else:
+			_apply_item_fields(row, row_data)
+		_sync_item_from_parent(doc, row)
+		used_rows.append(row)
+
+	for row in list(doc.items):
+		if row not in used_rows:
+			doc.remove(row)
+
+	for item in doc.items:
+		_sync_item_from_parent(doc, item)
+
+
+def _apply_data_entry_tag_row_flags(doc):
+	"""Header 'Create Tag Numbers' on Material Receipt maps to the same per-row
+	flag the Stock Entry form uses, so assign_stock_entry_detail_tags can run.
+	"""
+	if not frappe.get_meta("Stock Entry Detail").has_field("custom_create_tag_no"):
+		return
+	create_tags = cint(doc.get("custom_create_tag_numbers")) and _is_material_receipt_stock_entry(doc)
+	if not create_tags:
+		return
+	for row in doc.items or []:
+		if not row.get("item_code"):
+			continue
+		row.custom_create_tag_no = 1
+
+
+def _prepare_data_entry_stock_entry(doc, data):
+	_apply_parent_fields(doc, data)
+	_sync_stock_entry_items(doc, data)
+	_apply_data_entry_tag_row_flags(doc)
+
+
+def _stock_entry_data_entry_response(doc):
+	return {
+		"name": doc.name,
+		"items": [
+			{
+				"name": row.name,
+				"item_code": row.item_code,
+				"custom_tag_no": row.get("custom_tag_no"),
+			}
+			for row in doc.items
+		],
+	}
+
+
 @frappe.whitelist()
 def get_stock_entry_data_entry_meta():
 	"""Return grouped parent sections and child field definitions for data entry."""
@@ -168,34 +291,10 @@ def save_stock_entry_data_entry(stock_entry, data):
 	"""Save parent and child values from the data entry dialog."""
 	data = frappe.parse_json(data) if isinstance(data, str) else data
 	doc = frappe.get_doc("Stock Entry", stock_entry)
-
-	for fieldname in _all_parent_fieldnames():
-		if fieldname in data:
-			doc.set(fieldname, data.get(fieldname))
-
-	for row_data in data.get("items") or []:
-		row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
-		row_name = row_data.get("name")
-		if row_name:
-			row = next((item for item in doc.items if item.name == row_name), None)
-			if not row:
-				continue
-			for fieldname in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS:
-				if fieldname in row_data:
-					row.set(fieldname, row_data.get(fieldname))
-			_sync_item_from_parent(doc, row)
-		else:
-			row = doc.append(
-				"items",
-				{k: row_data.get(k) for k in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS if k in row_data},
-			)
-			_sync_item_from_parent(doc, row)
-
-	for item in doc.items:
-		_sync_item_from_parent(doc, item)
-
+	_prepare_data_entry_stock_entry(doc, data)
 	doc.save()
-	return {"name": doc.name}
+	doc.reload()
+	return _stock_entry_data_entry_response(doc)
 
 
 @frappe.whitelist()
@@ -203,21 +302,7 @@ def create_stock_entry_from_data_entry(data):
 	"""Create a new Stock Entry from the flow-page data entry form."""
 	data = frappe.parse_json(data) if isinstance(data, str) else data
 	doc = frappe.new_doc("Stock Entry")
-
-	for fieldname in _all_parent_fieldnames():
-		if fieldname in data:
-			doc.set(fieldname, data.get(fieldname))
-
-	for row_data in data.get("items") or []:
-		row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
-		row = doc.append(
-			"items",
-			{k: row_data.get(k) for k in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS if k in row_data},
-		)
-		_sync_item_from_parent(doc, row)
-
-	for item in doc.items:
-		_sync_item_from_parent(doc, item)
-
+	_prepare_data_entry_stock_entry(doc, data)
 	doc.save()
-	return {"name": doc.name}
+	doc.reload()
+	return _stock_entry_data_entry_response(doc)

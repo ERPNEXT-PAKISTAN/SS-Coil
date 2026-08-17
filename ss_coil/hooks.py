@@ -15,7 +15,47 @@ app_home = "/desk/ss-coil-space"
 fixtures = [
 	{
 		"dt": "Custom Field",
-		"filters": [["dt", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Sales Order Item", "Stock Entry", "Stock Entry Detail", "Delivery Note Item", "Sales Invoice Item", "Purchase Receipt Item", "Purchase Invoice Item", "Expense Claim", "Journal Entry", "Payment Entry", "Purchase Order", "Purchase Receipt", "Purchase Invoice", "Item"]]],
+		"or_filters": [
+			[
+				"dt",
+				"in",
+				[
+					"SS Coil",
+					"Coil Output",
+					"Coil Input",
+					"Cutting Scheme",
+					"Cutting Scheme SO",
+					"Coil SO",
+					"For Customer",
+					"Sales Order",
+					"Sales Order Item",
+					"Stock Entry",
+					"Stock Entry Detail",
+					"Delivery Note Item",
+					"Sales Invoice Item",
+					"Purchase Receipt Item",
+					"Purchase Invoice Item",
+					"Expense Claim",
+					"Journal Entry",
+					"Payment Entry",
+					"Purchase Order",
+					"Purchase Receipt",
+					"Purchase Invoice",
+				],
+			],
+			[
+				"name",
+				"in",
+				[
+					"Item-custom_ss_coil_section",
+					"Item-custom_ss_coil_item_type",
+					"Item-custom_default_raw_material_item",
+					"Item-custom_ss_coil_column_break",
+					"Item-custom_create_tag_on_receipt",
+					"Item-custom_use_tag_as_batch_no",
+				],
+			],
+		],
 	},
 	{
 		"dt": "Property Setter",
@@ -78,7 +118,7 @@ add_to_apps_screen = [
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=15"
+app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=16"
 # app_include_js = "/assets/ss_coil/js/ss_coil.js"
 
 # include js, css files in header of web template

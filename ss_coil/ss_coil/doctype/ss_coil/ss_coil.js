@@ -87,6 +87,7 @@ frappe.ui.form.on("SS Coil", {
 		ensure_cutting_detail_from_so_plan(frm);
 		render_job_output_qr_fields(frm);
 		load_ss_coil_flow_and_dashboards(frm);
+		backfill_so_item_tag_no(frm);
 		render_ss_coil_job_sheet_report(frm);
 		render_ss_coil_formulas(frm);
 		sync_linked_stock_entry_field(frm);
@@ -174,10 +175,9 @@ frappe.ui.form.on("SS Coil", {
 		}
 
 		frappe.call({
-			method: "frappe.client.get",
+			method: "ss_coil.api.get_sales_order_item_for_ss_coil",
 			args: {
-				doctype: "Sales Order Item",
-				name: frm.doc.sales_order_item,
+				sales_order_item: frm.doc.sales_order_item,
 			},
 			freeze: true,
 			freeze_message: __("Loading Selected Sales Order Item..."),
@@ -223,16 +223,7 @@ frappe.ui.form.on("SS Coil", {
 					}
 
 					if (fieldname === "tag_no") {
-						const child = (item.custom_child_tag_no || "").trim();
-						const tag = (item.custom_tag_no || "").trim();
-						const rawTag = (item.custom_raw_material_tag_no || "").trim();
-						if (child) {
-							row.tag_no = child;
-						} else if (tag && tag !== rawTag) {
-							row.tag_no = tag;
-						} else {
-							row.tag_no = "";
-						}
+						row.tag_no = so_item_tag_no_from_sales_order_item(item);
 						return;
 					}
 
@@ -1873,13 +1864,37 @@ function formatCounterDuration(totalSeconds) {
 // The elapsed_time field itself is hidden (see refresh()) - this digital
 // clock readout lives in the flow banner instead (render_ss_coil_flow_banner)
 // so it's visible at the top of the form rather than buried further down.
+function parseElapsedParts(value) {
+	const match = String(value || "").match(/(\d+)\s*d\s*(\d+)\s*h\s*(\d+)\s*m\s*(\d+)\s*s/i);
+	if (!match) {
+		return { d: "00", h: "00", m: "00", s: "00" };
+	}
+	return {
+		d: String(match[1]).padStart(2, "0"),
+		h: String(match[2]).padStart(2, "0"),
+		m: String(match[3]).padStart(2, "0"),
+		s: String(match[4]).padStart(2, "0"),
+	};
+}
+
 function renderElapsedTimeField(frm, value) {
+	const $watch = $(frm.wrapper).find(".ss-coil-flow-watch");
 	const $card = $(frm.wrapper).find(".ss-coil-flow-clock-card");
 	const $clock = $(frm.wrapper).find(".ss-coil-flow-clock");
-	if (!$clock.length) return;
 	const isRunning = ["In Process", "Partially Completed"].includes(frm.doc.order_status) && !frm.doc.completed_on;
-	$card.toggleClass("ss-coil-flow-clock-running", isRunning);
-	$clock.text(value || "0d 00h 00m 00s");
+	$watch.add($card).toggleClass("ss-coil-flow-clock-running", isRunning);
+	const parts = parseElapsedParts(value || "0d 00h 00m 00s");
+	const $digits = $(frm.wrapper).find(".ss-coil-flow-watch-digits");
+	if ($digits.length) {
+		$digits.filter("[data-unit='d']").text(parts.d);
+		$digits.filter("[data-unit='h']").text(parts.h);
+		$digits.filter("[data-unit='m']").text(parts.m);
+		$digits.filter("[data-unit='s']").text(parts.s);
+		return;
+	}
+	if ($clock.length) {
+		$clock.text(value || "0d 00h 00m 00s");
+	}
 }
 
 function styleProcessButton($btn, isActive) {
@@ -1906,17 +1921,45 @@ function lightenHex(hex, amount) {
 	return `#${shifted.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function getElapsedTimeValue(frm, endValue = null) {
-	if (!frm.doc.started_on) {
-		return "";
+function parseSSCoilDatetime(value) {
+	if (!value) return null;
+	if (value instanceof Date) {
+		return Number.isNaN(value.getTime()) ? null : value;
 	}
-	const start = frappe.datetime.str_to_obj(frm.doc.started_on);
+	const raw = String(value).trim();
+	if (!raw) return null;
+	const cleaned = raw.replace("T", " ").replace(/\.\d+/, "");
+	if (window.moment) {
+		let m = moment(cleaned, "YYYY-MM-DD HH:mm:ss", true);
+		if (!m.isValid()) {
+			m = moment(raw);
+		}
+		if (m.isValid()) {
+			return m.toDate();
+		}
+	}
+	const parsed = frappe.datetime.str_to_obj(cleaned);
+	if (parsed && parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+		return parsed;
+	}
+	const fallback = new Date(raw);
+	return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function getElapsedTimeValue(frm, endValue = null) {
+	const start = parseSSCoilDatetime(frm.doc.started_on);
+	if (!start) {
+		return frm.doc.elapsed_time || "0d 00h 00m 00s";
+	}
 	const end = endValue
-		? frappe.datetime.str_to_obj(endValue)
+		? parseSSCoilDatetime(endValue)
 		: frm.doc.completed_on
-			? frappe.datetime.str_to_obj(frm.doc.completed_on)
+			? parseSSCoilDatetime(frm.doc.completed_on)
 			: new Date();
-	const seconds = Math.floor((end - start) / 1000);
+	if (!end) {
+		return "0d 00h 00m 00s";
+	}
+	const seconds = Math.max(0, Math.floor((end - start) / 1000));
 	return formatCounterDuration(seconds);
 }
 
@@ -1924,6 +1967,12 @@ function update_elapsed_time_display(frm) {
 	if (frm.__elapsed_timer) {
 		clearInterval(frm.__elapsed_timer);
 		frm.__elapsed_timer = null;
+	}
+
+	const running =
+		["In Process", "Partially Completed"].includes(frm.doc.order_status) && !frm.doc.completed_on;
+	if (running && !parseSSCoilDatetime(frm.doc.started_on)) {
+		frm.doc.started_on = frappe.datetime.now_datetime();
 	}
 
 	if (!frm.doc.started_on) {
@@ -1937,7 +1986,7 @@ function update_elapsed_time_display(frm) {
 
 	render();
 
-	if (["In Process", "Partially Completed"].includes(frm.doc.order_status) && !frm.doc.completed_on) {
+	if (running) {
 		frm.__elapsed_timer = setInterval(render, 1000);
 	}
 }
@@ -2355,15 +2404,16 @@ function getEffectiveOrderStatus(frm, data) {
 
 function syncOrderStatusFromDashboard(frm, data) {
 	const serverStatus = data?.status_flow?.order_status || data?.order_status;
-	if (!serverStatus || serverStatus === frm.doc.order_status) {
-		return;
+	if (serverStatus) {
+		frm.doc.order_status = serverStatus;
 	}
-	frm.doc.order_status = serverStatus;
 	if (data?.status_flow?.started_on) {
 		frm.doc.started_on = data.status_flow.started_on;
 	}
 	if (data?.status_flow?.completed_on) {
 		frm.doc.completed_on = data.status_flow.completed_on;
+	} else if (data?.status_flow && ["In Process", "Partially Completed", "Stopped"].includes(frm.doc.order_status)) {
+		frm.doc.completed_on = "";
 	}
 	if (data?.status_flow?.elapsed_time) {
 		frm.doc.elapsed_time = data.status_flow.elapsed_time;
@@ -2442,9 +2492,10 @@ function render_ss_coil_flow_banner(frm, data) {
 		<button type="button" class="ss-coil-flow-control-toggle ${
 			processControlOn ? "ss-coil-flow-control-on" : "ss-coil-flow-control-off"
 		}">
-			<span class="ss-coil-flow-control-dot"></span>${__("Process Control")} ${
+			<span class="ss-coil-flow-control-switch"><span class="ss-coil-flow-control-knob"></span></span>
+			<span class="ss-coil-flow-control-toggle-text">${__("Process Control")} ${
 		processControlOn ? __("ON") : __("OFF")
-	}
+	}</span>
 		</button>
 	`;
 
@@ -2468,25 +2519,34 @@ function render_ss_coil_flow_banner(frm, data) {
 	$banner.html(`
 		<div class="ss-coil-flow-header">
 			<span class="ss-coil-flow-title">${__("Process Flow")}</span>
-			<div class="ss-coil-flow-header-right">
-				<div class="ss-coil-flow-clock-card">
-					<span class="ss-coil-flow-clock-label">${__("Elapsed Time")}</span>
-					<span class="ss-coil-flow-clock">00d 00h 00m 00s</span>
+		</div>
+		<div class="ss-coil-flow-toolbar">
+			<div class="ss-coil-flow-toolbar-main">
+				<span class="ss-coil-flow-label">${__("Process")}</span>
+				${processHtml}
+			</div>
+			<div class="ss-coil-flow-toolbar-side">
+				<div class="ss-coil-flow-status-block">
+					<span class="ss-coil-flow-label">${__("Status")}</span>
+					${statusHtml}
+					${finishedBadgeHtml}
+					${stopResumeHtml}
+				</div>
+				<div class="ss-coil-flow-watch">
+					<div class="ss-coil-flow-watch-face">
+						<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="d">00</span><small>${__("DAY")}</small></div>
+						<span class="ss-coil-flow-watch-sep">:</span>
+						<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="h">00</span><small>${__("HR")}</small></div>
+						<span class="ss-coil-flow-watch-sep">:</span>
+						<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="m">00</span><small>${__("MIN")}</small></div>
+						<span class="ss-coil-flow-watch-sep">:</span>
+						<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="s">00</span><small>${__("SEC")}</small></div>
+					</div>
 				</div>
 				${controlToggleHtml}
 			</div>
 		</div>
-		<div class="ss-coil-flow-row">
-			<span class="ss-coil-flow-label">${__("Process")}</span>
-			${processHtml}
-		</div>
-		<div class="ss-coil-flow-row">
-			<span class="ss-coil-flow-label">${__("Status")}</span>
-			${statusHtml}
-			${finishedBadgeHtml}
-			${stopResumeHtml}
-		</div>
-		<div class="ss-coil-flow-row">
+		<div class="ss-coil-flow-row ss-coil-flow-row-processes">
 			<span class="ss-coil-flow-label">${__("Processes")}</span>
 			<div class="ss-coil-checklist">${checklistHtml}</div>
 		</div>
@@ -2647,19 +2707,22 @@ function build_ss_coil_checklist_flow_html(checklist) {
 }
 
 function inject_ss_coil_flow_styles() {
-	if (document.getElementById("ss-coil-flow-styles")) return;
-	const style = document.createElement("style");
-	style.id = "ss-coil-flow-styles";
+	let style = document.getElementById("ss-coil-flow-styles");
+	if (!style) {
+		style = document.createElement("style");
+		style.id = "ss-coil-flow-styles";
+		document.head.appendChild(style);
+	}
 	style.textContent = `
 		.ss-coil-flow-banner {
 			margin: 0 0 12px;
-			padding: 12px 16px;
+			padding: 8px 14px 10px;
 			background: #f8fbff;
 			border: 1px solid #d8e6f7;
-			border-radius: 10px;
+			border-radius: 12px;
 			display: flex;
 			flex-direction: column;
-			gap: 9px;
+			gap: 6px;
 		}
 		.ss-coil-flow-header {
 			display: flex;
@@ -2667,7 +2730,7 @@ function inject_ss_coil_flow_styles() {
 			justify-content: space-between;
 			flex-wrap: wrap;
 			gap: 8px;
-			padding-bottom: 6px;
+			padding-bottom: 4px;
 			border-bottom: 1px solid #e2edf9;
 		}
 		.ss-coil-flow-title {
@@ -2677,50 +2740,115 @@ function inject_ss_coil_flow_styles() {
 			letter-spacing: 0.05em;
 			color: #16324f;
 		}
-		.ss-coil-flow-header-right {
+		.ss-coil-flow-toolbar {
 			display: flex;
 			align-items: center;
-			gap: 10px;
+			justify-content: space-between;
+			gap: 8px 12px;
+			flex-wrap: wrap;
 		}
-		.ss-coil-flow-clock-card {
+		.ss-coil-flow-toolbar-main,
+		.ss-coil-flow-toolbar-side {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			flex-wrap: wrap;
+		}
+		.ss-coil-flow-toolbar-side {
+			margin-left: auto;
+		}
+		.ss-coil-flow-status-block {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			flex-wrap: wrap;
+		}
+		.ss-coil-flow-status-block .ss-coil-flow-label,
+		.ss-coil-flow-toolbar-main .ss-coil-flow-label {
+			width: auto;
+		}
+		.ss-coil-flow-row-processes {
+			align-items: center;
+		}
+		.ss-coil-flow-watch {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			background: radial-gradient(circle at 18% 0%, #164e63 0%, #020617 62%);
+			border: 1px solid #22d3ee;
+			border-radius: 12px;
+			padding: 4px 8px 5px;
+			box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.18), 0 8px 16px rgba(2, 6, 23, 0.22);
+		}
+		.ss-coil-flow-watch.ss-coil-flow-clock-running {
+			border-color: #34d399;
+			box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.28), 0 0 18px rgba(52, 211, 153, 0.18);
+		}
+		.ss-coil-flow-watch-face {
+			display: flex;
+			align-items: flex-end;
+			justify-content: center;
+			gap: 3px;
+		}
+		.ss-coil-flow-watch-unit {
 			display: flex;
 			flex-direction: column;
 			align-items: center;
+			justify-content: center;
 			gap: 2px;
-			background: #1e293b;
-			border: 1px solid #334155;
-			border-radius: 8px;
-			padding: 5px 16px;
-			min-width: 140px;
-			border-left: 3px solid #64748b;
-			transition: border-left-color 0.2s ease;
 		}
-		.ss-coil-flow-clock-card.ss-coil-flow-clock-running {
-			border-left-color: #34d399;
-		}
-		.ss-coil-flow-clock-label {
-			font-size: 9px;
-			font-weight: 700;
-			text-transform: uppercase;
-			letter-spacing: 0.08em;
-			color: #94a3b8;
-		}
-		.ss-coil-flow-clock {
+		.ss-coil-flow-watch-digits {
+			display: flex;
+			align-items: center;
+			justify-content: center;
 			font-family: "SFMono-Regular", Consolas, "Courier New", monospace;
 			font-size: 15px;
-			font-weight: 700;
-			letter-spacing: 0.05em;
-			color: #f1f5f9;
+			font-weight: 800;
+			letter-spacing: 0;
+			line-height: 1;
+			color: #ecfeff;
+			background: #020617;
+			border: 1px solid #155e75;
+			border-radius: 7px;
+			width: 34px;
+			height: 26px;
+			padding: 0;
+			text-align: center;
+			text-shadow: 0 0 10px rgba(103, 232, 249, 0.7);
+		}
+		.ss-coil-flow-clock-running .ss-coil-flow-watch-digits {
+			color: #bbf7d0;
+			text-shadow: 0 0 10px rgba(74, 222, 128, 0.85);
+			border-color: #166534;
+		}
+		.ss-coil-flow-watch-unit small {
+			font-size: 8px;
+			font-weight: 800;
+			letter-spacing: 0.08em;
+			color: #94a3b8;
+			line-height: 1;
+		}
+		.ss-coil-flow-watch-sep {
+			color: #22d3ee;
+			font-weight: 800;
+			padding-bottom: 12px;
+			line-height: 1;
+		}
+		.ss-coil-flow-clock-running .ss-coil-flow-watch-sep {
+			color: #86efac;
+			animation: ss-coil-watch-blink 1s steps(2, end) infinite;
+		}
+		@keyframes ss-coil-watch-blink {
+			50% { opacity: 0.25; }
 		}
 		.ss-coil-flow-control-toggle {
 			display: inline-flex;
 			align-items: center;
-			gap: 6px;
-			border: none;
+			gap: 8px;
 			border-radius: 999px;
-			padding: 6px 14px;
+			padding: 7px 12px 7px 7px;
 			font-size: 11px;
-			font-weight: 700;
+			font-weight: 800;
 			text-transform: uppercase;
 			letter-spacing: 0.03em;
 			cursor: pointer;
@@ -2730,14 +2858,39 @@ function inject_ss_coil_flow_styles() {
 			box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
 		}
 		.ss-coil-flow-control-toggle.ss-coil-flow-control-on {
-			background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-			color: #14532d;
+			background: linear-gradient(135deg, #052e16, #14532d);
+			color: #bbf7d0;
 			border: 1px solid #86efac;
 		}
 		.ss-coil-flow-control-toggle.ss-coil-flow-control-off {
-			background: linear-gradient(135deg, #fef2f2, #fee2e2);
-			color: #7f1d1d;
+			background: linear-gradient(135deg, #450a0a, #7f1d1d);
+			color: #fecaca;
 			border: 1px solid #fca5a5;
+		}
+		.ss-coil-flow-control-switch {
+			position: relative;
+			width: 40px;
+			height: 22px;
+			border-radius: 999px;
+			background: #fecaca;
+			flex-shrink: 0;
+		}
+		.ss-coil-flow-control-on .ss-coil-flow-control-switch {
+			background: #22c55e;
+		}
+		.ss-coil-flow-control-knob {
+			position: absolute;
+			top: 2px;
+			left: 2px;
+			width: 18px;
+			height: 18px;
+			border-radius: 50%;
+			background: #fff;
+			box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+			transition: transform 0.16s ease;
+		}
+		.ss-coil-flow-control-on .ss-coil-flow-control-knob {
+			transform: translateX(18px);
 		}
 		.ss-coil-flow-control-dot {
 			width: 8px;
@@ -2922,7 +3075,6 @@ function inject_ss_coil_flow_styles() {
 			color: #94a3b8;
 		}
 	`;
-	document.head.appendChild(style);
 }
 
 function getConfiguredProcesses(frm) {
@@ -3102,7 +3254,41 @@ function apply_ss_coil_fields_from_sales_order_item(frm, item, soRow) {
 	if (commodity) {
 		frm.set_value("commodity", commodity);
 	}
+	if (!soRow.tag_no) {
+		soRow.tag_no = so_item_tag_no_from_sales_order_item(item);
+	}
 	frm._so_item_packing_type = item.custom_packing_type || "";
+}
+
+function so_item_tag_no_from_sales_order_item(item) {
+	if (!item) return "";
+	const values = [
+		item.custom_child_tag_no,
+		item.custom_tag_no,
+		item.custom_raw_material_tag_no,
+		item.tag_no,
+	];
+	for (const value of values) {
+		const tag = String(value || "").trim();
+		if (tag) return tag;
+	}
+	return "";
+}
+
+function backfill_so_item_tag_no(frm) {
+	const row = (frm.doc.so_item || [])[0];
+	if (!row || row.tag_no || !frm.doc.sales_order_item) {
+		return;
+	}
+	frappe.call({
+		method: "ss_coil.api.get_sales_order_item_tag_no",
+		args: { sales_order_item: frm.doc.sales_order_item },
+		callback(r) {
+			const tag = String((r && r.message) || "").trim();
+			if (!tag) return;
+			frappe.model.set_value(row.doctype, row.name, "tag_no", tag);
+		},
+	});
 }
 
 function sync_cutting_detail_so_no(frm, refresh_field = true) {

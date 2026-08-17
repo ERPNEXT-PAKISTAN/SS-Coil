@@ -62,15 +62,50 @@ function flow_table_block_html(table_key, title) {
 }
 
 function flow_jobs_html() {
-	return `<div class="ss-coil-flow-jobs" hidden>
+	return `<div class="ss-coil-flow-jobs">
 			<div class="ss-coil-de-block-title">
 				<span class="ss-coil-de-block-title-text">
 					<span class="ss-coil-de-block-icon">${frappe.utils.icon("list", "sm")}</span>
 					<span>${__("Jobs & Operations")}</span>
 				</span>
-				<div class="ss-coil-flow-status-actions"></div>
 			</div>
 			<div class="ss-coil-flow-jobs-list"></div>
+		</div>`;
+}
+
+function flow_control_html() {
+	return `<div class="ss-coil-flow-control-deck">
+			<div class="ss-coil-flow-control-head">
+				<div class="ss-coil-flow-control-title-wrap">
+					<span class="ss-coil-flow-control-kicker">${__("Process Control")}</span>
+					<span class="ss-coil-flow-control-op"></span>
+				</div>
+				<div class="ss-coil-flow-control-head-right">
+					<div class="ss-coil-flow-watch">
+						<div class="ss-coil-flow-watch-face">
+							<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="d">00</span><small>${__("DAY")}</small></div>
+							<span class="ss-coil-flow-watch-sep">:</span>
+							<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="h">00</span><small>${__("HR")}</small></div>
+							<span class="ss-coil-flow-watch-sep">:</span>
+							<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="m">00</span><small>${__("MIN")}</small></div>
+							<span class="ss-coil-flow-watch-sep">:</span>
+							<div class="ss-coil-flow-watch-unit"><span class="ss-coil-flow-watch-digits" data-unit="s">00</span><small>${__("SEC")}</small></div>
+						</div>
+					</div>
+					<button type="button" class="ss-coil-flow-control-toggle ss-coil-flow-control-off" title="${__(
+						"Turn Process Control on or off"
+					)}">
+						<span class="ss-coil-flow-control-switch"><span class="ss-coil-flow-control-knob"></span></span>
+						<span class="ss-coil-flow-control-toggle-text">${__("OFF")}</span>
+					</button>
+				</div>
+			</div>
+			<div class="ss-coil-flow-control-actions"></div>
+			<div class="ss-coil-flow-control-status-row">
+				<span class="ss-coil-flow-control-label">${__("Status")}</span>
+				<div class="ss-coil-flow-control-stepper"></div>
+			</div>
+			<div class="ss-coil-flow-control-hint"></div>
 		</div>`;
 }
 
@@ -80,7 +115,7 @@ function flow_form_shell_html(meta) {
 	const extra = ((meta && meta.extra_tables) || [])
 		.map((spec) => flow_table_block_html(spec.child_table, spec.child_title || spec.child_table))
 		.join("");
-	const jobs = meta && meta.doctype === "SS Coil" ? flow_jobs_html() : "";
+	const control = meta && meta.doctype === "SS Coil" ? flow_control_html() : "";
 	return `<div class="ss-coil-de-shell">
 		<div class="ss-coil-de-parent-block">
 			<div class="ss-coil-de-block-title">
@@ -91,7 +126,7 @@ function flow_form_shell_html(meta) {
 			</div>
 			<div class="ss-coil-de-parent-fields"></div>
 		</div>
-		${jobs}
+		${control}
 		${extra}
 		${flow_table_block_html(child_table, child_title)}
 	</div>`;
@@ -518,7 +553,7 @@ function flow_setup_ui(state, $root, options = {}) {
 
 	flow_setup_extra_tables(state, $root, options.document);
 	if (state.doctype === "SS Coil") {
-		flow_bind_ss_coil_jobs(state, options.document);
+		flow_bind_ss_coil_control(state, options.document);
 	}
 }
 
@@ -560,14 +595,300 @@ function flow_setup_extra_tables(state, $root, document) {
 	});
 }
 
-const SS_COIL_FLOW_STATUSES = [
-	"Not Started",
-	"In Process",
-	"Partially Completed",
-	"Stopped",
-	"Completed",
-	"Closed",
+const SS_COIL_CONTROL_STEPS = [
+	{ status: "Not Started", label: "Not Started" },
+	{ status: "In Process", label: "Start" },
+	{ status: "Partially Completed", label: "Partial" },
+	{ status: "Completed", label: "Complete" },
+	{ status: "Closed", label: "Close" },
 ];
+
+function flow_clear_elapsed_timer(state) {
+	if (state && state._elapsed_timer) {
+		clearInterval(state._elapsed_timer);
+		state._elapsed_timer = null;
+	}
+}
+
+function flow_ss_coil_process_state(state, document) {
+	const src = document || {};
+	const proc = state.process || {};
+	const get = (fieldname) =>
+		(state.parent_fg && state.parent_fg.get_value && state.parent_fg.get_value(fieldname)) || "";
+	return {
+		name: state.saved_name || src.name || "",
+		operation: proc.operation || get("operation") || src.operation || "",
+		order_status: proc.order_status || get("order_status") || src.order_status || "Not Started",
+		process_control_enabled: cint(
+			proc.process_control_enabled != null ? proc.process_control_enabled : src.process_control_enabled
+		),
+		started_on: proc.started_on || src.started_on || "",
+		completed_on: proc.completed_on || src.completed_on || "",
+		elapsed_time: proc.elapsed_time || src.elapsed_time || "",
+	};
+}
+
+function flow_apply_process_payload(state, payload) {
+	if (!payload) return;
+	state.process = {
+		...(state.process || {}),
+		process_control_enabled: cint(payload.process_control_enabled),
+		order_status: payload.order_status || (state.process && state.process.order_status),
+		started_on:
+			payload.started_on ||
+			(state.process && state.process.started_on) ||
+			(["In Process", "Partially Completed"].includes(payload.order_status)
+				? frappe.datetime.now_datetime()
+				: ""),
+		completed_on: payload.completed_on || "",
+		elapsed_time: payload.elapsed_time || "",
+		operation: payload.operation || (state.process && state.process.operation) || "",
+	};
+	if (payload.order_status && state.parent_fg) {
+		flow_set_parent_values(state.parent_fg, { order_status: payload.order_status });
+	}
+}
+
+function flow_parse_datetime(value) {
+	if (!value) return null;
+	if (value instanceof Date) {
+		return Number.isNaN(value.getTime()) ? null : value;
+	}
+	const raw = String(value).trim();
+	if (!raw) return null;
+	const cleaned = raw.replace("T", " ").replace(/\.\d+/, "");
+	if (window.moment) {
+		let m = moment(cleaned, "YYYY-MM-DD HH:mm:ss", true);
+		if (!m.isValid()) {
+			m = moment(raw);
+		}
+		if (m.isValid()) {
+			return m.toDate();
+		}
+	}
+	const parsed = frappe.datetime.str_to_obj(cleaned);
+	if (parsed && parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+		return parsed;
+	}
+	const fallback = new Date(raw);
+	return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function flow_format_elapsed_clock(started_on, completed_on) {
+	const start = flow_parse_datetime(started_on);
+	if (!start) {
+		return "0d 00h 00m 00s";
+	}
+	const end = completed_on ? flow_parse_datetime(completed_on) : new Date();
+	if (!end) {
+		return "0d 00h 00m 00s";
+	}
+	const seconds = Math.max(0, Math.floor((end - start) / 1000));
+	const days = Math.floor(seconds / 86400);
+	const hours = Math.floor((seconds % 86400) / 3600);
+	const minutes = Math.floor((seconds % 3600) / 60);
+	const secs = seconds % 60;
+	return `${days}d ${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(
+		secs
+	).padStart(2, "0")}s`;
+}
+
+function flow_elapsed_parts(started_on, completed_on) {
+	const text = flow_format_elapsed_clock(started_on, completed_on);
+	const match = String(text).match(/(\d+)\s*d\s*(\d+)\s*h\s*(\d+)\s*m\s*(\d+)\s*s/i);
+	if (!match) {
+		return { d: "00", h: "00", m: "00", s: "00" };
+	}
+	return {
+		d: String(match[1]).padStart(2, "0"),
+		h: String(match[2]).padStart(2, "0"),
+		m: String(match[3]).padStart(2, "0"),
+		s: String(match[4]).padStart(2, "0"),
+	};
+}
+
+function flow_paint_watch(state, started_on, completed_on, running) {
+	if (!state.$root) return;
+	const $watch = state.$root.find(".ss-coil-flow-watch");
+	const $card = state.$root.find(".ss-coil-flow-clock-card");
+	$watch.add($card).toggleClass("ss-coil-flow-clock-running", !!running);
+	const parts = flow_elapsed_parts(started_on, completed_on);
+	const $digits = state.$root.find(".ss-coil-flow-watch-digits");
+	if ($digits.length) {
+		$digits.filter("[data-unit='d']").text(parts.d);
+		$digits.filter("[data-unit='h']").text(parts.h);
+		$digits.filter("[data-unit='m']").text(parts.m);
+		$digits.filter("[data-unit='s']").text(parts.s);
+		return;
+	}
+	state.$root.find(".ss-coil-flow-clock").text(flow_format_elapsed_clock(started_on, completed_on));
+}
+
+function flow_status_step_index(status) {
+	if (status === "Stopped") {
+		return 1;
+	}
+	const idx = SS_COIL_CONTROL_STEPS.findIndex((step) => step.status === status);
+	return idx >= 0 ? idx : 0;
+}
+
+function flow_bind_ss_coil_control(state, document) {
+	const $deck = state.$root.find(".ss-coil-flow-control-deck");
+	if (!$deck.length) return;
+	state.process = flow_ss_coil_process_state(state, document);
+	$deck.removeAttr("hidden").show();
+	$deck
+		.find(".ss-coil-flow-control-toggle")
+		.off("click.ss_coil_ctl")
+		.on("click.ss_coil_ctl", () => flow_toggle_ss_coil_control(state));
+	flow_render_ss_coil_control(state);
+}
+
+function flow_render_ss_coil_control(state) {
+	const $deck = state.$root.find(".ss-coil-flow-control-deck");
+	if (!$deck.length) return;
+	const proc = flow_ss_coil_process_state(state);
+	const control_on = Boolean(proc.process_control_enabled);
+	const status = proc.order_status || "Not Started";
+	const running = ["In Process", "Partially Completed"].includes(status) && !proc.completed_on;
+	const saved = Boolean(state.saved_name);
+
+	$deck.find(".ss-coil-flow-control-op").text(proc.operation || __("No operation"));
+	const $toggle = $deck.find(".ss-coil-flow-control-toggle");
+	$toggle
+		.toggleClass("ss-coil-flow-control-on", control_on)
+		.toggleClass("ss-coil-flow-control-off", !control_on);
+	$toggle.find(".ss-coil-flow-control-toggle-text").text(control_on ? __("ON") : __("OFF"));
+
+	flow_paint_watch(state, proc.started_on, proc.completed_on, running);
+
+	const actions = [];
+	if (status === "Stopped") {
+		actions.push({ status: "In Process", label: __("Resume"), kind: "resume" });
+	} else if (status === "Not Started") {
+		actions.push({ status: "In Process", label: __("Start"), kind: "start" });
+	} else if (status === "In Process") {
+		actions.push({ status: "Partially Completed", label: __("Partial"), kind: "partial" });
+		actions.push({ status: "Completed", label: __("Complete"), kind: "complete" });
+		actions.push({ status: "Stopped", label: __("Stop"), kind: "stop" });
+	} else if (status === "Partially Completed") {
+		actions.push({ status: "Completed", label: __("Complete"), kind: "complete" });
+		actions.push({ status: "Stopped", label: __("Stop"), kind: "stop" });
+	} else if (status === "Completed") {
+		actions.push({ status: "Closed", label: __("Close"), kind: "close" });
+	}
+	actions.push({ status: "__next__", label: __("Next Process"), kind: "next" });
+
+	const $actions = $deck.find(".ss-coil-flow-control-actions").empty();
+	actions.forEach((action) => {
+		const $btn = $(
+			`<button type="button" class="ss-coil-ctl-btn ss-coil-ctl-${action.kind}" data-kind="${action.kind}">
+				<span>${frappe.utils.escape_html(action.label)}</span>
+			</button>`
+		);
+		if (!saved) {
+			$btn.prop("disabled", true);
+		} else if (!control_on) {
+			$btn.addClass("is-locked");
+		}
+		$btn.on("click", () => {
+			if (action.kind === "next") {
+				if (!control_on) {
+					flow_control_locked_message(__("Create Next Process"));
+					return;
+				}
+				flow_create_next_ss_coil(state);
+				return;
+			}
+			flow_set_ss_coil_status(state, action.status, action.label);
+		});
+		$actions.append($btn);
+	});
+
+	const currentIndex = flow_status_step_index(status);
+	const $stepper = $deck.find(".ss-coil-flow-control-stepper").empty();
+	const visibleSteps = SS_COIL_CONTROL_STEPS.filter((step, idx) => !(idx === 0 && currentIndex > 0));
+	visibleSteps.forEach((step, visIdx) => {
+		const idx = SS_COIL_CONTROL_STEPS.indexOf(step);
+		if (visIdx > 0) {
+			$stepper.append(`<span class="ss-coil-ctl-connector${idx <= currentIndex ? " is-done" : ""}"></span>`);
+		}
+		const stateName = idx < currentIndex ? "done" : idx === currentIndex ? "current" : "upcoming";
+		const label = idx <= currentIndex && step.status !== "Not Started" ? step.status : step.label;
+		const $step = $(
+			`<button type="button" class="ss-coil-ctl-step is-${stateName}" data-status="${step.status}">${
+				stateName === "done" ? "✓ " : ""
+			}${frappe.utils.escape_html(__(label))}</button>`
+		);
+		if (idx >= 1 && saved) {
+			$step.on("click", () => flow_set_ss_coil_status(state, step.status, step.label));
+		} else {
+			$step.prop("disabled", true);
+		}
+		$stepper.append($step);
+	});
+	if (status === "Stopped") {
+		$stepper.append(`<span class="ss-coil-ctl-stopped">${__("STOPPED")}</span>`);
+	}
+
+	const $hint = $deck.find(".ss-coil-flow-control-hint");
+	if (!saved) {
+		$hint.text(__("Save this SS Coil to use Start, Complete, Watch, and Process Control."));
+	} else if (!control_on) {
+		$hint.text(__("Turn Process Control ON, then Start or Complete this job."));
+	} else {
+		$hint.text(__("Process Control is ON. Choose Start, Partial, Complete, or Stop."));
+	}
+
+	flow_start_elapsed_timer(state);
+}
+
+function flow_start_elapsed_timer(state) {
+	flow_clear_elapsed_timer(state);
+	const proc = flow_ss_coil_process_state(state);
+	const running = ["In Process", "Partially Completed"].includes(proc.order_status) && !proc.completed_on;
+	if (running && !flow_parse_datetime(proc.started_on)) {
+		state.process = state.process || {};
+		state.process.started_on = frappe.datetime.now_datetime();
+	}
+	const tick = () => {
+		const latest = flow_ss_coil_process_state(state);
+		const is_running =
+			["In Process", "Partially Completed"].includes(latest.order_status) && !latest.completed_on;
+		flow_paint_watch(state, latest.started_on, latest.completed_on, is_running);
+	};
+	tick();
+	if (running) {
+		state._elapsed_timer = setInterval(tick, 1000);
+	}
+}
+
+function flow_control_locked_message(actionLabel) {
+	frappe.msgprint({
+		title: __("Process Control Locked"),
+		indicator: "orange",
+		message: __("Turn ON <b>Process Control</b> before using <b>{0}</b>.", [actionLabel]),
+	});
+}
+
+function flow_toggle_ss_coil_control(state) {
+	if (!state.saved_name) {
+		frappe.msgprint(__("Save the SS Coil first, then use Process Control."));
+		return;
+	}
+	const enabled = cint(state.process && state.process.process_control_enabled) ? 0 : 1;
+	frappe.call({
+		method: "ss_coil.flow_forms.set_ss_coil_process_control",
+		args: { name: state.saved_name, enabled },
+		freeze: true,
+		freeze_message: enabled ? __("Enabling Process Control...") : __("Locking Process Control..."),
+		callback(r) {
+			if (!r.message) return;
+			flow_apply_process_payload(state, r.message);
+			flow_render_ss_coil_control(state);
+		},
+	});
+}
 
 function flow_bind_ss_coil_jobs(state, document) {
 	const $jobs = state.$root.find(".ss-coil-flow-jobs");
@@ -578,32 +899,12 @@ function flow_bind_ss_coil_jobs(state, document) {
 		(document && document.order_no) ||
 		"";
 	const current_name = state.saved_name || (document && document.name) || "";
-	const current_status =
-		(state.parent_fg && state.parent_fg.get_value("order_status")) ||
-		(document && document.order_status) ||
-		"Not Started";
-
-	const $actions = $jobs.find(".ss-coil-flow-status-actions").empty();
-	SS_COIL_FLOW_STATUSES.forEach((status) => {
-		const $chip = $(
-			`<button type="button" class="ss-coil-flow-status-chip${
-				status === current_status ? " is-active" : ""
-			}">${__(status)}</button>`
-		);
-		$chip.on("click", () => flow_set_ss_coil_status(state, status));
-		$actions.append($chip);
-	});
-	const $next = $(
-		`<button type="button" class="btn btn-xs ss-coil-flow-next-process">${__("Create Next Process")}</button>`
-	);
-	$next.on("click", () => flow_create_next_ss_coil(state));
-	$actions.append($next);
 
 	if (!order_no) {
 		$jobs.find(".ss-coil-flow-jobs-list").html(
 			`<div class="ss-coil-flow-job-chip-meta">${__("Save this job, then related operations for the Sales Order will appear here.")}</div>`
 		);
-		$jobs.show();
+		$jobs.removeAttr("hidden").show();
 		return;
 	}
 
@@ -630,19 +931,24 @@ function flow_bind_ss_coil_jobs(state, document) {
 					);
 					$chip.on("click", () => {
 						if (job.name === current_name || !state.$host) return;
+						flow_clear_elapsed_timer(state);
 						ss_coil.flow_forms.load(state.$host, "SS Coil", job.name, state.handlers || {});
 					});
 					$list.append($chip);
 				});
 			}
-			$jobs.show();
+			$jobs.removeAttr("hidden").show();
 		},
 	});
 }
 
-function flow_set_ss_coil_status(state, order_status) {
+function flow_set_ss_coil_status(state, order_status, actionLabel) {
 	if (!state.saved_name) {
 		frappe.msgprint(__("Save the SS Coil first, then change status."));
+		return;
+	}
+	if (!cint(state.process && state.process.process_control_enabled)) {
+		flow_control_locked_message(actionLabel || order_status);
 		return;
 	}
 	frappe.call({
@@ -652,12 +958,12 @@ function flow_set_ss_coil_status(state, order_status) {
 		freeze_message: __("Updating status..."),
 		callback(r) {
 			if (!r.message) return;
-			flow_set_parent_values(state.parent_fg, { order_status: r.message.order_status });
+			flow_apply_process_payload(state, r.message);
+			flow_render_ss_coil_control(state);
 			frappe.show_alert({
 				message: __("Status set to {0}", [r.message.order_status]),
 				indicator: "green",
 			});
-			flow_bind_ss_coil_jobs(state, { name: state.saved_name, order_no: state.parent_fg.get_value("order_no"), order_status: r.message.order_status });
 		},
 	});
 }
@@ -786,6 +1092,7 @@ ss_coil.flow_forms.load = function ($container, doctype, name, handlers = {}) {
 ss_coil.flow_forms.mount = function ($container, doctype, handlers = {}) {
 	const $host = $($container);
 	if (!$host.length) return;
+	flow_clear_elapsed_timer($host.data("ss_coil_flow_form_state"));
 
 	if (doctype === "Stock Entry" && ss_coil.stock_entry_data_entry) {
 		ss_coil.stock_entry_data_entry.mount_inline($host, handlers);

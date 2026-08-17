@@ -1,7 +1,7 @@
 """Generic data-entry forms for the SS Coil Flow page."""
 
 import frappe
-from frappe.utils import cint, getdate
+from frappe.utils import cint, get_datetime, getdate, now_datetime
 
 from ss_coil.stock_entry_data_entry import (
 	CHILD_FIELD_COLUMNS,
@@ -354,6 +354,8 @@ def _extract_flow_form_document(doc, config):
 		)
 	if doc.doctype == "Sales Order":
 		_fill_so_item_packing_from_production(doc, data)
+	if doc.doctype == "SS Coil":
+		data.update(_ss_coil_control_payload(doc))
 	return data
 
 
@@ -717,6 +719,60 @@ SS_COIL_FLOW_STATUSES = (
 )
 
 
+def _datetime_str(value):
+	if not value:
+		return ""
+	return get_datetime(value).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _format_elapsed(started_on, completed_on=None):
+	if not started_on:
+		return ""
+	start = get_datetime(started_on)
+	end = get_datetime(completed_on or now_datetime())
+	seconds = max(int((end - start).total_seconds()), 0)
+	days, rem = divmod(seconds, 86400)
+	hours, rem = divmod(rem, 3600)
+	minutes, secs = divmod(rem, 60)
+	return f"{days}d {hours:02d}h {minutes:02d}m {secs:02d}s"
+
+
+def _ss_coil_control_payload(doc):
+	completed_on = doc.get("completed_on")
+	started_on = doc.get("started_on")
+	order_status = doc.get("order_status") or "Not Started"
+	if order_status in ("In Process", "Partially Completed") and not started_on and doc.get("name"):
+		started_on = now_datetime()
+		frappe.db.set_value("SS Coil", doc.name, "started_on", started_on, update_modified=False)
+		doc.started_on = started_on
+	return {
+		"process_control_enabled": cint(doc.get("process_control_enabled")),
+		"started_on": _datetime_str(started_on),
+		"completed_on": _datetime_str(completed_on),
+		"elapsed_time": _format_elapsed(started_on, completed_on) if started_on else (doc.get("elapsed_time") or ""),
+		"order_status": order_status,
+		"operation": doc.get("operation") or "",
+	}
+
+
+def _require_ss_coil_process_control(doc, action_label):
+	if cint(doc.get("process_control_enabled")):
+		return
+	frappe.throw(f"Turn ON Process Control before using {action_label}.")
+
+
+@frappe.whitelist()
+def set_ss_coil_process_control(name, enabled):
+	if not name:
+		frappe.throw("SS Coil name is required")
+	doc = frappe.get_doc("SS Coil", name)
+	doc.process_control_enabled = 1 if cint(enabled) else 0
+	doc.save()
+	payload = _ss_coil_control_payload(doc)
+	payload["name"] = doc.name
+	return payload
+
+
 @frappe.whitelist()
 def set_ss_coil_order_status(name, order_status):
 	if not name:
@@ -725,18 +781,29 @@ def set_ss_coil_order_status(name, order_status):
 		frappe.throw(f"Invalid order status: {order_status}")
 
 	doc = frappe.get_doc("SS Coil", name)
-	now = frappe.utils.now_datetime()
-	if order_status in ("In Process", "Partially Completed", "Completed") and not doc.started_on:
-		doc.started_on = now
+	_require_ss_coil_process_control(doc, order_status)
+	now = now_datetime()
+	started_on = doc.get("started_on")
+	if order_status in ("In Process", "Partially Completed", "Completed") and not started_on:
+		started_on = now
+	completed_on = doc.get("completed_on")
 	if order_status == "Completed":
-		doc.completed_on = now
-	elif order_status in ("Not Started", "In Process", "Partially Completed"):
-		doc.completed_on = None
-	doc.order_status = order_status
-	doc.save()
-	return {
-		"name": doc.name,
-		"order_status": doc.order_status,
-		"started_on": doc.started_on,
-		"completed_on": doc.completed_on,
-	}
+		completed_on = now
+	elif order_status in ("Not Started", "In Process", "Partially Completed", "Stopped"):
+		completed_on = None
+	frappe.db.set_value(
+		"SS Coil",
+		name,
+		{
+			"order_status": order_status,
+			"started_on": started_on,
+			"completed_on": completed_on,
+			"elapsed_time": _format_elapsed(started_on, completed_on or now),
+			"process_control_enabled": 0,
+		},
+		update_modified=True,
+	)
+	doc = frappe.get_doc("SS Coil", name)
+	payload = _ss_coil_control_payload(doc)
+	payload["name"] = doc.name
+	return payload

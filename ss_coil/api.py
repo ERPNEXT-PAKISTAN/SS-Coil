@@ -2870,6 +2870,9 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 		raw_material = so_item_doc.get("custom_raw_material_item")
 		if raw_material not in (None, ""):
 			so_row.set("mother_coil", raw_material)
+		tag_no = _so_item_output_tag_no(so_item_doc.as_dict() if hasattr(so_item_doc, "as_dict") else so_item_doc)
+		if tag_no and not so_row.get("tag_no"):
+			so_row.set("tag_no", tag_no)
 		for proc in PROCESS_FIELDS:
 			value = so_item_doc.get(f"custom_{proc}")
 			if _truthy_process_value(value) and not _truthy_process_value(so_row.get(proc)):
@@ -4551,11 +4554,13 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 		so_item.as_dict() if so_item else {}, cutting_rows, process_key
 	)
 
+	started_on = getattr(doc, "started_on", None)
+	completed_on = getattr(doc, "completed_on", None)
 	status_flow = {
 		"operation": doc.operation,
 		"order_status": doc.order_status,
-		"started_on": getattr(doc, "started_on", None),
-		"completed_on": getattr(doc, "completed_on", None),
+		"started_on": str(started_on).split(".")[0] if started_on else None,
+		"completed_on": str(completed_on).split(".")[0] if completed_on else None,
 		"elapsed_time": getattr(doc, "elapsed_time", None),
 		"current_process": _label_for_process(doc.operation),
 		"next_process": _first_unique([row.get("next_process") for row in output_rows]) or "",
@@ -5104,15 +5109,58 @@ def _child_table_fieldnames(doctype):
 
 
 def _so_item_output_tag_no(so_item):
-	"""Child/output tag for Coil SO — never the mother-coil raw-material tag."""
-	child = (so_item.get("custom_child_tag_no") or "").strip()
-	if child:
-		return child
-	tag = (so_item.get("custom_tag_no") or "").strip()
-	raw_tag = (so_item.get("custom_raw_material_tag_no") or "").strip()
-	if tag and tag != raw_tag:
-		return tag
+	"""Tag No on Coil SO (so_item) from the Sales Order Item.
+
+	Prefer child/output tag, then the SO item tag, then the mother-coil tag
+	so the grid is never left blank when the line has a tag.
+	"""
+	for key in (
+		"custom_child_tag_no",
+		"custom_tag_no",
+		"custom_raw_material_tag_no",
+		"tag_no",
+	):
+		value = (so_item.get(key) or "").strip()
+		if value:
+			return value
 	return ""
+
+
+def _assert_ss_coil_or_sales_order_read():
+	if frappe.has_permission("SS Coil", "read") or frappe.has_permission("Sales Order", "read"):
+		return
+	frappe.throw(_("No permission for {0}").format(_("SS Coil")), frappe.PermissionError)
+
+
+def _get_sales_order_item_dict(sales_order_item):
+	"""Load a Sales Order Item row without child-doctype read permission."""
+	if not sales_order_item:
+		return None
+	rows = frappe.db.sql(
+		"select * from `tabSales Order Item` where name=%s",
+		sales_order_item,
+		as_dict=True,
+	)
+	return rows[0] if rows else None
+
+
+@frappe.whitelist()
+def get_sales_order_item_tag_no(sales_order_item):
+	"""Read SO Item tag fields without requiring Sales Order Item read permission."""
+	_assert_ss_coil_or_sales_order_read()
+	row = _get_sales_order_item_dict(sales_order_item)
+	return _so_item_output_tag_no(row or {})
+
+
+@frappe.whitelist()
+def get_sales_order_item_for_ss_coil(sales_order_item):
+	"""Return the Sales Order Item dict for SS Coil mapping.
+
+	Child DocType Sales Order Item has no standalone read permission, so
+	frappe.client.get / get_value fail for shop-floor users.
+	"""
+	_assert_ss_coil_or_sales_order_read()
+	return _get_sales_order_item_dict(sales_order_item)
 
 
 def _coil_so_row_from_sales_order_item(so_item, order_no, operation=None):

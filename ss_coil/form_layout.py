@@ -137,8 +137,9 @@ def _ensure_stock_entry_detail_field_order():
 		frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
 
 
-SS_COIL_JOB_SHEET_FIELD_SEQUENCE = (
-	"job_sheet_tab",
+# Machine / cutting / signature fields belong on the Details tab.
+# They used to be dumped onto the Job Sheet tab, which squeezed the HTML report into a column.
+SS_COIL_JOB_SHEET_INTRUDER_FIELDS = (
 	"section_break_xqer",
 	"machine",
 	"column_break_kqkz",
@@ -181,12 +182,17 @@ SS_COIL_JOB_SHEET_FIELD_SEQUENCE = (
 	"produciton",
 	"column_break_ueot",
 	"encoded_by",
+)
+
+SS_COIL_JOB_SHEET_FIELD_SEQUENCE = (
+	"job_sheet_tab",
+	"section_break_job_sheet_html",
 	"job_sheet_report",
 )
 
 
 def ensure_ss_coil_job_sheet_field_order():
-	"""Keep Job Sheet tab fields grouped on the Job Sheet tab (before HTML report)."""
+	"""Job Sheet tab holds only a full-width HTML report."""
 	ps_name = "SS Coil-main-field_order"
 	if not frappe.db.exists("Property Setter", ps_name):
 		return
@@ -194,25 +200,31 @@ def ensure_ss_coil_job_sheet_field_order():
 	meta = frappe.get_meta("SS Coil")
 	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
 
+	intruders = [fn for fn in SS_COIL_JOB_SHEET_INTRUDER_FIELDS if meta.get_field(fn)]
+	for fieldname in intruders:
+		while fieldname in order:
+			order.remove(fieldname)
+
+	restore_at = len(order)
+	if "dashboard_tab" in order:
+		restore_at = order.index("dashboard_tab")
+	elif "cutting_scheme" in order:
+		restore_at = order.index("cutting_scheme") + 1
+	for idx, fieldname in enumerate(intruders):
+		order.insert(restore_at + idx, fieldname)
+
 	for fieldname in SS_COIL_JOB_SHEET_FIELD_SEQUENCE:
 		while fieldname in order:
 			order.remove(fieldname)
 
 	tail = [fn for fn in SS_COIL_JOB_SHEET_FIELD_SEQUENCE if meta.get_field(fn)]
-	if not tail:
-		return
-
-	# Job Sheet tab block sits after Daigrams, before Formula tab if present.
-	insert_at = len(order)
-	for anchor in ("formula_tab", "formulas"):
-		if anchor in order:
-			insert_at = min(insert_at, order.index(anchor))
-	for anchor in ("daigrams_view", "daigrams_tab", "order_status_report", "dashboard_tab"):
-		if anchor in order:
-			insert_at = max(insert_at, order.index(anchor) + 1)
-
-	for idx, fieldname in enumerate(tail):
-		order.insert(insert_at + idx, fieldname)
+	if tail:
+		insert_at = len(order)
+		for anchor in ("formula_tab", "formulas"):
+			if anchor in order:
+				insert_at = min(insert_at, order.index(anchor))
+		for idx, fieldname in enumerate(tail):
+			order.insert(insert_at + idx, fieldname)
 
 	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
 

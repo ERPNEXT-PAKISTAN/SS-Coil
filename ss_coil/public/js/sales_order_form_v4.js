@@ -86,6 +86,17 @@ function render_sales_order_job_sheet_report(frm) {
 		return;
 	}
 	frappe.require("/assets/ss_coil/css/job_sheet_report.css");
+	if (ss_coil.job_sheet && ss_coil.job_sheet.expand_html_field) {
+		ss_coil.job_sheet.expand_html_field(field);
+	} else {
+		field.$wrapper.css({ width: "100%", maxWidth: "100%", flex: "0 0 100%" });
+		field.$wrapper.closest(".form-column").addClass("ss-coil-job-sheet-full-col").css({
+			width: "100%",
+			maxWidth: "100%",
+			flex: "0 0 100%",
+		});
+		field.$wrapper.closest(".form-section").addClass("ss-coil-job-sheet-full-section");
+	}
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
 		field.$wrapper.html(so_job_sheet_placeholder(__("Save the Sales Order to load the job sheet.")));
 		return;
@@ -339,9 +350,12 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 			}
 
 			const optionKeys = options.map((row, idx) => {
-				row._option_key =
-					row.coil_production_line || row.sales_order_item || `row-${idx}`;
-				return row._option_key;
+				row._option_key = row.coil_production_line || row.sales_order_item || `row-${idx}`;
+				const code = row.item_code || __("Item");
+				const name = row.item_name && row.item_name !== code ? ` — ${row.item_name}` : "";
+				const tag = row.tag_no ? ` · ${row.tag_no}` : "";
+				row._label = `${idx + 1}. ${code}${name}${tag}`;
+				return row._label;
 			});
 
 			const fields = [
@@ -377,7 +391,7 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 				primary_action(values) {
 					dialog.hide();
 					const row =
-						options.find((entry) => entry._option_key === values.production_row) ||
+						options.find((entry) => entry._label === values.production_row) ||
 						options[0];
 					open_ss_coil_from_sales_order(
 						frm.doc.name,
@@ -394,8 +408,8 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 			const existingField = dialog.fields_dict.existing_html;
 
 			function renderExisting(optionKey) {
-				const row = options.find((entry) => entry._option_key === optionKey) || options[0];
-				const processes = row.processes || ["Slitter"];
+				const row = options.find((entry) => entry._label === optionKey) || options[0];
+				const processes = row.processes || row.operations || ["Slitter"];
 				detailsField.$wrapper.html(
 					`<div style="font-size:12px;color:#334155;line-height:1.6;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
 						<div><b>${frappe.utils.escape_html(row.item_code || "-")}</b> — ${frappe.utils.escape_html(

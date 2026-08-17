@@ -4,15 +4,15 @@ const FLOW_CHILD_GROUPS = [
 	{ label: "Item", fields: ["item_code", "custom_finish_good_item", "custom_raw_material_item", "qty", "rate", "received_qty"] },
 	{
 		label: "Identification",
-		fields: ["custom_tag_no", "custom_raw_material_tag_no", "tag_no", "custom_ref_no", "custom_mill", "custom_location", "location"],
+		fields: ["custom_tag_no", "custom_raw_material_tag_no", "tag_no", "class", "custom_ref_no", "custom_mill", "custom_location", "location"],
 	},
 	{
 		label: "Dimensions",
-		fields: ["custom_thickness", "custom_width", "custom_length_c", "custom_length", "custom_dimension", "dimension", "length"],
+		fields: ["custom_thickness", "custom_width", "custom_length_c", "custom_length", "custom_dimension", "dimension", "thickness", "width", "length"],
 	},
 	{
 		label: "Specification",
-		fields: ["custom_commodity", "custom_condition", "custom_specification", "custom_estimated_wt", "custom_qty_of_coil", "estimated_wt", "estimated_qty"],
+		fields: ["custom_commodity", "custom_condition", "custom_specification", "custom_estimated_wt", "custom_qty_of_coil", "estimated_wt", "estimated_qty", "actual_qty", "actual_wt"],
 	},
 	{
 		label: "References",
@@ -20,7 +20,7 @@ const FLOW_CHILD_GROUPS = [
 	},
 	{
 		label: "Processing",
-		fields: ["slitter", "leveler", "reshearing", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments"],
+		fields: ["slitter", "leveler", "reshearing", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments", "current_process", "next_process"],
 	},
 	{
 		label: "Packing",
@@ -35,26 +35,17 @@ const FLOW_CHILD_GROUPS = [
 			"no_of_pack",
 			"packing_remarks",
 			"packing_comments",
+			"packing",
 		],
 	},
 ];
 
-function flow_form_shell_html(title) {
-	return `<div class="ss-coil-de-shell">
-		<div class="ss-coil-de-parent-block">
-			<div class="ss-coil-de-block-title">
-				<span class="ss-coil-de-block-title-text">
-					<span class="ss-coil-de-block-icon">${frappe.utils.icon("file", "sm")}</span>
-					<span>${frappe.utils.escape_html(title || __("Document Details"))}</span>
-				</span>
-			</div>
-			<div class="ss-coil-de-parent-fields"></div>
-		</div>
-		<div class="ss-coil-de-items-block">
+function flow_table_block_html(table_key, title) {
+	return `<div class="ss-coil-de-items-block" data-table="${frappe.utils.escape_html(table_key)}">
 			<div class="ss-coil-de-block-title">
 				<span class="ss-coil-de-block-title-text">
 					<span class="ss-coil-de-block-icon">${frappe.utils.icon("stock", "sm")}</span>
-					<span>${__("Item Rows")}</span>
+					<span>${frappe.utils.escape_html(title || __("Item Rows"))}</span>
 					<span class="ss-coil-de-row-count badge">0</span>
 				</span>
 				<button type="button" class="btn btn-sm btn-primary ss-coil-de-add-row">
@@ -67,7 +58,42 @@ function flow_form_shell_html(title) {
 					<tbody></tbody>
 				</table>
 			</div>
+		</div>`;
+}
+
+function flow_jobs_html() {
+	return `<div class="ss-coil-flow-jobs" hidden>
+			<div class="ss-coil-de-block-title">
+				<span class="ss-coil-de-block-title-text">
+					<span class="ss-coil-de-block-icon">${frappe.utils.icon("list", "sm")}</span>
+					<span>${__("Jobs & Operations")}</span>
+				</span>
+				<div class="ss-coil-flow-status-actions"></div>
+			</div>
+			<div class="ss-coil-flow-jobs-list"></div>
+		</div>`;
+}
+
+function flow_form_shell_html(meta) {
+	const child_table = (meta && meta.child_table) || "items";
+	const child_title = (meta && meta.child_title) || __("Item Rows");
+	const extra = ((meta && meta.extra_tables) || [])
+		.map((spec) => flow_table_block_html(spec.child_table, spec.child_title || spec.child_table))
+		.join("");
+	const jobs = meta && meta.doctype === "SS Coil" ? flow_jobs_html() : "";
+	return `<div class="ss-coil-de-shell">
+		<div class="ss-coil-de-parent-block">
+			<div class="ss-coil-de-block-title">
+				<span class="ss-coil-de-block-title-text">
+					<span class="ss-coil-de-block-icon">${frappe.utils.icon("file", "sm")}</span>
+					<span>${frappe.utils.escape_html((meta && meta.title) || __("Document Details"))}</span>
+				</span>
+			</div>
+			<div class="ss-coil-de-parent-fields"></div>
 		</div>
+		${jobs}
+		${extra}
+		${flow_table_block_html(child_table, child_title)}
 	</div>`;
 }
 
@@ -152,15 +178,14 @@ function flow_relocate_dropdown(control) {
 }
 
 function flow_update_row_count(state) {
-	if (!state.$root) return;
-	state.$root.find(".ss-coil-de-row-count").text(state.items.length);
+	const $scope = state.$table_block || state.$root;
+	if (!$scope) return;
+	$scope.find(".ss-coil-de-row-count").first().text((state.items || []).length);
 }
 
-function flow_collect_payload(state) {
-	const parent_data = state.parent_fg.get_values();
-	if (!parent_data) return null;
+function flow_collect_table(ctx) {
 	const items = [];
-	for (const row of state.item_rows) {
+	for (const row of ctx.item_rows || []) {
 		Object.keys(row.controls).forEach((fieldname) => {
 			row.item[fieldname] = row.controls[fieldname].get_value();
 		});
@@ -170,7 +195,17 @@ function flow_collect_payload(state) {
 		}
 		items.push(item_payload);
 	}
-	return { ...parent_data, [state.meta.child_table || "items"]: items };
+	return items;
+}
+
+function flow_collect_payload(state) {
+	const parent_data = state.parent_fg.get_values();
+	if (!parent_data) return null;
+	const payload = { ...parent_data, [state.meta.child_table || "items"]: flow_collect_table(state) };
+	Object.entries(state.extra_ctx || {}).forEach(([table, ctx]) => {
+		payload[table] = flow_collect_table(ctx);
+	});
+	return payload;
 }
 
 function flow_render_table_head(state, $thead) {
@@ -246,8 +281,13 @@ function flow_append_item_row(state, $tbody, item, idx) {
 	$(`<button type="button" class="btn-reset ss-coil-de-remove-row" title="${__("Remove Row")}">${frappe.utils.icon("close", "xs")}</button>`)
 		.appendTo($remove_td)
 		.on("click", () => {
-			if (state.items.length <= 1) {
-				frappe.msgprint(__("At least one item row is required."));
+			const min_rows = state.min_rows == null ? 1 : state.min_rows;
+			if (state.items.length <= min_rows) {
+				frappe.msgprint(
+					min_rows
+						? __("At least one item row is required.")
+						: __("No rows left to remove.")
+				);
 				return;
 			}
 			state.items = state.items.filter((row) => row.name !== item.name);
@@ -264,7 +304,7 @@ function flow_append_item_row(state, $tbody, item, idx) {
 function flow_render_item_rows(state, $tbody) {
 	$tbody.empty();
 	state.item_rows = [];
-	if (!state.items.length) {
+	if (!state.items.length && (state.min_rows == null ? 1 : state.min_rows) > 0) {
 		state.items.push(flow_make_item_row());
 	}
 	state.items.forEach((item, idx) => flow_append_item_row(state, $tbody, item, idx));
@@ -421,14 +461,20 @@ function flow_apply_document_items(state, data) {
 				name: row.name || frappe.utils.get_random(10),
 				__islocal: parent_local || ss_coil.flow_forms.is_local_name(row.name) ? 1 : 0,
 		  }))
-		: [flow_make_item_row()];
-	flow_render_item_rows(state, state.$root.find(".ss-coil-de-table tbody"));
+		: state.min_rows
+			? [flow_make_item_row()]
+			: [];
+	flow_render_item_rows(state, (state.$table_block || state.$root).find(".ss-coil-de-table tbody"));
 	flow_update_row_count(state);
 }
 
 function flow_setup_ui(state, $root, options = {}) {
 	state.$root = $root;
-	$root.html(flow_form_shell_html(state.meta.title));
+	$root.html(flow_form_shell_html(state.meta));
+	state.min_rows = state.doctype === "SS Coil" ? 0 : 1;
+	state.$table_block = $root.find(
+		`.ss-coil-de-items-block[data-table="${flow_child_table_name(state.meta)}"]`
+	);
 	state.parent_fg = new frappe.ui.FieldGroup({
 		fields: flow_build_parent_fields(state.meta),
 		body: null,
@@ -454,7 +500,7 @@ function flow_setup_ui(state, $root, options = {}) {
 	Object.values(state.parent_fg.fields_dict || {}).forEach(flow_relocate_dropdown);
 
 	state.child_columns = flow_build_child_columns(state.meta.child_fields || []);
-	const $table = $root.find(".ss-coil-de-table");
+	const $table = state.$table_block.find(".ss-coil-de-table");
 	flow_render_table_head(state, $table.find("thead"));
 	if (options.document) {
 		flow_apply_document_items(state, options.document);
@@ -463,11 +509,192 @@ function flow_setup_ui(state, $root, options = {}) {
 		flow_update_row_count(state);
 	}
 
-	$root.find(".ss-coil-de-add-row").on("click", () => {
+	state.$table_block.find(".ss-coil-de-add-row").on("click", () => {
 		const item = flow_make_item_row();
 		state.items.push(item);
 		flow_append_item_row(state, $table.find("tbody"), item, state.items.length - 1);
 		flow_update_row_count(state);
+	});
+
+	flow_setup_extra_tables(state, $root, options.document);
+	if (state.doctype === "SS Coil") {
+		flow_bind_ss_coil_jobs(state, options.document);
+	}
+}
+
+function flow_map_table_rows(rows, parent_local) {
+	return (rows || []).map((row) => ({
+		...row,
+		name: row.name || frappe.utils.get_random(10),
+		__islocal: parent_local || ss_coil.flow_forms.is_local_name(row.name) ? 1 : 0,
+	}));
+}
+
+function flow_setup_extra_tables(state, $root, document) {
+	state.extra_ctx = {};
+	(state.meta.extra_tables || []).forEach((spec) => {
+		const $block = $root.find(`.ss-coil-de-items-block[data-table="${spec.child_table}"]`);
+		if (!$block.length) return;
+		const ctx = {
+			doctype: state.doctype,
+			meta: state.meta,
+			items: [],
+			item_rows: [],
+			min_rows: 0,
+			child_columns: flow_build_child_columns(spec.child_fields || []),
+			$table_block: $block,
+			$root: $block,
+		};
+		flow_render_table_head(ctx, $block.find("thead"));
+		const parent_local = document ? ss_coil.flow_forms.is_local_doc(document) : true;
+		ctx.items = flow_map_table_rows(document && document[spec.child_table], parent_local);
+		flow_render_item_rows(ctx, $block.find("tbody"));
+		flow_update_row_count(ctx);
+		$block.find(".ss-coil-de-add-row").on("click", () => {
+			const item = flow_make_item_row();
+			ctx.items.push(item);
+			flow_append_item_row(ctx, $block.find("tbody"), item, ctx.items.length - 1);
+			flow_update_row_count(ctx);
+		});
+		state.extra_ctx[spec.child_table] = ctx;
+	});
+}
+
+const SS_COIL_FLOW_STATUSES = [
+	"Not Started",
+	"In Process",
+	"Partially Completed",
+	"Stopped",
+	"Completed",
+	"Closed",
+];
+
+function flow_bind_ss_coil_jobs(state, document) {
+	const $jobs = state.$root.find(".ss-coil-flow-jobs");
+	if (!$jobs.length) return;
+
+	const order_no =
+		(state.parent_fg && state.parent_fg.get_value("order_no")) ||
+		(document && document.order_no) ||
+		"";
+	const current_name = state.saved_name || (document && document.name) || "";
+	const current_status =
+		(state.parent_fg && state.parent_fg.get_value("order_status")) ||
+		(document && document.order_status) ||
+		"Not Started";
+
+	const $actions = $jobs.find(".ss-coil-flow-status-actions").empty();
+	SS_COIL_FLOW_STATUSES.forEach((status) => {
+		const $chip = $(
+			`<button type="button" class="ss-coil-flow-status-chip${
+				status === current_status ? " is-active" : ""
+			}">${__(status)}</button>`
+		);
+		$chip.on("click", () => flow_set_ss_coil_status(state, status));
+		$actions.append($chip);
+	});
+	const $next = $(
+		`<button type="button" class="btn btn-xs ss-coil-flow-next-process">${__("Create Next Process")}</button>`
+	);
+	$next.on("click", () => flow_create_next_ss_coil(state));
+	$actions.append($next);
+
+	if (!order_no) {
+		$jobs.find(".ss-coil-flow-jobs-list").html(
+			`<div class="ss-coil-flow-job-chip-meta">${__("Save this job, then related operations for the Sales Order will appear here.")}</div>`
+		);
+		$jobs.show();
+		return;
+	}
+
+	frappe.call({
+		method: "ss_coil.flow_forms.get_ss_coils_for_order",
+		args: { order_no },
+		callback(r) {
+			const jobs = r.message || [];
+			const $list = $jobs.find(".ss-coil-flow-jobs-list").empty();
+			if (!jobs.length) {
+				$list.html(
+					`<div class="ss-coil-flow-job-chip-meta">${__("No SS Coil jobs found for this Sales Order.")}</div>`
+				);
+			} else {
+				jobs.forEach((job) => {
+					const active = job.name === current_name ? " is-active" : "";
+					const $chip = $(
+						`<button type="button" class="ss-coil-flow-job-chip${active}">
+							<span class="ss-coil-flow-job-chip-name">${frappe.utils.escape_html(job.name)}</span>
+							<span class="ss-coil-flow-job-chip-meta">${frappe.utils.escape_html(
+								job.operation || "-"
+							)} · ${frappe.utils.escape_html(job.order_status || "-")}</span>
+						</button>`
+					);
+					$chip.on("click", () => {
+						if (job.name === current_name || !state.$host) return;
+						ss_coil.flow_forms.load(state.$host, "SS Coil", job.name, state.handlers || {});
+					});
+					$list.append($chip);
+				});
+			}
+			$jobs.show();
+		},
+	});
+}
+
+function flow_set_ss_coil_status(state, order_status) {
+	if (!state.saved_name) {
+		frappe.msgprint(__("Save the SS Coil first, then change status."));
+		return;
+	}
+	frappe.call({
+		method: "ss_coil.flow_forms.set_ss_coil_order_status",
+		args: { name: state.saved_name, order_status },
+		freeze: true,
+		freeze_message: __("Updating status..."),
+		callback(r) {
+			if (!r.message) return;
+			flow_set_parent_values(state.parent_fg, { order_status: r.message.order_status });
+			frappe.show_alert({
+				message: __("Status set to {0}", [r.message.order_status]),
+				indicator: "green",
+			});
+			flow_bind_ss_coil_jobs(state, { name: state.saved_name, order_no: state.parent_fg.get_value("order_no"), order_status: r.message.order_status });
+		},
+	});
+}
+
+function flow_create_next_ss_coil(state) {
+	if (!state.saved_name) {
+		frappe.msgprint(__("Save the SS Coil first, then create the next process."));
+		return;
+	}
+	frappe.call({
+		method: "ss_coil.api.create_next_ss_coil_entry",
+		args: { source_name: state.saved_name },
+		freeze: true,
+		freeze_message: __("Creating next process entries..."),
+		callback(r) {
+			const message = r.message || {};
+			const created = message.created_docs || [];
+			if (created.length) {
+				frappe.show_alert({
+					message: __("{0} next process entries created", [created.length]),
+					indicator: "green",
+				});
+				if (state.$host) {
+					ss_coil.flow_forms.load(state.$host, "SS Coil", created[0].name, state.handlers || {});
+				}
+				return;
+			}
+			if (message.no_next_process) {
+				frappe.msgprint(__("Set Next Process on Job Output rows first, then create the next job."));
+				return;
+			}
+			if ((message.skipped_docs || []).length) {
+				frappe.msgprint(__("Next process entries already exist for all output tags."));
+				return;
+			}
+			frappe.msgprint(__("No next process to create from this job's output."));
+		},
 	});
 }
 
@@ -586,6 +813,8 @@ ss_coil.flow_forms.mount = function ($container, doctype, handlers = {}) {
 				item_rows: [],
 				saved_name: loaded ? handlers.document.name : null,
 				initial_values: loaded ? null : flow_build_initial_values(meta),
+				handlers,
+				$host,
 			};
 			$host.html('<div class="ss-coil-de-inline-panel ss-coil-data-entry-dialog"></div>');
 			flow_setup_ui(state, $host.find(".ss-coil-de-inline-panel"), {
@@ -862,6 +1091,14 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 			}
 			options.forEach((row, idx) => {
 				row._option_key = row.coil_production_line || row.sales_order_item || `row-${idx}`;
+				const code = row.item_code || __("Item");
+				const name = row.item_name && row.item_name !== code ? ` — ${row.item_name}` : "";
+				const tag = row.tag_no ? ` · ${row.tag_no}` : "";
+				row._label = `${idx + 1}. ${code}${name}${tag}`;
+				row._processes = row.processes || row.operations || [];
+				if (!row._processes.length) {
+					row._processes = [__("Slitter")];
+				}
 			});
 			const first = options[0];
 			const dialog = new frappe.ui.Dialog({
@@ -872,21 +1109,25 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 						label: __("Coil Production / Item"),
 						fieldtype: "Select",
 						reqd: 1,
-						options: options.map((o) => o._option_key).join("\n"),
-						default: first._option_key,
+						options: options.map((o) => o._label).join("\n"),
+						default: first._label,
+					},
+					{
+						fieldname: "item_details",
+						fieldtype: "HTML",
 					},
 					{
 						fieldname: "operation",
 						label: __("Operation"),
 						fieldtype: "Select",
 						reqd: 1,
-						options: (first.operations || []).join("\n"),
-						default: (first.operations || [])[0],
+						options: first._processes.join("\n"),
+						default: first._processes[0],
 					},
 				],
 				primary_action_label: __("Create"),
 				primary_action(values) {
-					const row = options.find((o) => o._option_key === values.production_row);
+					const row = options.find((o) => o._label === values.production_row) || first;
 					if (!row) return;
 					frappe.call({
 						method: "ss_coil.api.create_ss_coil_from_sales_order",
@@ -906,14 +1147,35 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 					});
 				},
 			});
-			dialog.fields_dict.production_row.df.onchange = () => {
-				const row = options.find((o) => o._option_key === dialog.get_value("production_row"));
-				if (!row) return;
-				dialog.fields_dict.operation.df.options = (row.operations || []).join("\n");
-				dialog.fields_dict.operation.set_value((row.operations || [])[0] || "");
-				dialog.fields_dict.operation.refresh();
-			};
+
+			function apply_row(label) {
+				const row = options.find((o) => o._label === label) || first;
+				const details = dialog.fields_dict.item_details;
+				if (details && details.$wrapper) {
+					details.$wrapper.html(
+						`<div style="font-size:12px;color:#334155;line-height:1.6;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+							<div><b>${frappe.utils.escape_html(row.item_code || "-")}</b>${
+								row.item_name
+									? ` — ${frappe.utils.escape_html(row.item_name)}`
+									: ""
+							}</div>
+							<div>${__("Qty")}: ${frappe.utils.escape_html(String(row.qty ?? "-"))} | ${__(
+								"Dimension"
+							)}: ${frappe.utils.escape_html(row.dimension || "-")} | ${__("Tag")}: ${frappe.utils.escape_html(
+								row.tag_no || "-"
+							)}</div>
+						</div>`
+					);
+				}
+				const op = dialog.fields_dict.operation;
+				op.df.options = row._processes.join("\n");
+				op.refresh();
+				op.set_value(row._processes[0] || "");
+			}
+
+			dialog.fields_dict.production_row.df.onchange = () => apply_row(dialog.get_value("production_row"));
 			dialog.show();
+			apply_row(first._label);
 		},
 	});
 };

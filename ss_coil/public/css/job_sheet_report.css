@@ -32,3 +32,22 @@
 .ss-coil-job-sheet-root .ss-coil-job-sheet-brand-logo-cell {
 	vertical-align: middle !important;
 }
+
+.form-layout .form-column.ss-coil-job-sheet-full-col,
+.form-layout .frappe-control[data-fieldname="job_sheet_report"],
+.form-layout .frappe-control[data-fieldname="custom_job_sheet_report"] {
+	width: 100% !important;
+	max-width: 100% !important;
+	flex: 0 0 100% !important;
+}
+
+.form-layout .form-section.ss-coil-job-sheet-full-section .section-body {
+	display: flex !important;
+	flex-wrap: wrap;
+}
+
+.form-layout .form-section.ss-coil-job-sheet-full-section .form-column {
+	width: 100% !important;
+	max-width: 100% !important;
+	flex: 0 0 100% !important;
+}

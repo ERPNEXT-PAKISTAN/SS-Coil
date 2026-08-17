@@ -5515,12 +5515,19 @@ def get_sales_order_ss_coil_create_options(source_name):
 				{
 					"coil_production_line": row.name,
 					"sales_order_item": so_item_name,
-					"item_code": row.get("finish_good_item"),
-					"item_name": row.get("item_name"),
+					"item_code": row.get("finish_good_item") or row.get("raw_material_item"),
+					"item_name": row.get("item_name")
+					or (
+						frappe.db.get_value("Item", row.get("finish_good_item"), "item_name")
+						if row.get("finish_good_item")
+						else None
+					),
+					"raw_material_item": row.get("raw_material_item"),
 					"qty": flt(row.get("qty")),
 					"dimension": row.get("dimension"),
 					"tag_no": row.get("raw_material_tag_no") or row.get("tag_no"),
 					"processes": processes,
+					"operations": processes,
 					"existing_ss_coils": existing,
 				}
 			)
@@ -5545,10 +5552,12 @@ def get_sales_order_ss_coil_create_options(source_name):
 				"sales_order_item": row.name,
 				"item_code": row.item_code,
 				"item_name": row.item_name,
+				"raw_material_item": row.get("custom_raw_material_item"),
 				"qty": flt(row.qty),
 				"dimension": row.get("custom_dimension"),
 				"tag_no": row.get("custom_raw_material_tag_no") or row.get("custom_tag_no"),
 				"processes": processes,
+				"operations": processes,
 				"existing_ss_coils": existing,
 			}
 		)

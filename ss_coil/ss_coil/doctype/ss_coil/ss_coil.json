@@ -87,6 +87,7 @@
   "daigrams_tab",
   "daigrams_view",
   "job_sheet_tab",
+  "section_break_job_sheet_html",
   "job_sheet_report",
   "formula_tab",
   "formulas",
@@ -495,6 +496,11 @@
    "label": "Job Sheet"
   },
   {
+   "fieldname": "section_break_job_sheet_html",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
+  {
    "fieldname": "job_sheet_report",
    "fieldtype": "HTML",
    "label": "Job Sheet Report"
@@ -532,7 +538,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-29 02:38:58.416362",
+ "modified": "2026-08-18 01:20:00.000000",
  "modified_by": "techcraft986@gmail.com",
  "module": "SS Coil",
  "name": "SS Coil",

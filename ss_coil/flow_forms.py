@@ -67,6 +67,7 @@ FLOW_FORM_CONFIGS = {
 		"child_fields": [
 			"item_code",
 			"qty",
+			"rate",
 			"custom_finish_good_item",
 			"custom_raw_material_item",
 			"custom_tag_no",
@@ -101,6 +102,7 @@ FLOW_FORM_CONFIGS = {
 	},
 	"SS Coil": {
 		"title": "SS Coil Job Details",
+		"child_title": "Job Output",
 		"parent_fields": [
 			"order_no",
 			"sales_order_item",
@@ -112,18 +114,39 @@ FLOW_FORM_CONFIGS = {
 			"order_status",
 			"sc_date",
 		],
-		"child_table": "input_coil",
-		"child_doctype": "Coil Input",
+		"child_table": "job_output",
+		"child_doctype": "Coil Output",
 		"child_fields": [
+			"class",
 			"tag_no",
-			"dimension",
-			"length",
-			"estimated_wt",
 			"estimated_qty",
-			"location",
-			"slitter",
-			"leveler",
-			"reshearing",
+			"actual_qty",
+			"estimated_wt",
+			"actual_wt",
+			"thickness",
+			"width",
+			"length",
+			"packing",
+			"current_process",
+			"next_process",
+		],
+		"extra_tables": [
+			{
+				"child_table": "input_coil",
+				"child_doctype": "Coil Input",
+				"child_title": "Input Coil",
+				"child_fields": [
+					"tag_no",
+					"dimension",
+					"length",
+					"estimated_wt",
+					"estimated_qty",
+					"location",
+					"slitter",
+					"leveler",
+					"reshearing",
+				],
+			}
 		],
 		"defaults": {"order_received_date": "Today", "sc_date": "Today", "order_status": "Not Started"},
 	},
@@ -236,21 +259,71 @@ def get_flow_form_meta(doctype):
 	if not config:
 		frappe.throw(f"Flow form is not configured for {doctype}")
 
-	child_meta = frappe.get_meta(config["child_doctype"])
-	child_fields = [
-		field
-		for fieldname in config["child_fields"]
-		if (field := _meta_field_to_dict(child_meta, fieldname))
-	]
-
 	return {
 		"doctype": doctype,
 		"title": config["title"],
+		"child_title": config.get("child_title") or "Item Rows",
 		"child_table": config["child_table"],
 		"parent_sections": _build_sections(doctype, config["parent_fields"], config["title"]),
-		"child_fields": child_fields,
+		"child_fields": _child_field_dicts(config["child_doctype"], config["child_fields"]),
+		"extra_tables": _extra_table_meta(config),
 		"defaults": _apply_defaults({}, config.get("defaults") or {}, doctype, config["parent_fields"]),
 	}
+
+
+def _child_field_dicts(doctype, fieldnames):
+	child_meta = frappe.get_meta(doctype)
+	return [field for fieldname in fieldnames if (field := _meta_field_to_dict(child_meta, fieldname))]
+
+
+def _extra_table_meta(config):
+	extra = []
+	for spec in config.get("extra_tables") or []:
+		extra.append(
+			{
+				"child_table": spec["child_table"],
+				"child_doctype": spec["child_doctype"],
+				"child_title": spec.get("child_title") or spec["child_table"],
+				"child_fields": _child_field_dicts(spec["child_doctype"], spec["child_fields"]),
+			}
+		)
+	return extra
+
+
+def _serialize_child_rows(doc, child_table, child_doctype, child_fields):
+	child_meta = frappe.get_meta(child_doctype)
+	rows = []
+	for row in doc.get(child_table) or []:
+		item = {"name": row.name}
+		for fieldname in child_fields:
+			item[fieldname] = _serialize_flow_field_value(child_meta, fieldname, row.get(fieldname))
+		rows.append(item)
+	return rows
+
+
+def _write_child_rows(doc, child_table, child_fields, incoming):
+	for row_data in incoming or []:
+		row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
+		if not row_data:
+			continue
+		row_name = row_data.get("name")
+		values = {k: row_data.get(k) for k in child_fields if k in row_data}
+		if not row_name and not any(value not in (None, "") for value in values.values()):
+			continue
+		if row_name and doc.get(child_table):
+			row = next((item for item in doc.get(child_table) if item.name == row_name), None)
+			if not row:
+				continue
+			for fieldname, value in values.items():
+				row.set(fieldname, value)
+		else:
+			doc.append(child_table, values)
+
+
+def _iter_table_specs(config):
+	yield config["child_table"], config["child_fields"]
+	for spec in config.get("extra_tables") or []:
+		yield spec["child_table"], spec["child_fields"]
 
 
 def _serialize_flow_field_value(meta, fieldname, value):
@@ -266,22 +339,19 @@ def _serialize_flow_field_value(meta, fieldname, value):
 
 def _extract_flow_form_document(doc, config):
 	parent_fields = config["parent_fields"]
-	child_fields = config["child_fields"]
-	child_table = config["child_table"]
 	parent_meta = frappe.get_meta(doc.doctype)
-	child_meta = frappe.get_meta(config["child_doctype"])
 
 	data = {"name": doc.name, "doctype": doc.doctype, "docstatus": cint(doc.docstatus)}
 	for fieldname in parent_fields:
 		data[fieldname] = _serialize_flow_field_value(parent_meta, fieldname, doc.get(fieldname))
 
-	rows = []
-	for row in doc.get(child_table) or []:
-		item = {"name": row.name}
-		for fieldname in child_fields:
-			item[fieldname] = _serialize_flow_field_value(child_meta, fieldname, row.get(fieldname))
-		rows.append(item)
-	data[child_table] = rows
+	data[config["child_table"]] = _serialize_child_rows(
+		doc, config["child_table"], config["child_doctype"], config["child_fields"]
+	)
+	for spec in config.get("extra_tables") or []:
+		data[spec["child_table"]] = _serialize_child_rows(
+			doc, spec["child_table"], spec["child_doctype"], spec["child_fields"]
+		)
 	if doc.doctype == "Sales Order":
 		_fill_so_item_packing_from_production(doc, data)
 	return data
@@ -403,29 +473,39 @@ def _backfill_sales_order_from_stock_entry(doc):
 
 def _write_flow_form_doc(doc, config, data):
 	parent_fields = config["parent_fields"]
-	child_fields = config["child_fields"]
-	child_table = config["child_table"]
 
 	for fieldname in parent_fields:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 
-	for row_data in data.get(child_table) or data.get("items") or []:
-		row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
-		row_name = row_data.get("name")
-		if row_name and doc.get(child_table):
-			row = next((item for item in doc.get(child_table) if item.name == row_name), None)
-			if not row:
-				continue
-			for fieldname in child_fields:
-				if fieldname in row_data:
-					row.set(fieldname, row_data.get(fieldname))
-		else:
-			doc.append(child_table, {k: row_data.get(k) for k in child_fields if k in row_data})
+	_write_child_rows(
+		doc,
+		config["child_table"],
+		config["child_fields"],
+		data.get(config["child_table"]) or data.get("items") or [],
+	)
+	for spec in config.get("extra_tables") or []:
+		_write_child_rows(doc, spec["child_table"], spec["child_fields"], data.get(spec["child_table"]) or [])
 
 	_sync_sales_order_packing_to_production(doc)
+	_fix_sales_order_payment_schedule(doc)
 	doc.save()
 	return doc
+
+
+def _fix_sales_order_payment_schedule(doc):
+	"""Keep Payment Schedule due dates on/after transaction date so flow save can succeed."""
+	if getattr(doc, "doctype", None) != "Sales Order":
+		return
+	if not doc.get("transaction_date"):
+		doc.transaction_date = frappe.utils.today()
+	txn = getdate(doc.transaction_date)
+	if doc.get("delivery_date") and getdate(doc.delivery_date) < txn:
+		doc.delivery_date = txn
+	for row in doc.get("payment_schedule") or []:
+		due = getdate(row.due_date) if row.get("due_date") else None
+		if not due or due < txn:
+			row.due_date = txn
 
 
 @frappe.whitelist()
@@ -518,15 +598,18 @@ def _overlay_flow_values(doc, doctype, data):
 	for fieldname in config["parent_fields"]:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	incoming = data.get(config["child_table"]) or data.get("items") or []
-	rows = doc.get(config["child_table"]) or []
-	for index, row_data in enumerate(incoming):
-		row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
-		if index >= len(rows) or not row_data:
-			continue
-		for fieldname in config["child_fields"]:
-			if fieldname in row_data:
-				rows[index].set(fieldname, row_data.get(fieldname))
+	for child_table, child_fields in _iter_table_specs(config):
+		incoming = data.get(child_table) or (
+			[] if child_table != config["child_table"] else data.get("items") or []
+		)
+		rows = doc.get(child_table) or []
+		for index, row_data in enumerate(incoming):
+			row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
+			if index >= len(rows) or not row_data:
+				continue
+			for fieldname in child_fields:
+				if fieldname in row_data:
+					rows[index].set(fieldname, row_data.get(fieldname))
 
 
 def _prepare_mapped_sales_order(doc):
@@ -609,3 +692,51 @@ def submit_flow_form_document(doctype, name=None, data=None, mapped_doc=None):
 
 		return _stock_entry_data_entry_response(doc)
 	return {"name": doc.name, "doctype": doctype, "docstatus": cint(doc.docstatus)}
+
+
+@frappe.whitelist()
+def get_ss_coils_for_order(order_no):
+	"""Related SS Coil jobs for one Sales Order, used by the flow operations strip."""
+	if not order_no:
+		return []
+	return frappe.get_all(
+		"SS Coil",
+		filters={"order_no": order_no},
+		fields=["name", "operation", "order_status", "machine", "sales_order_item"],
+		order_by="creation asc",
+	)
+
+
+SS_COIL_FLOW_STATUSES = (
+	"Not Started",
+	"In Process",
+	"Partially Completed",
+	"Stopped",
+	"Completed",
+	"Closed",
+)
+
+
+@frappe.whitelist()
+def set_ss_coil_order_status(name, order_status):
+	if not name:
+		frappe.throw("SS Coil name is required")
+	if order_status not in SS_COIL_FLOW_STATUSES:
+		frappe.throw(f"Invalid order status: {order_status}")
+
+	doc = frappe.get_doc("SS Coil", name)
+	now = frappe.utils.now_datetime()
+	if order_status in ("In Process", "Partially Completed", "Completed") and not doc.started_on:
+		doc.started_on = now
+	if order_status == "Completed":
+		doc.completed_on = now
+	elif order_status in ("Not Started", "In Process", "Partially Completed"):
+		doc.completed_on = None
+	doc.order_status = order_status
+	doc.save()
+	return {
+		"name": doc.name,
+		"order_status": doc.order_status,
+		"started_on": doc.started_on,
+		"completed_on": doc.completed_on,
+	}

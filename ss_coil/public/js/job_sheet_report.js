@@ -23,6 +23,19 @@ ss_coil.job_sheet.get_html_field = function (frm) {
 	return null;
 };
 
+ss_coil.job_sheet.expand_html_field = function (field) {
+	if (!field || !field.$wrapper) {
+		return;
+	}
+	field.$wrapper.css({ width: "100%", maxWidth: "100%", flex: "0 0 100%" });
+	field.$wrapper.closest(".form-column").addClass("ss-coil-job-sheet-full-col").css({
+		width: "100%",
+		maxWidth: "100%",
+		flex: "0 0 100%",
+	});
+	field.$wrapper.closest(".form-section").addClass("ss-coil-job-sheet-full-section");
+};
+
 ss_coil.job_sheet.placeholder_html = function (message) {
 	return `<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:13px;background:#f8fafc;">${frappe.utils.escape_html(
 		message || __("No job sheet to display.")
@@ -64,6 +77,7 @@ ss_coil.job_sheet.render_on_ss_coil_form = function (frm) {
 		return;
 	}
 	ss_coil.job_sheet.ensure_styles();
+	ss_coil.job_sheet.expand_html_field(field);
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
 		field.$wrapper.html(
 			ss_coil.job_sheet.placeholder_html(__("Save the SS Coil document to generate the job sheet."))

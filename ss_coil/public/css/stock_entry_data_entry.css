@@ -497,6 +497,12 @@ thead .ss-coil-de-sticky-right {
 	width: 68px;
 }
 
+.ss-coil-de-table td[data-fieldname="qty"],
+.ss-coil-de-table td[data-fieldname="rate"] {
+	min-width: 88px;
+	width: 88px;
+}
+
 .ss-coil-de-table .frappe-control {
 	margin-bottom: 0 !important;
 }
@@ -753,4 +759,102 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 	border-color: #155e75 !important;
 	color: #fff !important;
 	font-weight: 700;
+}
+
+.form-layout .form-column.ss-coil-job-sheet-full-col,
+.form-layout .frappe-control[data-fieldname="job_sheet_report"],
+.form-layout .frappe-control[data-fieldname="custom_job_sheet_report"] {
+	width: 100% !important;
+	max-width: 100% !important;
+	flex: 0 0 100% !important;
+}
+
+.form-layout .form-section.ss-coil-job-sheet-full-section .form-column {
+	width: 100% !important;
+	max-width: 100% !important;
+	flex: 0 0 100% !important;
+}
+
+.ss-coil-flow-jobs {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 8px 10px 10px;
+	margin-bottom: 6px;
+	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.ss-coil-flow-jobs-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.ss-coil-flow-job-chip {
+	display: inline-flex;
+	flex-direction: column;
+	gap: 2px;
+	border: 1px solid #cbd5e1;
+	background: #f8fafc;
+	border-radius: 8px;
+	padding: 6px 10px;
+	cursor: pointer;
+	min-width: 148px;
+	text-align: left;
+}
+
+.ss-coil-flow-job-chip:hover {
+	border-color: #94a3b8;
+	background: #fff;
+}
+
+.ss-coil-flow-job-chip.is-active {
+	border-color: #7c3aed;
+	background: #f5f3ff;
+	box-shadow: 0 0 0 1px #7c3aed;
+}
+
+.ss-coil-flow-job-chip-name {
+	font-weight: 700;
+	font-size: 12px;
+	color: #0f172a;
+}
+
+.ss-coil-flow-job-chip-meta {
+	font-size: 11px;
+	color: #64748b;
+}
+
+.ss-coil-flow-status-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	align-items: center;
+}
+
+.ss-coil-flow-status-chip {
+	border: 1px solid #cbd5e1;
+	background: #fff;
+	border-radius: 999px;
+	padding: 3px 10px;
+	font-size: 11px;
+	font-weight: 600;
+	color: #334155;
+	cursor: pointer;
+}
+
+.ss-coil-flow-status-chip.is-active {
+	background: #0f766e;
+	border-color: #0f766e;
+	color: #fff;
+}
+
+.ss-coil-flow-next-process {
+	background: #0e7490 !important;
+	border-color: #155e75 !important;
+	color: #fff !important;
+	font-weight: 700;
+	font-size: 11px;
+	padding: 3px 10px;
+	border-radius: 999px;
 }

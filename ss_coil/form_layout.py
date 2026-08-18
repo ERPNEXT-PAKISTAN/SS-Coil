@@ -22,6 +22,7 @@ def sync_coil_form_layouts():
 	_sync_stock_entry_job_purpose_field()
 	_ensure_stock_entry_detail_field_order()
 	ensure_ss_coil_job_sheet_field_order()
+	ensure_ss_coil_thickness_field_order()
 	ensure_sales_order_job_sheet_field_order()
 	ensure_item_ss_coil_field_order()
 	frappe.clear_cache(doctype="Stock Entry")
@@ -157,23 +158,6 @@ SS_COIL_JOB_SHEET_INTRUDER_FIELDS = (
 	"special_instructions",
 	"column_break_lnsp",
 	"remarks",
-	"section_break_qasa",
-	"width",
-	"column_break_cwla",
-	"ds",
-	"column_break_afmq",
-	"ctr",
-	"column_break_evbq",
-	"ws",
-	"column_break_slet",
-	"section_break_zbvk",
-	"mill",
-	"column_break_ajyx",
-	"specifications",
-	"column_break_kbpk",
-	"commodity",
-	"column_break_yzap",
-	"works",
 	"section_break_ifey",
 	"planning",
 	"column_break_aovo",
@@ -224,6 +208,53 @@ def ensure_ss_coil_job_sheet_field_order():
 			if anchor in order:
 				insert_at = min(insert_at, order.index(anchor))
 		for idx, fieldname in enumerate(tail):
+			order.insert(insert_at + idx, fieldname)
+
+	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+
+
+SS_COIL_THICKNESS_FIELD_SEQUENCE = (
+	"width",
+	"mill",
+	"column_break_cwla",
+	"ds",
+	"specifications",
+	"column_break_afmq",
+	"ctr",
+	"commodity",
+	"column_break_evbq",
+	"ws",
+	"works",
+)
+
+SS_COIL_THICKNESS_STRAY_FIELDS = (
+	"thickness",
+	"section_break_qasa",
+	"column_break_slet",
+	"section_break_zbvk",
+	"column_break_ajyx",
+	"column_break_kbpk",
+	"column_break_yzap",
+)
+
+
+def ensure_ss_coil_thickness_field_order():
+	"""Keep Width/DS/CTR/WS and Mill/Specifications/Commodity/Works in Thickness."""
+	ps_name = "SS Coil-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+
+	meta = frappe.get_meta("SS Coil")
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	for fieldname in list(SS_COIL_THICKNESS_FIELD_SEQUENCE) + list(SS_COIL_THICKNESS_STRAY_FIELDS):
+		while fieldname in order:
+			order.remove(fieldname)
+
+	if "section_break_lmaa" not in order:
+		return
+	insert_at = order.index("section_break_lmaa") + 1
+	for idx, fieldname in enumerate(SS_COIL_THICKNESS_FIELD_SEQUENCE):
+		if meta.get_field(fieldname):
 			order.insert(insert_at + idx, fieldname)
 
 	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)

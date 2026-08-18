@@ -49,23 +49,16 @@
   "column_break_fuog",
   "column_break_pmky",
   "section_break_lmaa",
-  "thickness",
-  "section_break_qasa",
   "width",
+  "mill",
   "column_break_cwla",
   "ds",
+  "specifications",
   "column_break_afmq",
   "ctr",
+  "commodity",
   "column_break_evbq",
   "ws",
-  "column_break_slet",
-  "section_break_zbvk",
-  "mill",
-  "column_break_ajyx",
-  "specifications",
-  "column_break_kbpk",
-  "commodity",
-  "column_break_yzap",
   "works",
   "mother_coil_detail_section",
   "input_coil",
@@ -285,16 +278,19 @@
   },
   {
    "fieldname": "section_break_lmaa",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Thickness"
   },
   {
    "fieldname": "thickness",
    "fieldtype": "Heading",
+   "hidden": 1,
    "label": "Thickness"
   },
   {
    "fieldname": "section_break_qasa",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "fieldname": "width",
@@ -330,11 +326,13 @@
   },
   {
    "fieldname": "column_break_slet",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "section_break_zbvk",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "fieldname": "mill",
@@ -348,7 +346,8 @@
   },
   {
    "fieldname": "column_break_ajyx",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "specifications",
@@ -362,7 +361,8 @@
   },
   {
    "fieldname": "column_break_kbpk",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "mother_coil_detail_section",
@@ -441,7 +441,8 @@
   },
   {
    "fieldname": "column_break_yzap",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "input_coil",

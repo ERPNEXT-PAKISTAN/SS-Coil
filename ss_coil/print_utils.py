@@ -43,7 +43,7 @@ def pdf_body_html(jenv, template, print_format, args):
 
 	# Bypass Print Designer for formats that rely on injected context / custom Jinja.
 	if print_format and print_format.name in (
-		{SS_COIL_JOB_SHEET_FORMAT, "Sales Invoice Format"} | SALES_CONTRACT_PRINT_FORMATS
+		{SS_COIL_JOB_SHEET_FORMAT, "Sales Invoice Format", "SS Sales Order"} | SALES_CONTRACT_PRINT_FORMATS
 	):
 		return fw_pdf_body_html(template, args)
 

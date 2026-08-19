@@ -1,0 +1,205 @@
+{#- SS Sales Order — copy of ERPNext Sales Order Standard (Sales Order). System default is not modified. -#}
+{%- set company_logo = frappe.db.get_value("Company", doc.company, "company_logo") if doc.company else None -%}
+{%- set logo_src = frappe.utils.get_url(company_logo) if company_logo else "/assets/ss_coil/images/ss-coil-logo.svg" -%}
+<style>
+	@page { size: A4; margin: 12mm; }
+	.ss-so { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; line-height: 1.3; }
+	.ss-so table { width: 100%; border-collapse: collapse; }
+	.ss-so-head { margin-bottom: 10px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+	.ss-so-head td { vertical-align: middle; border: 0; padding: 0; }
+	.ss-so-logo { max-height: 52px; max-width: 90px; object-fit: contain; }
+	.ss-so-company { font-size: 18px; font-weight: 800; letter-spacing: .02em; }
+	.ss-so-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
+	.ss-so .info-table, .ss-so .items-table, .ss-so .tax-table { border: 1px solid #333; margin-bottom: 12px; }
+	.ss-so .info-table td { border: 1px solid #333; padding: 5px 8px; vertical-align: top; }
+	.ss-so .items-table th, .ss-so .items-table td { border: 1px solid #333; padding: 4px 6px; }
+	.ss-so .items-table th { background: #f0f0f0; font-size: 9px; text-transform: uppercase; text-align: center; }
+	.ss-so .text-right { text-align: right; }
+	.ss-so .text-center { text-align: center; }
+	.ss-so .heading { font-weight: 700; }
+	.ss-so .totals-table td { padding: 3px 6px; }
+	.ss-so .grand-total td { font-weight: 700; border-top: 1px solid #333; }
+	.ss-so .words-box { background: #f8f8f8; padding: 6px 8px; font-size: 10px; }
+
+	.ss-so .terms-section { margin-top: 8px; }
+	.ss-so .terms-section .ql-editor { padding: 0 !important; margin: 0 !important; }
+	.ss-so .terms-section h2 { font-size: 12px; margin: 2px 0 !important; padding: 0 !important; }
+	.ss-so .terms-section table,
+	.ss-so .terms-section .table-bordered { border-collapse: collapse !important; border-spacing: 0 !important; margin: 2px 0 !important; }
+	.ss-so .terms-section td, .ss-so .terms-section th,
+	.ss-so .terms-section .table-bordered td, .ss-so .terms-section .table-bordered th {
+		border: 1px solid #333 !important; padding: 0 4px !important; line-height: 1.15 !important;
+		font-size: 11px; height: auto !important;
+	}
+	.ss-so .terms-section tr { height: auto !important; }
+	.ss-so .terms-section p { margin: 0 0 1px !important; line-height: 1.2; }
+	.ss-so .terms-section ol, .ss-so .terms-section ul { margin: 0; padding-left: 18px; }
+	.ss-so .terms-section li { margin: 0; padding: 0; }
+
+	.ss-so-sigs { width: 100%; margin-top: 36px; page-break-inside: avoid; }
+	.ss-so-sigs td { width: 33.33%; border: 0; padding: 0 8px; vertical-align: bottom; }
+	.ss-so-sigs .sig-line { border-top: 1px solid #111; margin: 48px 12px 6px; }
+	.ss-so-sigs .sig-label { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+</style>
+
+<div class="ss-so">
+	<table class="ss-so-head">
+		<tr>
+			<td style="width:80px">
+				<img class="ss-so-logo" src="{{ logo_src }}" alt="{{ doc.company or '' }}">
+			</td>
+			<td>
+				<div class="ss-so-company">{{ doc.company }}</div>
+				<div class="ss-so-title">{{ _("Sales Order") }}</div>
+			</td>
+			<td style="text-align:right; width:38%">
+				<div><span class="heading">{{ _("Sales Order") }}:</span> <b>{{ doc.name }}</b></div>
+				<div><span class="heading">{{ _("Date") }}:</span> {{ frappe.utils.format_date(doc.transaction_date) }}</div>
+			</td>
+		</tr>
+	</table>
+
+	{%- if doc.meta.is_submittable and doc.docstatus==2 -%}
+		<div class="text-center"><h4>{{ _("CANCELLED") }}</h4></div>
+	{%- endif -%}
+	{%- if doc.meta.is_submittable and doc.docstatus==0 and (print_settings==None or print_settings.add_draft_heading) -%}
+		<div class="text-center"><h4>{{ _("DRAFT") }}</h4></div>
+	{%- endif -%}
+
+	<table class="info-table">
+		<tr>
+			<td style="width:50%"><span class="heading">{{ _("Customer Name") }}:</span> {{ doc.customer_name }}</td>
+			<td style="width:50%"><span class="heading">{{ _("Delivery Date") }}:</span> {{ frappe.utils.format_date(doc.delivery_date) }}</td>
+		</tr>
+		<tr>
+			<td><span class="heading">{{ _("Bill From") }}:</span><br>
+				{{ doc.company }}<br>
+				{% if doc.company_address_display %}
+					{{ doc.company_address_display }}
+				{% elif doc.company_address %}
+					{% set company_address = frappe.db.get_value("Address", doc.company_address, ["address_line1", "address_line2", "city", "state", "pincode", "country"], as_dict=True) %}
+					{% if company_address %}
+						{{ company_address.address_line1 or "" }}<br>
+						{% if company_address.address_line2 %}{{ company_address.address_line2 }}<br>{% endif %}
+						{{ company_address.city or "" }} {{ company_address.state or "" }} {{ company_address.pincode or "" }} {{ company_address.country or "" }}
+					{% endif %}
+				{% endif %}
+			</td>
+			<td><span class="heading">{{ _("Bill To") }}:</span><br>
+				{{ doc.customer_name }}<br>
+				{% if doc.address_display %}
+					{{ doc.address_display }}
+				{% elif doc.customer_address %}
+					{% set customer_address = frappe.db.get_value("Address", doc.customer_address, ["address_line1", "address_line2", "city", "state", "pincode", "country"], as_dict=True) %}
+					{% if customer_address %}
+						{{ customer_address.address_line1 or "" }}<br>
+						{% if customer_address.address_line2 %}{{ customer_address.address_line2 }}<br>{% endif %}
+						{{ customer_address.city or "" }} {{ customer_address.state or "" }} {{ customer_address.pincode or "" }} {{ customer_address.country or "" }}
+					{% endif %}
+				{% endif %}
+			</td>
+		</tr>
+	</table>
+
+	{% set item_naming_by = frappe.db.get_single_value("Stock Settings", "item_naming_by") %}
+	<table class="items-table">
+		<thead>
+			<tr>
+				<th style="width:6%">{{ _("No") }}</th>
+				<th>{{ _("Item") }}</th>
+				{% if item_naming_by != "Item Code" %}
+					<th>{{ _("Item Code") }}</th>
+				{% endif %}
+				<th class="text-right">{{ _("Quantity") }}</th>
+				<th class="text-right">{{ _("Rate") }}</th>
+				<th class="text-right">{{ _("Amount") }}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for item in doc.items %}
+			<tr>
+				<td class="text-center">{{ loop.index }}</td>
+				<td>{{ item.item_name }}</td>
+				{% if item_naming_by != "Item Code" %}
+					<td>{{ item.item_code }}</td>
+				{% endif %}
+				<td class="text-right">{{ item.get_formatted("qty") }} {{ item.uom }}</td>
+				<td class="text-right">{{ item.get_formatted("net_rate", doc) }}</td>
+				<td class="text-right">{{ item.get_formatted("net_amount", doc) }}</td>
+			</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+
+	<table>
+		<tr>
+			<td style="width:58%; vertical-align:bottom">
+				<p class="heading" style="margin:0 0 4px">{{ _("Total in words") }}</p>
+				<div class="words-box">{{ doc.in_words }}</div>
+			</td>
+			<td style="width:42%; vertical-align:top">
+				<table class="totals-table">
+					<tr>
+						<td class="text-right">{{ _("Sub Total:") }}</td>
+						<td class="text-right">{{ doc.get_formatted("total", doc) }}</td>
+					</tr>
+					{%- if doc.apply_discount_on == "Net Total" and doc.discount_amount -%}
+					<tr>
+						<td class="text-right">{{ _("Discount") }} ({{ doc.additional_discount_percentage }}%):</td>
+						<td class="text-right">{{ doc.get_formatted("discount_amount", doc) }}</td>
+					</tr>
+					{%- endif -%}
+					{%- for tax in doc.taxes -%}
+						{%- if (tax.tax_amount or (print_settings and print_settings.print_taxes_with_zero_amount)) and (not tax.included_in_print_rate or doc.flags.show_inclusive_tax_in_print) -%}
+						<tr>
+							<td class="text-right">{{ tax.description }} ({{ tax.get_formatted("rate") }}%):</td>
+							<td class="text-right">{{ tax.get_formatted("tax_amount") }}</td>
+						</tr>
+						{%- endif -%}
+					{%- endfor -%}
+					{%- if doc.apply_discount_on == "Grand Total" and doc.discount_amount -%}
+					<tr>
+						<td class="text-right">{{ _("Discount") }} ({{ doc.additional_discount_percentage }}%):</td>
+						<td class="text-right">{{ doc.get_formatted("discount_amount", doc) }}</td>
+					</tr>
+					{%- endif -%}
+					<tr class="grand-total">
+						<td class="text-right">{{ _("Grand Total:") }}</td>
+						<td class="text-right">{{ doc.get_formatted("grand_total", doc) }}</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+	</table>
+
+	<div class="terms-section">
+		{%- if doc.terms or doc.tc_name -%}
+			<div class="heading" style="margin-bottom:2px">{{ _("Terms and Conditions") }}</div>
+			{%- if doc.terms -%}
+				{{ doc.terms }}
+			{%- elif doc.tc_name -%}
+				{%- set tc_terms = frappe.db.get_value("Terms and Conditions", doc.tc_name, "terms") -%}
+				{%- if tc_terms -%}
+					{{ frappe.render_template(tc_terms, doc) }}
+				{%- endif -%}
+			{%- endif -%}
+		{%- endif -%}
+	</div>
+
+	<table class="ss-so-sigs">
+		<tr>
+			<td class="text-center">
+				<div class="sig-line"></div>
+				<div class="sig-label">Sales</div>
+			</td>
+			<td class="text-center">
+				<div class="sig-line"></div>
+				<div class="sig-label">Planning</div>
+			</td>
+			<td class="text-center">
+				<div class="sig-line"></div>
+				<div class="sig-label">Director</div>
+			</td>
+		</tr>
+	</table>
+</div>

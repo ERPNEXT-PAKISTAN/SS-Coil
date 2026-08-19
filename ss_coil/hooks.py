@@ -82,6 +82,7 @@ fixtures = [
 				[
 					"Sales Contract",
 					"Sales Contract No Letterhead",
+					"SS Sales Order",
 					"Stock Entry Coil",
 					"Sales Order Coil",
 					"Stock Entry Sticker",

@@ -34,6 +34,7 @@ def run_post_install_setup():
 	sync_stock_entry_sticker_print_formats()
 	sync_ss_coil_job_sheet_print_format()
 	sync_sales_contract_print_formats()
+	sync_ss_sales_order_print_format()
 	sync_ss_coil_desktop_icon()
 	sync_ss_coil_workspace()
 	frappe.db.commit()
@@ -270,3 +271,55 @@ def sync_sales_contract_print_formats():
 				},
 				update_modified=False,
 			)
+
+
+def sync_ss_sales_order_print_format():
+	"""SS Sales Order: copy of ERPNext Sales Order Standard, owned by SS Coil."""
+	import os
+
+	name = "SS Sales Order"
+	folder = "ss_sales_order"
+	json_path = frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder, f"{folder}.json")
+	html_path = frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder, f"{folder}.html")
+	if not os.path.exists(json_path) or not os.path.exists(html_path):
+		return
+
+	if not frappe.db.exists("Print Format", name):
+		try:
+			frappe.modules.import_file.import_file_by_path(json_path, force=True)
+		except Exception:
+			doc = frappe.new_doc("Print Format")
+			doc.name = name
+			doc.doc_type = "Sales Order"
+			doc.module = "SS Coil"
+			doc.custom_format = 1
+			doc.print_format_type = "Jinja"
+			doc.standard = "No"
+			doc.insert(ignore_permissions=True)
+
+	if not frappe.db.exists("Print Format", name):
+		return
+
+	with open(html_path) as handle:
+		html = handle.read().strip()
+	if not html:
+		return
+
+	frappe.db.set_value(
+		"Print Format",
+		name,
+		{
+			"html": html,
+			"css": "",
+			"custom_format": 1,
+			"print_format_type": "Jinja",
+			"doc_type": "Sales Order",
+			"module": "SS Coil",
+			"disabled": 0,
+			"margin_top": 12,
+			"margin_bottom": 12,
+			"margin_left": 12,
+			"margin_right": 12,
+		},
+		update_modified=False,
+	)

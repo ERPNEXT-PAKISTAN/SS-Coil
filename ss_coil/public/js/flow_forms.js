@@ -4,7 +4,18 @@ const FLOW_CHILD_GROUPS = [
 	{ label: "Item", fields: ["item_code", "custom_finish_good_item", "custom_raw_material_item", "qty", "rate", "received_qty"] },
 	{
 		label: "Identification",
-		fields: ["custom_tag_no", "custom_raw_material_tag_no", "tag_no", "class", "custom_ref_no", "custom_mill", "custom_location", "location"],
+		fields: [
+			"custom_tag_no",
+			"custom_raw_material_tag_no",
+			"custom_raw_material_batch_no",
+			"tag_no",
+			"class",
+			"custom_ref_no",
+			"custom_mill",
+			"custom_location",
+			"location",
+			"custom_po_no",
+		],
 	},
 	{
 		label: "Dimensions",
@@ -12,15 +23,51 @@ const FLOW_CHILD_GROUPS = [
 	},
 	{
 		label: "Specification",
-		fields: ["custom_commodity", "custom_condition", "custom_specification", "custom_estimated_wt", "custom_qty_of_coil", "estimated_wt", "estimated_qty", "actual_qty", "actual_wt"],
+		fields: [
+			"custom_commodity",
+			"custom_condition",
+			"custom_specification",
+			"custom_estimated_wt",
+			"custom_qty_of_coil",
+			"custom_remarks",
+			"estimated_wt",
+			"estimated_qty",
+			"actual_qty",
+			"actual_wt",
+		],
 	},
 	{
 		label: "References",
-		fields: ["against_sales_order", "custom_source_stock_entry", "custom_js_number", "custom_hdgc_no"],
+		fields: [
+			"against_sales_order",
+			"custom_source_stock_entry",
+			"custom_source_stock_entry_detail",
+			"custom_stock_source_type",
+			"custom_js_number",
+			"custom_hdgc_no",
+			"custom_entry_no",
+			"custom_ss_coil",
+			"custom_status",
+		],
 	},
 	{
 		label: "Processing",
-		fields: ["slitter", "leveler", "reshearing", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments", "current_process", "next_process"],
+		fields: [
+			"slitter",
+			"leveler",
+			"reshearing",
+			"custom_slitter",
+			"custom_leveler",
+			"custom_reshearing",
+			"custom_machine",
+			"custom_calc_ratio",
+			"custom_calc_ratio_2",
+			"custom_actual_ratio",
+			"custom_remaining_width",
+			"custom_comments",
+			"current_process",
+			"next_process",
+		],
 	},
 	{
 		label: "Packing",
@@ -112,9 +159,11 @@ function flow_control_html() {
 function flow_form_shell_html(meta) {
 	const child_table = (meta && meta.child_table) || "items";
 	const child_title = (meta && meta.child_title) || __("Item Rows");
-	const extra = ((meta && meta.extra_tables) || [])
-		.map((spec) => flow_table_block_html(spec.child_table, spec.child_title || spec.child_table))
-		.join("");
+	const extra = meta && meta.hide_extra_tables
+		? ""
+		: ((meta && meta.extra_tables) || [])
+			.map((spec) => flow_table_block_html(spec.child_table, spec.child_title || spec.child_table))
+			.join("");
 	const control = meta && meta.doctype === "SS Coil" ? flow_control_html() : "";
 	return `<div class="ss-coil-de-shell">
 		<div class="ss-coil-de-parent-block">
@@ -132,9 +181,16 @@ function flow_form_shell_html(meta) {
 	</div>`;
 }
 
+function flow_compact_fieldtype(fieldtype) {
+	if (["Text", "Small Text", "Long Text", "Code", "Text Editor", "HTML Editor"].includes(fieldtype)) {
+		return "Data";
+	}
+	return fieldtype;
+}
+
 function flow_map_field(df, doctype) {
 	const field = {
-		fieldtype: df.fieldtype,
+		fieldtype: flow_compact_fieldtype(df.fieldtype),
 		fieldname: df.fieldname,
 		label: __(df.label),
 		options: df.options,
@@ -278,7 +334,7 @@ function flow_append_item_row(state, $tbody, item, idx) {
 			const $td = $(`<td data-fieldname="${df.fieldname}"></td>`).appendTo($tr);
 			const control = frappe.ui.form.make_control({
 				df: {
-					fieldtype: df.fieldtype,
+					fieldtype: flow_compact_fieldtype(df.fieldtype),
 					fieldname: df.fieldname,
 					label: df.label,
 					options: df.options,
@@ -567,6 +623,9 @@ function flow_map_table_rows(rows, parent_local) {
 
 function flow_setup_extra_tables(state, $root, document) {
 	state.extra_ctx = {};
+	if (state.meta && state.meta.hide_extra_tables) {
+		return;
+	}
 	(state.meta.extra_tables || []).forEach((spec) => {
 		const $block = $root.find(`.ss-coil-de-items-block[data-table="${spec.child_table}"]`);
 		if (!$block.length) return;

@@ -587,18 +587,30 @@ function style_coil_production_grid(frm) {
 		[data-fieldname="custom_coil_production"] .ss-coil-cutting-preview {
 			max-width: 100%;
 		}
+		[data-fieldname="items"] .grid-body .grid-row .data-row {
+			height: 36px !important;
+			max-height: 36px !important;
+			overflow: hidden;
+		}
+		[data-fieldname="items"] textarea.form-control,
+		[data-fieldname="items"] textarea.input-with-feedback {
+			height: 28px !important;
+			min-height: 28px !important;
+			max-height: 28px !important;
+			resize: none !important;
+			overflow: hidden !important;
+			white-space: nowrap !important;
+			line-height: 20px !important;
+		}
 	</style>`);
 }
 
 function configure_sales_order_cutting_scheme_ui(frm) {
-	const hasProduction = (frm.doc.custom_coil_production || []).length > 0;
 	const itemGrid = frm.fields_dict.items?.grid;
 	if (itemGrid?.update_docfield_property) {
-		// Manage Cutting Scheme stays on Coil Production (mother coil / raw), not FG Items.
-		itemGrid.update_docfield_property("custom_manage_cutting_scheme", "hidden", hasProduction ? 1 : 0);
-		itemGrid.update_docfield_property("custom_cutting_scheme_preview_section", "hidden", hasProduction ? 1 : 0);
-		itemGrid.update_docfield_property("custom_cutting_scheme_preview", "hidden", hasProduction ? 1 : 0);
-		// Packing lives on Coil Production — hide packing section on Finish Good items
+		itemGrid.update_docfield_property("custom_manage_cutting_scheme", "hidden", 0);
+		itemGrid.update_docfield_property("custom_cutting_scheme_preview_section", "hidden", 0);
+		itemGrid.update_docfield_property("custom_cutting_scheme_preview", "hidden", 0);
 		[
 			"custom_packing_detail",
 			"custom_packing_type",
@@ -606,14 +618,18 @@ function configure_sales_order_cutting_scheme_ui(frm) {
 			"custom_no_of_pack",
 			"custom_packing_remarks",
 			"custom_packing_comments",
+			"custom_slitter",
+			"custom_leveler",
+			"custom_reshearing",
 		].forEach((fieldname) => {
-			itemGrid.update_docfield_property(fieldname, "hidden", hasProduction ? 1 : 0);
+			itemGrid.update_docfield_property(fieldname, "hidden", 0);
 		});
 	}
-	// Always show the SO Cutting Scheme Report (read-only summary).
 	if (frm.set_df_property) {
 		frm.set_df_property("custom_cutting_scheme_report_section", "hidden", 0);
 		frm.set_df_property("custom_cutting_scheme_report", "hidden", 0);
+		frm.set_df_property("custom_coil_production_section", "hidden", 1);
+		frm.set_df_property("custom_coil_production", "hidden", 1);
 	}
 }
 
@@ -735,23 +751,12 @@ frappe.ui.form.on("Sales Order Item", {
 		set_custom_dimension_from_values(cdt, cdn);
 	},
 	form_render(frm, cdt, cdn) {
-		// Cutting scheme lives on Coil Production (raw). Skip SO Item preview
-		// especially on unsaved mapped docs (avoids parent DocType permission error).
-		if ((frm.doc.custom_coil_production || []).length) {
-			return;
-		}
 		if (is_unsaved_sales_order_context(frm, cdn)) {
 			return;
 		}
 		render_item_cutting_scheme_preview(frm, cdt, cdn);
 	},
 	custom_manage_cutting_scheme(frm, cdt, cdn) {
-		if ((frm.doc.custom_coil_production || []).length) {
-			frappe.msgprint(
-				__("Use Manage Cutting Scheme on the Coil Production (Mother Coil / Raw) row.")
-			);
-			return;
-		}
 		open_cutting_scheme_dialog(frm, cdt, cdn);
 	},
 	custom_select_raw_material_tag(frm, cdt, cdn) {

@@ -68,6 +68,165 @@ SO_CUSTOM_TO_PROD = {v: k for k, v in PROD_TO_SO_CUSTOM.items()}
 
 COIL_PRODUCTION_TABLE = "custom_coil_production"
 
+SALES_ORDER_FLOW_SO_ITEM_BASE_FIELDS = (
+	"item_code",
+	"qty",
+	"rate",
+	"custom_finish_good_item",
+)
+
+SALES_ORDER_FLOW_PRODUCTION_BASE_FIELDS = (
+	"finish_good_item",
+	"raw_material_item",
+	"raw_material_tag_no",
+	"raw_material_batch_no",
+	"qty",
+	"item_name",
+	"sales_order_item",
+	"stock_source_type",
+	"source_stock_entry",
+	"source_stock_entry_detail",
+	"tag_no",
+	"sub_tag_no",
+	"entry_no",
+	"ss_coil",
+	"status",
+)
+
+
+def _ordered_existing_fields(doctype, fieldnames):
+	meta = frappe.get_meta(doctype)
+	ordered = []
+	for fieldname in fieldnames:
+		if fieldname in ordered:
+			continue
+		if meta.has_field(fieldname):
+			ordered.append(fieldname)
+	return ordered
+
+
+def get_sales_order_flow_so_item_fields():
+	"""All Sales Order Item fields shown in SS Coil Flow (commercial + shared customs)."""
+	shared = [so_field for _, so_field in PROD_TO_SO_CUSTOM.items()]
+	return _ordered_existing_fields(
+		"Sales Order Item",
+		(*SALES_ORDER_FLOW_SO_ITEM_BASE_FIELDS, *shared, "custom_source_stock_entry", "custom_source_stock_entry_detail", "custom_stock_source_type"),
+	)
+
+
+def get_sales_order_flow_production_fields():
+	"""All Coil Production Line fields shown in SS Coil Flow."""
+	shared = list(PROD_TO_SO_CUSTOM.keys())
+	return _ordered_existing_fields("Coil Production Line", (*SALES_ORDER_FLOW_PRODUCTION_BASE_FIELDS, *shared))
+
+
+def sync_shared_fields_between_so_item_and_production(so_row, prod_row, fill_missing=True):
+	"""Keep every mapped field aligned on Sales Order Item and Coil Production Line."""
+	from ss_coil.api import _normalized_process_value, _recompute_synced_row_dimension
+
+	if not so_row or not prod_row:
+		return
+
+	for prod_field, so_field in PROD_TO_SO_CUSTOM.items():
+		if not _has_field(so_row.doctype, so_field) or not _has_field(prod_row.doctype, prod_field):
+			continue
+
+		so_val = so_row.get(so_field)
+		prod_val = prod_row.get(prod_field)
+		if prod_field in PROCESS_FIELDS:
+			so_v = _normalized_process_value(so_val)
+			prod_v = _normalized_process_value(prod_val)
+			if so_v:
+				if so_v != prod_v:
+					prod_row.set(prod_field, so_v)
+			elif fill_missing and prod_v:
+				so_row.set(so_field, prod_v)
+			elif so_v != prod_v:
+				prod_row.set(prod_field, "")
+			continue
+
+		so_empty = so_val in (None, "")
+		prod_empty = prod_val in (None, "")
+		if not so_empty and so_val != prod_val:
+			prod_row.set(prod_field, so_val)
+		elif fill_missing and so_empty and not prod_empty:
+			so_row.set(so_field, prod_val)
+
+	if _has_field(so_row.doctype, "item_code") and _has_field(prod_row.doctype, "finish_good_item"):
+		so_fg = so_row.get("item_code")
+		prod_fg = prod_row.get("finish_good_item")
+		if prod_fg and prod_fg != so_fg:
+			so_row.item_code = prod_fg
+		elif fill_missing and so_fg and not prod_fg:
+			prod_row.finish_good_item = so_fg
+
+	if _has_field(so_row.doctype, "qty") and _has_field(prod_row.doctype, "qty"):
+		so_qty = flt(so_row.get("qty"))
+		prod_qty = flt(prod_row.get("qty"))
+		if prod_qty and prod_qty != so_qty:
+			so_row.qty = prod_qty
+		elif fill_missing and so_qty and not prod_qty:
+			prod_row.qty = so_qty or 1
+
+	if _has_field(prod_row.doctype, "sales_order_item") and so_row.get("name"):
+		if not prod_row.get("sales_order_item"):
+			prod_row.sales_order_item = so_row.name
+
+	_recompute_synced_row_dimension(so_row)
+	_recompute_synced_row_dimension(prod_row)
+
+
+def matching_production_rows_for_so_item(doc, so_row):
+	rows = get_coil_production_rows(doc)
+	if not rows or not so_row:
+		return []
+	matches = [prod for prod in rows if prod.get("sales_order_item") == so_row.name]
+	if matches:
+		return matches
+	detail = so_row.get("custom_source_stock_entry_detail")
+	if detail:
+		return [prod for prod in rows if prod.get("source_stock_entry_detail") == detail]
+	return []
+
+
+def append_production_line_from_so_item(sales_order, so_row):
+	"""Create a Coil Production Line from a Sales Order Item when none is linked."""
+	if not _has_field("Sales Order", COIL_PRODUCTION_TABLE) or not so_row:
+		return None
+
+	prod = sales_order.append(COIL_PRODUCTION_TABLE, {})
+	if _has_field(prod.doctype, "finish_good_item"):
+		prod.finish_good_item = so_row.get("item_code") or so_row.get("custom_finish_good_item")
+	if _has_field(prod.doctype, "item_name") and so_row.get("item_name"):
+		prod.item_name = so_row.get("item_name")
+	if _has_field(prod.doctype, "qty"):
+		prod.qty = flt(so_row.get("qty")) or 1
+	if _has_field(prod.doctype, "sales_order_item") and so_row.get("name"):
+		prod.sales_order_item = so_row.name
+	sync_shared_fields_between_so_item_and_production(so_row, prod, fill_missing=True)
+	return prod
+
+
+def sync_sales_order_items_and_production(doc, fill_missing=True):
+	"""Sync all shared fields between commercial items and Coil Production rows."""
+	if getattr(doc, "doctype", None) != "Sales Order":
+		return
+	if not _has_field("Sales Order", COIL_PRODUCTION_TABLE):
+		return
+
+	from ss_coil.process_charges import is_process_charge_row
+
+	link_coil_production_to_sales_order_items(doc)
+	for so_row in doc.items or []:
+		if is_process_charge_row(so_row) or not so_row.get("item_code"):
+			continue
+		matches = matching_production_rows_for_so_item(doc, so_row)
+		if not matches:
+			prod = append_production_line_from_so_item(doc, so_row)
+			matches = [prod] if prod else []
+		for prod in matches:
+			sync_shared_fields_between_so_item_and_production(so_row, prod, fill_missing=fill_missing)
+
 
 def setup_coil_production_fields():
 	"""Ensure Coil Production Line exists and is attached to Sales Order + SS Coil."""

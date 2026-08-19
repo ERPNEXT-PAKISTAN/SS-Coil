@@ -22,6 +22,7 @@ def sync_coil_form_layouts():
 	_sync_stock_entry_job_purpose_field()
 	_ensure_stock_entry_detail_field_order()
 	ensure_ss_coil_job_sheet_field_order()
+	ensure_ss_coil_cutting_scheme_field_order()
 	ensure_ss_coil_thickness_field_order()
 	ensure_sales_order_job_sheet_field_order()
 	ensure_item_ss_coil_field_order()
@@ -141,19 +142,6 @@ def _ensure_stock_entry_detail_field_order():
 # Machine / cutting / signature fields belong on the Details tab.
 # They used to be dumped onto the Job Sheet tab, which squeezed the HTML report into a column.
 SS_COIL_JOB_SHEET_INTRUDER_FIELDS = (
-	"section_break_xqer",
-	"machine",
-	"column_break_kqkz",
-	"calc_ratio",
-	"column_break_etcy",
-	"calc_ratio_2",
-	"column_break_twrr",
-	"actual_ratio",
-	"column_break_rtqo",
-	"remaining_width",
-	"section_break_ajao",
-	"cutting_detail",
-	"grand_total_width",
 	"section_break_wqal",
 	"special_instructions",
 	"column_break_lnsp",
@@ -208,6 +196,48 @@ def ensure_ss_coil_job_sheet_field_order():
 			if anchor in order:
 				insert_at = min(insert_at, order.index(anchor))
 		for idx, fieldname in enumerate(tail):
+			order.insert(insert_at + idx, fieldname)
+
+	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+
+
+SS_COIL_CUTTING_SCHEME_FIELD_SEQUENCE = (
+	"cutting_scheme",
+	"section_break_xqer",
+	"machine",
+	"column_break_kqkz",
+	"calc_ratio",
+	"column_break_etcy",
+	"calc_ratio_2",
+	"column_break_twrr",
+	"actual_ratio",
+	"column_break_rtqo",
+	"remaining_width",
+	"section_break_ajao",
+	"cutting_detail",
+	"grand_total_width",
+)
+
+SS_COIL_CUTTING_SCHEME_STRAY_FIELDS = ()
+
+
+def ensure_ss_coil_cutting_scheme_field_order():
+	"""Keep the yellow Cutting Scheme button as the section name, then machine, ratios, and the table."""
+	ps_name = "SS Coil-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+
+	meta = frappe.get_meta("SS Coil")
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	for fieldname in list(SS_COIL_CUTTING_SCHEME_FIELD_SEQUENCE) + list(SS_COIL_CUTTING_SCHEME_STRAY_FIELDS):
+		while fieldname in order:
+			order.remove(fieldname)
+
+	if "section_break_fkea" not in order:
+		return
+	insert_at = order.index("section_break_fkea") + 1
+	for idx, fieldname in enumerate(SS_COIL_CUTTING_SCHEME_FIELD_SEQUENCE):
+		if meta.get_field(fieldname):
 			order.insert(insert_at + idx, fieldname)
 
 	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)

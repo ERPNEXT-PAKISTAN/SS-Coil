@@ -372,11 +372,18 @@
 }
 
 .ss-coil-de-table td {
-	padding: 4px 6px;
+	padding: 2px 6px;
 	border-bottom: 1px solid #e5e7eb;
 	border-right: 1px solid #e5e7eb;
 	vertical-align: middle;
 	background: inherit;
+	height: 36px;
+	max-height: 36px;
+	overflow: hidden;
+}
+
+.ss-coil-de-item-row {
+	height: 36px;
 }
 
 .ss-coil-de-item-row:nth-child(even) {
@@ -514,15 +521,22 @@ thead .ss-coil-de-sticky-right {
 
 .ss-coil-de-table .input-with-feedback,
 .ss-coil-de-table select.input-with-feedback,
-.ss-coil-de-table .like-disabled-input {
+.ss-coil-de-table .like-disabled-input,
+.ss-coil-de-table textarea.input-with-feedback,
+.ss-coil-de-table textarea.form-control {
 	width: 100% !important;
-	min-height: 30px;
-	height: 30px;
+	min-height: 30px !important;
+	height: 30px !important;
+	max-height: 30px !important;
 	font-size: 12.5px;
 	padding: 4px 8px;
 	border-radius: 5px;
 	border-color: #d7dee8;
 	background: #fff;
+	resize: none !important;
+	overflow: hidden !important;
+	white-space: nowrap !important;
+	line-height: 20px !important;
 }
 
 .ss-coil-de-table .like-disabled-input {
@@ -729,9 +743,35 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 }
 
 .ss-coil-flow-page .ss-coil-de-table .form-control,
-.ss-coil-flow-page .ss-coil-de-table .input-with-feedback {
-	min-height: 30px;
+.ss-coil-flow-page .ss-coil-de-table .input-with-feedback,
+.ss-coil-flow-page .ss-coil-de-table textarea {
+	min-height: 30px !important;
+	height: 30px !important;
+	max-height: 30px !important;
 	font-size: 12px;
+	resize: none !important;
+	overflow: hidden !important;
+	white-space: nowrap !important;
+}
+
+[data-doctype="Sales Order"] [data-fieldname="items"] .grid-body .grid-row .data-row,
+[data-page-route^="Form/Sales Order"] [data-fieldname="items"] .grid-row .data-row {
+	height: 36px !important;
+	max-height: 36px !important;
+	overflow: hidden;
+}
+
+[data-doctype="Sales Order"] [data-fieldname="items"] textarea.form-control,
+[data-doctype="Sales Order"] [data-fieldname="items"] textarea.input-with-feedback,
+[data-page-route^="Form/Sales Order"] [data-fieldname="items"] textarea.form-control,
+[data-page-route^="Form/Sales Order"] [data-fieldname="items"] textarea.input-with-feedback {
+	height: 28px !important;
+	min-height: 28px !important;
+	max-height: 28px !important;
+	resize: none !important;
+	overflow: hidden !important;
+	white-space: nowrap !important;
+	line-height: 20px !important;
 }
 
 .ss-coil-de-inline-panel .ss-coil-de-parent-block,
@@ -759,6 +799,14 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section-wrapper {
 	border-color: #155e75 !important;
 	color: #fff !important;
 	font-weight: 700;
+}
+
+.form-layout [data-fieldname="cutting_scheme"] button,
+.form-layout [data-fieldname="cutting_scheme"] .btn {
+	background: #eab308 !important;
+	border-color: #ca8a04 !important;
+	color: #422006 !important;
+	font-weight: 800 !important;
 }
 
 .form-layout .form-column.ss-coil-job-sheet-full-col,

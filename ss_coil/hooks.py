@@ -118,7 +118,7 @@ add_to_apps_screen = [
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=28"
+app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=30"
 # app_include_js = "/assets/ss_coil/js/ss_coil.js"
 
 # include js, css files in header of web template
@@ -172,7 +172,7 @@ doc_events = {
 	"Sales Order": {
 		"before_validate": [
 			"ss_coil.api.apply_sales_order_ss_coil_defaults",
-			"ss_coil.coil_production.link_coil_production_to_sales_order_items",
+			"ss_coil.coil_production.sync_sales_order_items_and_production",
 			"ss_coil.api.sync_sales_order_item_tags_from_stock_entry",
 			"ss_coil.api.sync_sales_order_item_dimensions",
 			"ss_coil.process_charges.sync_sales_order_process_charge_lines",

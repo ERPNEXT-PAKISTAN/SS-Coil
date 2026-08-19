@@ -1,5 +1,7 @@
 """Generic data-entry forms for the SS Coil Flow page."""
 
+from copy import deepcopy
+
 import frappe
 from frappe.utils import cint, get_datetime, getdate, now_datetime
 
@@ -199,6 +201,41 @@ FLOW_FORM_CONFIGS = {
 }
 
 
+def _resolve_flow_form_config(doctype):
+	config = FLOW_FORM_CONFIGS.get(doctype)
+	if not config:
+		return None
+
+	resolved = deepcopy(config)
+	if doctype != "Sales Order":
+		return resolved
+
+	from ss_coil.coil_production import (
+		COIL_PRODUCTION_TABLE,
+		get_sales_order_flow_production_fields,
+		get_sales_order_flow_so_item_fields,
+	)
+
+	resolved["child_fields"] = get_sales_order_flow_so_item_fields()
+	resolved["child_title"] = "Items"
+	resolved["hide_extra_tables"] = True
+
+	if not frappe.get_meta("Sales Order").has_field(COIL_PRODUCTION_TABLE):
+		return resolved
+
+	# Keep production meta for backend sync, but flow UI shows one Items table only.
+	if not any((spec or {}).get("child_table") == COIL_PRODUCTION_TABLE for spec in (resolved.get("extra_tables") or [])):
+		resolved.setdefault("extra_tables", []).append(
+			{
+				"child_table": COIL_PRODUCTION_TABLE,
+				"child_doctype": "Coil Production Line",
+				"child_title": "Coil Production",
+				"child_fields": get_sales_order_flow_production_fields(),
+			}
+		)
+	return resolved
+
+
 def _meta_field_to_dict(meta, fieldname):
 	df = meta.get_field(fieldname)
 	if not df or df.fieldtype in ("Section Break", "Column Break", "Tab Break", "HTML", "Button", "Heading"):
@@ -255,7 +292,7 @@ def get_flow_form_meta(doctype):
 		meta["child_table"] = "items"
 		return meta
 
-	config = FLOW_FORM_CONFIGS.get(doctype)
+	config = _resolve_flow_form_config(doctype)
 	if not config:
 		frappe.throw(f"Flow form is not configured for {doctype}")
 
@@ -266,14 +303,23 @@ def get_flow_form_meta(doctype):
 		"child_table": config["child_table"],
 		"parent_sections": _build_sections(doctype, config["parent_fields"], config["title"]),
 		"child_fields": _child_field_dicts(config["child_doctype"], config["child_fields"]),
-		"extra_tables": _extra_table_meta(config),
+		"extra_tables": [] if config.get("hide_extra_tables") else _extra_table_meta(config),
+		"hide_extra_tables": bool(config.get("hide_extra_tables")),
 		"defaults": _apply_defaults({}, config.get("defaults") or {}, doctype, config["parent_fields"]),
 	}
 
 
 def _child_field_dicts(doctype, fieldnames):
 	child_meta = frappe.get_meta(doctype)
-	return [field for fieldname in fieldnames if (field := _meta_field_to_dict(child_meta, fieldname))]
+	fields = []
+	for fieldname in fieldnames:
+		field = _meta_field_to_dict(child_meta, fieldname)
+		if not field:
+			continue
+		if field["fieldtype"] in ("Text", "Small Text", "Long Text", "Code", "Text Editor"):
+			field["fieldtype"] = "Data"
+		fields.append(field)
+	return fields
 
 
 def _extra_table_meta(config):
@@ -353,65 +399,73 @@ def _extract_flow_form_document(doc, config):
 			doc, spec["child_table"], spec["child_doctype"], spec["child_fields"]
 		)
 	if doc.doctype == "Sales Order":
-		_fill_so_item_packing_from_production(doc, data)
+		_fill_shared_sales_order_table_fields(doc, data)
 	if doc.doctype == "SS Coil":
 		data.update(_ss_coil_control_payload(doc))
 	return data
 
 
-SO_PACKING_TO_PROD = {
-	"custom_packing_type": "packing_type",
-	"custom_packing_weightsize": "packing_weightsize",
-	"custom_no_of_pack": "no_of_pack",
-	"custom_packing_remarks": "packing_remarks",
-	"custom_packing_comments": "packing_comments",
-}
-
-
 def _matching_production_for_so_item(doc, so_row):
-	from ss_coil.coil_production import COIL_PRODUCTION_TABLE
+	from ss_coil.coil_production import matching_production_rows_for_so_item
 
-	if not frappe.get_meta("Sales Order").has_field(COIL_PRODUCTION_TABLE):
-		return []
-	prods = doc.get(COIL_PRODUCTION_TABLE) or []
-	matches = [p for p in prods if p.get("sales_order_item") == so_row.name]
-	if matches:
-		return matches
-	detail = so_row.get("custom_source_stock_entry_detail")
-	if detail:
-		return [p for p in prods if p.get("source_stock_entry_detail") == detail]
-	return []
+	return matching_production_rows_for_so_item(doc, so_row)
 
 
-def _fill_so_item_packing_from_production(doc, data):
-	"""Show Coil Production packing on SO item rows when the commercial line is empty."""
+def _fill_shared_sales_order_table_fields(doc, data):
+	"""Fill empty shared fields on items / production rows for the flow form display."""
+	from ss_coil.coil_production import COIL_PRODUCTION_TABLE, PROD_TO_SO_CUSTOM
+
 	items = data.get("items") or []
+	prod_rows = data.get(COIL_PRODUCTION_TABLE) or []
 	by_name = {row.name: row for row in (doc.items or [])}
+	prod_by_name = {row.name: row for row in (doc.get(COIL_PRODUCTION_TABLE) or [])}
+
 	for item in items:
 		so_row = by_name.get(item.get("name"))
 		if not so_row:
 			continue
-		for so_field, prod_field in SO_PACKING_TO_PROD.items():
-			if item.get(so_field) not in (None, ""):
+		for prod in _matching_production_for_so_item(doc, so_row):
+			prod_payload = next((row for row in prod_rows if row.get("name") == prod.name), None)
+			if not prod_payload:
 				continue
-			for prod in _matching_production_for_so_item(doc, so_row):
-				value = prod.get(prod_field)
+			for prod_field, so_field in PROD_TO_SO_CUSTOM.items():
+				if item.get(so_field) not in (None, ""):
+					continue
+				value = prod_payload.get(prod_field)
 				if value not in (None, ""):
 					item[so_field] = value
+			if not item.get("item_code") and prod_payload.get("finish_good_item"):
+				item["item_code"] = prod_payload.get("finish_good_item")
+			if item.get("qty") in (None, "") and prod_payload.get("qty") not in (None, ""):
+				item["qty"] = prod_payload.get("qty")
+
+	for prod_payload in prod_rows:
+		prod_row = prod_by_name.get(prod_payload.get("name"))
+		if not prod_row:
+			continue
+		so_row = None
+		so_payload = None
+		if prod_row.get("sales_order_item"):
+			so_row = by_name.get(prod_row.sales_order_item)
+			so_payload = next((row for row in items if row.get("name") == prod_row.sales_order_item), None)
+		if not so_row:
+			for candidate in doc.items or []:
+				if candidate.get("custom_source_stock_entry_detail") == prod_row.get("source_stock_entry_detail"):
+					so_row = candidate
+					so_payload = next((row for row in items if row.get("name") == candidate.name), None)
 					break
-
-
-def _sync_sales_order_packing_to_production(doc):
-	if doc.doctype != "Sales Order":
-		return
-	for so_row in doc.items or []:
-		for prod in _matching_production_for_so_item(doc, so_row):
-			for so_field, prod_field in SO_PACKING_TO_PROD.items():
-				if not frappe.get_meta(prod.doctype).has_field(prod_field):
-					continue
-				value = so_row.get(so_field)
-				if value not in (None, ""):
-					prod.set(prod_field, value)
+		if not so_payload:
+			continue
+		for prod_field, so_field in PROD_TO_SO_CUSTOM.items():
+			if prod_payload.get(prod_field) not in (None, ""):
+				continue
+			value = so_payload.get(so_field)
+			if value not in (None, ""):
+				prod_payload[prod_field] = value
+		if not prod_payload.get("finish_good_item") and so_payload.get("item_code"):
+			prod_payload["finish_good_item"] = so_payload.get("item_code")
+		if prod_payload.get("qty") in (None, "") and so_payload.get("qty") not in (None, ""):
+			prod_payload["qty"] = so_payload.get("qty")
 
 
 @frappe.whitelist()
@@ -425,7 +479,7 @@ def get_flow_form_document(doctype, name):
 
 		return get_stock_entry_data_entry_document(name)
 
-	config = FLOW_FORM_CONFIGS.get(doctype)
+	config = _resolve_flow_form_config(doctype)
 	if not config:
 		frappe.throw(f"Flow form is not configured for {doctype}")
 
@@ -463,13 +517,19 @@ def _backfill_sales_order_from_stock_entry(doc):
 			se_value = se_row.get(fieldname)
 			so_value = row.get(fieldname)
 			if fieldname in process_fields:
-				if cint(se_value) and not cint(so_value):
-					row.set(fieldname, 1)
+				if se_value not in (None, "") and so_value in (None, ""):
+					row.set(fieldname, se_value)
 					changed = True
 				continue
 			if se_value not in (None, "") and so_value in (None, ""):
 				row.set(fieldname, se_value)
 				changed = True
+
+	from ss_coil.coil_production import COIL_PRODUCTION_TABLE, sync_sales_order_items_and_production
+
+	if frappe.get_meta("Sales Order").has_field(COIL_PRODUCTION_TABLE):
+		sync_sales_order_items_and_production(doc, fill_missing=True)
+		changed = True
 	return changed
 
 
@@ -489,7 +549,10 @@ def _write_flow_form_doc(doc, config, data):
 	for spec in config.get("extra_tables") or []:
 		_write_child_rows(doc, spec["child_table"], spec["child_fields"], data.get(spec["child_table"]) or [])
 
-	_sync_sales_order_packing_to_production(doc)
+	if doc.doctype == "Sales Order":
+		from ss_coil.coil_production import sync_sales_order_items_and_production
+
+		sync_sales_order_items_and_production(doc, fill_missing=True)
 	_fix_sales_order_payment_schedule(doc)
 	doc.save()
 	return doc
@@ -518,7 +581,7 @@ def create_flow_form_document(doctype, data):
 
 		return create_stock_entry_from_data_entry(data)
 
-	config = FLOW_FORM_CONFIGS.get(doctype)
+	config = _resolve_flow_form_config(doctype)
 	if not config:
 		frappe.throw(f"Flow form is not configured for {doctype}")
 
@@ -535,7 +598,7 @@ def save_flow_form_document(doctype, name, data):
 
 		return save_stock_entry_data_entry(name, data)
 
-	config = FLOW_FORM_CONFIGS.get(doctype)
+	config = _resolve_flow_form_config(doctype)
 	if not config:
 		frappe.throw(f"Flow form is not configured for {doctype}")
 
@@ -594,7 +657,7 @@ def _overlay_flow_values(doc, doctype, data):
 		_apply_data_entry_tag_row_flags(doc)
 		return
 
-	config = FLOW_FORM_CONFIGS.get(doctype)
+	config = _resolve_flow_form_config(doctype)
 	if not config:
 		return
 	for fieldname in config["parent_fields"]:
@@ -646,6 +709,9 @@ def insert_mapped_flow_document(doctype, mapped_doc, data=None):
 	_overlay_flow_values(doc, doctype, data or {})
 	if doctype == "Sales Order":
 		_prepare_mapped_sales_order(doc)
+		from ss_coil.coil_production import sync_sales_order_items_and_production
+
+		sync_sales_order_items_and_production(doc, fill_missing=True)
 	doc.insert()
 	if doctype == "Stock Entry":
 		from ss_coil.stock_entry_data_entry import _stock_entry_data_entry_response

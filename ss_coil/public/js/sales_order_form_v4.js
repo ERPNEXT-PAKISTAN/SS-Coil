@@ -628,8 +628,8 @@ function configure_sales_order_cutting_scheme_ui(frm) {
 	if (frm.set_df_property) {
 		frm.set_df_property("custom_cutting_scheme_report_section", "hidden", 0);
 		frm.set_df_property("custom_cutting_scheme_report", "hidden", 0);
-		frm.set_df_property("custom_coil_production_section", "hidden", 1);
-		frm.set_df_property("custom_coil_production", "hidden", 1);
+		frm.set_df_property("custom_coil_production_section", "hidden", 0);
+		frm.set_df_property("custom_coil_production", "hidden", 0);
 	}
 }
 

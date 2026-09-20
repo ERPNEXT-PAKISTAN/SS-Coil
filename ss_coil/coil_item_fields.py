@@ -9,7 +9,7 @@ from ss_coil.api import _has_field
 
 # Extra inward fields that exist on Stock Entry Detail but were not always on SO.
 EXTRA_COIL_INWARD_FIELDS = (
-	"custom_hdgc_no",
+	"custom_mill_key",
 	"custom_for_customer",
 )
 
@@ -78,13 +78,13 @@ def setup_coil_item_trace_fields():
 		if rows:
 			fields_by_dt[dt] = rows
 
-	# Sales Order Item: missing HDGC / For Customer from Stock Entry layout
+	# Sales Order Item: missing Mill Key / For Customer from Stock Entry layout
 	so_extra = []
-	if not _field_exists("Sales Order Item", "custom_hdgc_no"):
+	if not _field_exists("Sales Order Item", "custom_mill_key"):
 		so_extra.append(
 			{
-				"fieldname": "custom_hdgc_no",
-				"label": "HDGC No",
+				"fieldname": "custom_mill_key",
+				"label": "Mill Key",
 				"fieldtype": "Data",
 				"insert_after": "custom_js_number"
 				if _field_exists("Sales Order Item", "custom_js_number")

@@ -69,8 +69,10 @@ frappe.pages["ss-coil-flow"].on_page_load = function (wrapper) {
 
 	frappe.require("/assets/ss_coil/js/stock_entry.js", () => {
 		frappe.require("/assets/ss_coil/js/flow_forms.js", () => {
-			frappe.require("/assets/ss_coil/js/sales_order.js", () => {
-				wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
+			frappe.require("/assets/ss_coil/js/delivery_by_tag.js", () => {
+				frappe.require("/assets/ss_coil/js/sales_order.js", () => {
+					wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
+				});
 			});
 		});
 	});

@@ -378,7 +378,7 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	{ label: "Item", fields: ["item_code", "qty"] },
 	{
 		label: "Identification",
-		fields: ["custom_tag_no", "custom_ref_no", "custom_mill", "custom_location"],
+		fields: ["custom_tag_no", "custom_ref_no", "custom_mill", "custom_mill_key"],
 	},
 	{
 		label: "Dimensions",
@@ -386,7 +386,7 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	},
 	{
 		label: "References",
-		fields: ["custom_js_number", "custom_hdgc_no", "custom_condition"],
+		fields: ["custom_condition"],
 	},
 	{
 		label: "Specification",
@@ -395,6 +395,10 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	{
 		label: "Processing",
 		fields: ["custom_finish_good_item", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments"],
+	},
+	{
+		label: "JS / Location",
+		fields: ["custom_js_number", "custom_location"],
 	},
 ];
 
@@ -711,6 +715,17 @@ function build_stock_entry_data_entry_child_columns(child_field_defs) {
 		const fields = group.fields.filter((fieldname) => field_map[fieldname]).map((fieldname) => field_map[fieldname]);
 		if (fields.length) {
 			groups.push({ label: group.label, fields });
+		}
+	});
+	const used = new Set(groups.flatMap((g) => g.fields.map((f) => f.fieldname)));
+	Object.values(field_map).forEach((df) => {
+		if (!used.has(df.fieldname)) {
+			let misc = groups.find((g) => g.label === "Other");
+			if (!misc) {
+				misc = { label: "Other", fields: [] };
+				groups.push(misc);
+			}
+			misc.fields.push(df);
 		}
 	});
 	return groups;

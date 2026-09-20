@@ -35,15 +35,13 @@ STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"qty",
 	"custom_tag_no",
 	"custom_mill",
-	"custom_location",
+	"custom_mill_key",
 	"custom_ref_no",
 	"custom_thickness",
 	"custom_width",
 	"custom_length_c",
 	"custom_length",
 	"custom_dimension",
-	"custom_js_number",
-	"custom_hdgc_no",
 	"custom_condition",
 	"custom_commodity",
 	"custom_specification",
@@ -53,6 +51,8 @@ STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"custom_slitter",
 	"custom_leveler",
 	"custom_reshearing",
+	"custom_js_number",
+	"custom_location",
 ]
 
 CHILD_FIELDS_SYNCED_FROM_PARENT = {
@@ -73,12 +73,25 @@ CHILD_FIELD_COLUMNS = {
 def _meta_field_to_dict(meta, fieldname):
 	df = meta.get_field(fieldname)
 	if not df or df.fieldtype in ("Section Break", "Column Break", "Tab Break", "HTML", "Button"):
+		# Mill Key must always appear on the flow/data-entry grid when the column exists.
+		if fieldname == "custom_mill_key" and frappe.db.has_column(meta.name, fieldname):
+			return {
+				"fieldname": "custom_mill_key",
+				"label": "Mill Key",
+				"fieldtype": "Data",
+				"options": None,
+				"reqd": 0,
+				"default": None,
+				"read_only": 0,
+				"depends_on": None,
+				"columns": CHILD_FIELD_COLUMNS.get(fieldname, 1),
+			}
 		return None
 	if df.hidden:
 		return None
 	return {
 		"fieldname": df.fieldname,
-		"label": df.label,
+		"label": df.label or ("Mill Key" if df.fieldname == "custom_mill_key" else df.label),
 		"fieldtype": df.fieldtype,
 		"options": df.options,
 		"reqd": df.reqd,

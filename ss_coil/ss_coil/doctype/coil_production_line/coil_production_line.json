@@ -36,7 +36,7 @@
   "ref_no",
   "js_number",
   "column_break_dims",
-  "hdgc_no",
+  "mill_key",
   "po_no",
   "thickness",
   "width",
@@ -250,9 +250,9 @@
    "label": "JS Number"
   },
   {
-   "fieldname": "hdgc_no",
+   "fieldname": "mill_key",
    "fieldtype": "Data",
-   "label": "HDGC No"
+   "label": "Mill Key"
   },
   {
    "fieldname": "po_no",

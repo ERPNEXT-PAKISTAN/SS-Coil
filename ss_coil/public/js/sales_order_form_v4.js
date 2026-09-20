@@ -19,6 +19,7 @@ frappe.ui.form.on("Sales Order", {
 		add_sales_order_job_sheet_print_button(frm);
 		add_sales_order_create_stock_entry_button(frm);
 		add_sales_order_create_ss_coil_button(frm);
+		add_sales_order_delivery_by_tag_button(frm);
 		render_sales_order_dashboard(frm);
 		render_packing_detail(frm);
 		render_cutting_scheme_report(frm);
@@ -312,6 +313,30 @@ function add_sales_order_create_ss_coil_button(frm) {
 		__("View SS Coil"),
 		function () {
 			frappe.set_route("List", "SS Coil", { order_no: frm.doc.name });
+		},
+		__("Create")
+	);
+}
+
+function add_sales_order_delivery_by_tag_button(frm) {
+	if (frm.is_new() || frm.doc.docstatus !== 1) return;
+	if (!(frm.doc.items || []).length) return;
+
+	frm.add_custom_button(
+		__("Delivery Note by Tag No"),
+		function () {
+			const open = () => {
+				if (!ss_coil.delivery_by_tag || typeof ss_coil.delivery_by_tag.open !== "function") {
+					frappe.msgprint(__("Delivery by Tag is not loaded. Refresh the page."));
+					return;
+				}
+				ss_coil.delivery_by_tag.open(frm.doc.name);
+			};
+			if (ss_coil.delivery_by_tag && ss_coil.delivery_by_tag.open) {
+				open();
+			} else {
+				frappe.require("/assets/ss_coil/js/delivery_by_tag.js", open);
+			}
 		},
 		__("Create")
 	);
@@ -780,7 +805,7 @@ const SO_ITEM_COIL_PRESERVE_FIELDS = [
 	"custom_location",
 	"custom_ref_no",
 	"custom_js_number",
-	"custom_hdgc_no",
+	"custom_mill_key",
 	"custom_po_no",
 	"custom_thickness",
 	"custom_width",

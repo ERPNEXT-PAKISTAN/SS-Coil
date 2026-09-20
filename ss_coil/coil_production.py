@@ -34,7 +34,7 @@ PROD_TO_SO_CUSTOM = {
 	"location": "custom_location",
 	"ref_no": "custom_ref_no",
 	"js_number": "custom_js_number",
-	"hdgc_no": "custom_hdgc_no",
+	"mill_key": "custom_mill_key",
 	"po_no": "custom_po_no",
 	"thickness": "custom_thickness",
 	"width": "custom_width",

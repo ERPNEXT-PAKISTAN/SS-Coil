@@ -49,6 +49,9 @@ FLOW_FORM_CONFIGS = {
 			"custom_dimension",
 			"custom_ref_no",
 			"custom_mill",
+			"custom_mill_key",
+			"custom_js_number",
+			"custom_location",
 		],
 		"defaults": {"posting_date": "Today"},
 	},
@@ -75,15 +78,13 @@ FLOW_FORM_CONFIGS = {
 			"custom_tag_no",
 			"custom_raw_material_tag_no",
 			"custom_mill",
-			"custom_location",
+			"custom_mill_key",
 			"custom_ref_no",
 			"custom_thickness",
 			"custom_width",
 			"custom_length_c",
 			"custom_length",
 			"custom_dimension",
-			"custom_js_number",
-			"custom_hdgc_no",
 			"custom_condition",
 			"custom_commodity",
 			"custom_specification",
@@ -99,6 +100,8 @@ FLOW_FORM_CONFIGS = {
 			"custom_no_of_pack",
 			"custom_packing_remarks",
 			"custom_packing_comments",
+			"custom_js_number",
+			"custom_location",
 		],
 		"defaults": {"transaction_date": "Today"},
 	},
@@ -172,6 +175,10 @@ FLOW_FORM_CONFIGS = {
 			"custom_length_c",
 			"custom_dimension",
 			"against_sales_order",
+			"custom_mill",
+			"custom_mill_key",
+			"custom_js_number",
+			"custom_location",
 		],
 		"defaults": {"posting_date": "Today"},
 	},
@@ -239,12 +246,24 @@ def _resolve_flow_form_config(doctype):
 def _meta_field_to_dict(meta, fieldname):
 	df = meta.get_field(fieldname)
 	if not df or df.fieldtype in ("Section Break", "Column Break", "Tab Break", "HTML", "Button", "Heading"):
+		if fieldname in ("custom_mill_key", "mill_key") and frappe.db.has_column(meta.name, fieldname):
+			return {
+				"fieldname": fieldname,
+				"label": "Mill Key",
+				"fieldtype": "Data",
+				"options": None,
+				"reqd": 0,
+				"default": None,
+				"read_only": 0,
+				"depends_on": None,
+				"columns": CHILD_FIELD_COLUMNS.get(fieldname, 1),
+			}
 		return None
 	if df.hidden:
 		return None
 	return {
 		"fieldname": df.fieldname,
-		"label": df.label,
+		"label": df.label or ("Mill Key" if df.fieldname in ("custom_mill_key", "mill_key") else df.label),
 		"fieldtype": df.fieldtype,
 		"options": df.options,
 		"reqd": df.reqd,

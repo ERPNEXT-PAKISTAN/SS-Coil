@@ -12,8 +12,9 @@ const FLOW_CHILD_GROUPS = [
 			"class",
 			"custom_ref_no",
 			"custom_mill",
-			"custom_location",
-			"location",
+			"mill",
+			"custom_mill_key",
+			"mill_key",
 			"custom_po_no",
 		],
 	},
@@ -43,8 +44,6 @@ const FLOW_CHILD_GROUPS = [
 			"custom_source_stock_entry",
 			"custom_source_stock_entry_detail",
 			"custom_stock_source_type",
-			"custom_js_number",
-			"custom_hdgc_no",
 			"custom_entry_no",
 			"custom_ss_coil",
 			"custom_status",
@@ -84,6 +83,10 @@ const FLOW_CHILD_GROUPS = [
 			"packing_comments",
 			"packing",
 		],
+	},
+	{
+		label: "JS / Location",
+		fields: ["custom_js_number", "js_number", "custom_location", "location"],
 	},
 ];
 
@@ -1418,16 +1421,31 @@ ss_coil.flow_forms.create_stock_entry_from_sales_order = function (sales_order_n
 };
 
 ss_coil.flow_forms.create_delivery_note_from_sales_order = function (sales_order_name, handlers = {}) {
-	return frappe.call({
-		method: "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note",
-		args: { source_name: sales_order_name },
-		freeze: true,
-		freeze_message: __("Preparing Delivery Note..."),
-		callback(r) {
-			if (!r.message) return;
-			ss_coil.flow_forms.sync_mapped_doc("Delivery Note", r.message, handlers);
-		},
-	});
+	const open_picker = () => {
+		if (!ss_coil.delivery_by_tag || typeof ss_coil.delivery_by_tag.open !== "function") {
+			// Fallback to full SO mapping if picker assets are unavailable
+			return frappe.call({
+				method: "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note",
+				args: { source_name: sales_order_name },
+				freeze: true,
+				freeze_message: __("Preparing Delivery Note..."),
+				callback(r) {
+					if (!r.message) return;
+					ss_coil.flow_forms.sync_mapped_doc("Delivery Note", r.message, handlers);
+				},
+			});
+		}
+		ss_coil.delivery_by_tag.open(sales_order_name, {
+			on_success(dn) {
+				ss_coil.flow_forms.sync_mapped_doc("Delivery Note", dn, handlers);
+			},
+		});
+	};
+
+	if (ss_coil.delivery_by_tag && ss_coil.delivery_by_tag.open) {
+		return open_picker();
+	}
+	return frappe.require("/assets/ss_coil/js/delivery_by_tag.js", open_picker);
 };
 
 ss_coil.flow_forms.create_sales_invoice_from_delivery_note = function (delivery_note_name, handlers = {}) {

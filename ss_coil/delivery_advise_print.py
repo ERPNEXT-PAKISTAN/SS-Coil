@@ -92,7 +92,7 @@ def _delivery_advise_item_rows(doc):
 			{
 				"tag_no": item.get("custom_tag_no") or item.get("custom_child_tag_no") or "-",
 				"ref_no": item.get("custom_ref_no") or "-",
-				"hdgc_no": item.get("custom_hdgc_no") or "-",
+				"mill_key": item.get("custom_mill_key") or "-",
 				"commodity": item.get("custom_commodity") or "-",
 				"specification": item.get("custom_specification") or "-",
 				"mill": item.get("custom_mill") or "-",
@@ -127,7 +127,7 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 			"<tr>"
 			f'<td class="col-tag col-wrap">{_cell(row["tag_no"])}</td>'
 			f'<td class="col-medium col-wrap">{_cell(row["ref_no"])}</td>'
-			f'<td class="col-medium col-wrap">{_cell(row["hdgc_no"])}</td>'
+			f'<td class="col-medium col-wrap">{_cell(row["mill_key"])}</td>'
 			f'<td class="col-compact">{_cell(row["commodity"])}</td>'
 			f'<td class="col-wrap">{_cell(row["specification"])}</td>'
 			f'<td class="col-medium">{_cell(row["mill"])}</td>'
@@ -174,7 +174,7 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 		+ '<table class="items"><thead><tr>'
 		+ '<th class="col-tag col-wrap">Tag No</th>'
 		+ '<th class="col-medium col-wrap">Ref No</th>'
-		+ '<th class="col-medium col-wrap">HDGC No</th>'
+		+ '<th class="col-medium col-wrap">Mill Key</th>'
 		+ '<th class="col-compact">Commodity</th>'
 		+ '<th class="col-wrap">Specification</th>'
 		+ '<th class="col-medium">Mill</th>'

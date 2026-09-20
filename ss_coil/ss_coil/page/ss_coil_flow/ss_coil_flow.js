@@ -44,7 +44,10 @@ const SCF_STEP_CONFIG = {
 		submit_label: __("Submit Delivery Note"),
 		next_label: __("Save & Create Sales Invoice"),
 		open_label: __("Open Delivery Note"),
-		create_actions: [{ id: "create_sales_invoice", label: __("Create Sales Invoice"), accent: true }],
+		create_actions: [
+			{ id: "load_by_tag_no", label: __("Load by Tag No"), accent: true },
+			{ id: "create_sales_invoice", label: __("Create Sales Invoice") },
+		],
 	},
 	"Sales Invoice": {
 		step: "05",
@@ -359,6 +362,10 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 	}
 
 	run_create_action(action_id) {
+		if (action_id === "load_by_tag_no") {
+			this.load_delivery_by_tag();
+			return;
+		}
 		if (action_id === "create_ss_coil_from_so") {
 			const ss_coil_name = this.get_saved_or_warn();
 			if (!ss_coil_name) return;
@@ -368,6 +375,29 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		const saved = this.get_saved_or_warn();
 		if (!saved) return;
 		this.run_create_action_impl(action_id, saved);
+	}
+
+	load_delivery_by_tag() {
+		const open = () => {
+			ss_coil.flow_forms.load_delivery_note_by_tag(this.$data_host, {
+				on_loaded: (dn) => {
+					this.pending_docs["Delivery Note"] = dn;
+					this.docstatus_by_doctype["Delivery Note"] = scf_docstatus(dn && dn.docstatus);
+					this.update_nav_buttons();
+					frappe.show_alert({
+						message: __("Loaded {0} item(s) by Tag No — review and save", [
+							(dn.items || []).length,
+						]),
+						indicator: "green",
+					});
+				},
+			});
+		};
+		if (ss_coil.flow_forms.load_delivery_note_by_tag) {
+			open();
+		} else {
+			frappe.require("/assets/ss_coil/js/delivery_by_tag.js", open);
+		}
 	}
 
 	run_create_action_impl(action_id, saved) {

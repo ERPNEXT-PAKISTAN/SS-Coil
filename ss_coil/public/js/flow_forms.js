@@ -1570,6 +1570,64 @@ ss_coil.flow_forms.get_linked_sales_order = function (ss_coil_name, callback) {
 	});
 };
 
+ss_coil.flow_forms.load_delivery_note_by_tag = function ($container, handlers = {}) {
+	const $host = $($container);
+	const state = $host.data("ss_coil_flow_form_state");
+	if (!state || !state.parent_fg) {
+		frappe.msgprint(__("Open the Delivery Note step first."));
+		return;
+	}
+
+	const customer =
+		(state.parent_fg.get_value && state.parent_fg.get_value("customer")) ||
+		(state.parent_fg.get_values && state.parent_fg.get_values().customer) ||
+		"";
+	const company =
+		(state.parent_fg.get_value && state.parent_fg.get_value("company")) ||
+		(state.parent_fg.get_values && state.parent_fg.get_values().company) ||
+		"";
+
+	if (!customer) {
+		frappe.msgprint(__("Select Customer first, then load items by Tag No."));
+		return;
+	}
+
+	const open = () => {
+		const parent_values =
+			(state.parent_fg.get_values && state.parent_fg.get_values()) || {};
+		const target_doc = {
+			doctype: "Delivery Note",
+			__islocal: 1,
+			company: company || parent_values.company || null,
+			customer,
+			posting_date: parent_values.posting_date || null,
+			custom_sales_order: parent_values.custom_sales_order || null,
+			custom_for_customer: parent_values.custom_for_customer || null,
+		};
+
+		ss_coil.delivery_by_tag.open_for_customer(customer, {
+			company: company || null,
+			target_doc,
+			replace_items: 1,
+			on_success(dn) {
+				if (!dn) return;
+				flow_set_parent_values(state.parent_fg, flow_build_values_from_document(state.meta, dn));
+				flow_apply_document_items(state, dn);
+				$host.data("ss_coil_flow_mapped_doc", dn);
+				if (handlers.on_loaded) {
+					handlers.on_loaded(dn);
+				}
+			},
+		});
+	};
+
+	if (ss_coil.delivery_by_tag && ss_coil.delivery_by_tag.open_for_customer) {
+		open();
+	} else {
+		frappe.require("/assets/ss_coil/js/delivery_by_tag.js", open);
+	}
+};
+
 ss_coil.flow_forms.set_date_control_value = flow_set_date_control_value;
 ss_coil.flow_forms.set_link_control_value = flow_set_link_control_value;
 ss_coil.flow_forms.set_parent_values = flow_set_parent_values;

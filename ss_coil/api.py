@@ -1715,10 +1715,64 @@ def _get_or_create_tag(
 
 
 def _normalize_subtag_base(parent_tag_no):
-	parsed = _parse_tag_number(parent_tag_no)
-	if not parsed:
+	"""Series base for flat sub-tags, e.g. SSCC-05584-000 / SSCC-05584-002 → SSCC-05584."""
+	return _subtag_series_base(parent_tag_no)
+
+
+def _subtag_series_base(tag_no):
+	"""Root series base shared by mother and all descendants.
+
+	Examples:
+	- SSCC-05584-000 → SSCC-05584
+	- SSCC-05584-002 → SSCC-05584
+	- SSCC-05584-002-001 (legacy nested) → SSCC-05584
+	"""
+	if not tag_no:
 		return None
-	return f"{parsed['prefix']}-{parsed['number']:0{len(str(parsed['number']))}d}"
+	tag_text = str(tag_no).strip()
+	settings = _tag_settings()
+	suffix = settings.get("suffix") or "-000"
+	if suffix and tag_text.endswith(suffix):
+		return tag_text[: -len(suffix)] or None
+
+	parsed = _parse_tag_number(tag_text)
+	if not parsed:
+		return tag_text
+	digits = cint(settings.get("digits")) or len(str(parsed["number"]))
+	return f"{parsed['prefix']}-{parsed['number']:0{digits}d}"
+
+
+def _used_subtag_indexes(series_base, also_used=None):
+	"""Numeric suffixes already taken under a series base (flat …-001, …-002, …)."""
+	used = set()
+	if not series_base:
+		return used
+	prefix = f"{series_base}-"
+	existing = []
+	if frappe.db.exists("DocType", "Tag Registry"):
+		# Fetch candidates with LIKE, then keep exact series-prefix matches only.
+		existing = (
+			frappe.get_all(
+				"Tag Registry",
+				filters={"tag_no": ("like", f"{series_base}-%")},
+				pluck="tag_no",
+			)
+			or []
+		)
+		existing = [t for t in existing if str(t).startswith(prefix)]
+	for tag_no in list(existing) + list(also_used or []):
+		if not tag_no:
+			continue
+		tag_text = str(tag_no).strip()
+		if tag_text == series_base:
+			continue
+		if not tag_text.startswith(prefix):
+			continue
+		# Flat child only: SERIES-NNN (ignore legacy nested SERIES-NNN-NNN)
+		remainder = tag_text[len(prefix) :]
+		if remainder.isdigit():
+			used.add(cint(remainder))
+	return used
 
 
 def _root_tag_for(tag_no):
@@ -1731,32 +1785,18 @@ def _root_tag_for(tag_no):
 	return tag_no
 
 
-def _next_sub_tag(parent_tag_no):
+def _next_sub_tag(parent_tag_no, also_used=None):
+	"""Next flat sub-tag under the mother series.
+
+	SSCC-05584-000 → SSCC-05584-001, SSCC-05584-002, …
+	From SSCC-05584-002 next process continues SSCC-05584-003 (not SSCC-05584-002-001).
+	"""
 	if not parent_tag_no:
 		return None
-	parent_tag = str(parent_tag_no).strip()
-	settings = _tag_settings()
-	base = parent_tag
-	suffix = settings.get("suffix") or "-000"
-	if suffix and parent_tag.endswith(suffix):
-		base = parent_tag[: -len(suffix)]
-	existing = frappe.get_all(
-		"Tag Registry",
-		filters={"parent_tag_no": parent_tag_no},
-		pluck="tag_no",
-	) if frappe.db.exists("DocType", "Tag Registry") else []
-	used = set()
-	for tag_no in existing:
-		if not tag_no:
-			continue
-		tag_text = str(tag_no).strip()
-		if tag_text == parent_tag:
-			continue
-		if not tag_text.startswith(f"{base}-"):
-			continue
-		last_segment = tag_text.rsplit("-", 1)[-1]
-		if last_segment.isdigit():
-			used.add(cint(last_segment))
+	base = _subtag_series_base(parent_tag_no)
+	if not base:
+		return None
+	used = _used_subtag_indexes(base, also_used=also_used)
 	idx = 1
 	while idx in used:
 		idx += 1
@@ -1767,14 +1807,11 @@ def _is_child_subtag(candidate_tag, parent_tag_no):
 	if not candidate_tag or not parent_tag_no:
 		return False
 	candidate = str(candidate_tag).strip()
-	parent = str(parent_tag_no).strip()
-	settings = _tag_settings()
-	suffix = settings.get("suffix") or "-000"
-	base = parent[:-len(suffix)] if suffix and parent.endswith(suffix) else parent
-	if not candidate.startswith(f"{base}-"):
+	base = _subtag_series_base(parent_tag_no)
+	if not base or not candidate.startswith(f"{base}-"):
 		return False
-	last_segment = candidate.rsplit("-", 1)[-1]
-	return last_segment.isdigit() and cint(last_segment) > 0
+	remainder = candidate[len(base) + 1 :]
+	return remainder.isdigit() and cint(remainder) > 0
 
 
 def _ensure_origin_tag_available(tag_no, source_doctype, source_docname, source_child_doctype, source_child_name):
@@ -2775,12 +2812,16 @@ def prepare_ss_coil_output_tags(doc, method=None):
 	parent_tag_no = getattr(parent_input, "tag_no", None) if parent_input else None
 	root_tag_no = _root_tag_for(parent_tag_no) if parent_tag_no else None
 
+	# Flat series: allocate next free …-001, …-002 across the mother base, not nested.
+	also_used = [row.tag_no for row in (doc.job_output or []) if getattr(row, "tag_no", None)]
 	for row in doc.job_output or []:
 		row_parent_tag = parent_tag_no
 		if row.tag_no:
 			_ensure_origin_tag_available(row.tag_no, "SS Coil", doc.name, row.doctype, row.name)
 		if row_parent_tag and not row.tag_no:
-			row.tag_no = _next_sub_tag(row_parent_tag)
+			row.tag_no = _next_sub_tag(row_parent_tag, also_used=also_used)
+			if row.tag_no:
+				also_used.append(row.tag_no)
 
 		_register_ss_coil_job_output_tag(doc, row, row_parent_tag, root_tag_no)
 
@@ -2800,13 +2841,13 @@ def _get_coil_output_target_fields():
 
 
 def _build_child_tag(parent_tag_no, sequence_number):
+	"""Build flat sub-tag under the mother series (SSCC-05584-001), never nested."""
 	if not parent_tag_no:
 		return ""
-	parent_tag = str(parent_tag_no).strip()
+	base = _subtag_series_base(parent_tag_no)
+	if not base:
+		return ""
 	sequence = str(cint(sequence_number)).zfill(3)
-	settings = _tag_settings()
-	suffix = settings.get("suffix") or "-000"
-	base = parent_tag[:-len(suffix)] if suffix and parent_tag.endswith(suffix) else parent_tag
 	return f"{base}-{sequence}"
 
 
@@ -2962,6 +3003,12 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 
 	parent_tag_base = resolve_parent_tag_base()
 	finish_good_class = _ss_coil_job_output_class(doc, so_row)
+	# Flat series allocation across mother base (…-001, …-002, …-003…)
+	also_used_tags = [
+		getattr(existing_row, "tag_no", None)
+		for existing_row in existing_rows
+		if getattr(existing_row, "tag_no", None)
+	]
 
 	def apply_values(row, existing_row=None, sequence_number=1, output_width=None, pieces_count=1):
 		so_metrics = _coil_so_table_qty_metrics(so_row)
@@ -2972,7 +3019,15 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 			if fieldname == "class":
 				row.set("class", finish_good_class)
 			elif fieldname == "tag_no":
-				row.tag_no = getattr(existing_row, "tag_no", None) or _build_child_tag(parent_tag_base, sequence_number)
+				existing_tag = getattr(existing_row, "tag_no", None)
+				if existing_tag:
+					row.tag_no = existing_tag
+				elif parent_tag_base:
+					row.tag_no = _next_sub_tag(parent_tag_base, also_used=also_used_tags)
+					if row.tag_no:
+						also_used_tags.append(row.tag_no)
+				else:
+					row.tag_no = ""
 			elif fieldname == "estimated_qty":
 				row.estimated_qty = estimated_qty
 			elif fieldname == "actual_qty":
@@ -3906,6 +3961,57 @@ def _is_persisted_child_row(row):
 	return True
 
 
+def _cutting_scheme_has_carry_forward(doc):
+	"""True when at least one Cutting Detail row is marked Next Process."""
+	if not frappe.db.has_column("Cutting Scheme", "carry_forward"):
+		return False
+	return any(cint(getattr(row, "carry_forward", 0)) for row in (doc.cutting_detail or []))
+
+
+def _cutting_detail_slots_for_outputs(doc):
+	"""One cutting-detail row per Job Output slot (respects strip / sheet count)."""
+	slots = []
+	for cutting_row in doc.cutting_detail or []:
+		repeat = _repeat_count_for_cutting_row(doc, cutting_row) or 1
+		for _ in range(max(0, cint(repeat))):
+			slots.append(cutting_row)
+	return slots
+
+
+def _cutting_row_for_job_output(doc, output_row, output_index, slots=None):
+	slots = slots if slots is not None else _cutting_detail_slots_for_outputs(doc)
+	if output_index is not None and 0 <= output_index < len(slots):
+		return slots[output_index]
+	out_width = flt(getattr(output_row, "width", None))
+	if not out_width:
+		return None
+	matches = [row for row in (doc.cutting_detail or []) if flt(getattr(row, "width", 0)) == out_width]
+	if len(matches) == 1:
+		return matches[0]
+	return matches[0] if matches else None
+
+
+def _apply_carry_forward_next_process(doc, next_process_label, next_process_date):
+	"""Only outputs tied to carry_forward cutting rows advance to the next process.
+
+	If no cutting row has Next Process checked, leave default next_process behaviour.
+	"""
+	if not _cutting_scheme_has_carry_forward(doc):
+		return
+	slots = _cutting_detail_slots_for_outputs(doc)
+	for idx, row in enumerate(doc.job_output or []):
+		cutting_row = _cutting_row_for_job_output(doc, row, idx, slots=slots)
+		if cutting_row is None:
+			continue
+		if cint(getattr(cutting_row, "carry_forward", 0)):
+			if next_process_label and not _truthy_process_value(getattr(row, "next_process", None)):
+				row.next_process = next_process_label
+				row.next_process_date = next_process_date
+		else:
+			row.next_process = ""
+			row.next_process_date = ""
+
+
 def _sync_job_output_process_row(row, current_process, next_process_label, next_process_date):
 	"""Keep per-output next_process: blank means this tag does not advance."""
 	row.current_process = current_process
@@ -3947,6 +4053,12 @@ def sync_ss_coil_process_tracking(doc, method=None):
 
 	for row in doc.job_output or []:
 		_sync_job_output_process_row(row, current_process, next_process_label, next_process_date)
+		row.barcode = row.tag_no or ""
+		row.qr_code = _build_qr_html(_build_qr_payload(row, doc))
+
+	# Cutting Scheme "Next Process" check wins: only checked cuts advance.
+	_apply_carry_forward_next_process(doc, next_process_label, next_process_date)
+	for row in doc.job_output or []:
 		row.barcode = row.tag_no or ""
 		row.qr_code = _build_qr_html(_build_qr_payload(row, doc))
 
@@ -4015,6 +4127,34 @@ def create_next_ss_coil_entry(source_name):
 		frappe.throw(f"SS Coil {source_name} not found")
 
 	source_doc = frappe.get_doc("SS Coil", source_name)
+
+	# Re-apply Cutting Scheme "Next Process" so only checked cuts create next jobs.
+	operation_value = _clean_text(getattr(source_doc, "operation", None))
+	so_row = (source_doc.so_item or [None])[0]
+	input_row = (source_doc.input_coil or [None])[0]
+	configured = []
+	if so_row:
+		configured = _get_enabled_processes_from_row(so_row)
+	if not configured and input_row:
+		configured = _get_enabled_processes_from_row(input_row)
+	next_key = _next_process_for(operation_value, configured)
+	next_label = _label_for_process(next_key)
+	_apply_carry_forward_next_process(
+		source_doc, next_label, nowdate() if next_label else ""
+	)
+	# Persist cleared / set next_process on source outputs before creating children.
+	for row in source_doc.job_output or []:
+		if row.name and not str(row.name).startswith("new-"):
+			frappe.db.set_value(
+				row.doctype,
+				row.name,
+				{
+					"next_process": row.next_process or "",
+					"next_process_date": row.next_process_date or "",
+				},
+				update_modified=False,
+			)
+
 	eligible_outputs = [
 		row for row in (source_doc.job_output or []) if _truthy_process_value(row.get("next_process"))
 	]
@@ -4167,12 +4307,15 @@ def sync_ss_coil_output_tags(ss_coil=None):
 		root_tag_no = _root_tag_for(parent_tag_no) if parent_tag_no else None
 		doc_changed = False
 
+		also_used = [row.tag_no for row in (doc.job_output or []) if getattr(row, "tag_no", None)]
 		for row in doc.job_output or []:
 			effective_tag = row.tag_no
 			if parent_tag_no and _is_child_subtag(getattr(row, "class", None), parent_tag_no):
 				effective_tag = getattr(row, "class", None)
 			elif not effective_tag and parent_tag_no:
-				effective_tag = _next_sub_tag(parent_tag_no)
+				effective_tag = _next_sub_tag(parent_tag_no, also_used=also_used)
+				if effective_tag:
+					also_used.append(effective_tag)
 
 			if effective_tag and row.tag_no != effective_tag:
 				frappe.db.set_value(row.doctype, row.name, "tag_no", effective_tag, update_modified=False)

@@ -2118,13 +2118,35 @@ function load_input_coil_from_sales_order_item(frm, item) {
 	});
 }
 
+// Flat sub-tag series under mother base (SSCC-05584-001), never nested (…-002-001).
+function getSubTagSeriesBase(parentTagNo) {
+	if (!parentTagNo) {
+		return "";
+	}
+	const trimmed = String(parentTagNo).trim();
+	const match = trimmed.match(/^([A-Za-z0-9]+)-(\d+)/);
+	if (match) {
+		return `${match[1]}-${match[2]}`;
+	}
+	if (trimmed.endsWith("-000")) {
+		return trimmed.slice(0, -4);
+	}
+	return trimmed;
+}
+
+function isMotherOriginTag(tagNo) {
+	return String(tagNo || "")
+		.trim()
+		.endsWith("-000");
+}
+
 // Preview sub-tags in the grid only; Tag Registry is updated on server Save after Start.
 function buildSubTag(parentTagNo, sequenceNumber) {
 	if (!parentTagNo) return "";
-	const trimmed = String(parentTagNo).trim();
+	const seriesBase = getSubTagSeriesBase(parentTagNo);
+	if (!seriesBase) return "";
 	const padded = String(sequenceNumber).padStart(3, "0");
-	const base = trimmed.endsWith("-000") ? trimmed.slice(0, -4) : trimmed;
-	return `${base}-${padded}`;
+	return `${seriesBase}-${padded}`;
 }
 
 function getNextProcessLabelFromOutputs(frm) {
@@ -2271,7 +2293,15 @@ function apply_job_output_values(frm, row, input_row, so_row, existing_row, sequ
 			return;
 		}
 		if (fieldname === "tag_no") {
-			row.tag_no = existing_row?.tag_no || buildSubTag(parentTag, sequenceNumber);
+			if (existing_row?.tag_no) {
+				row.tag_no = existing_row.tag_no;
+			} else if (parentTag && isMotherOriginTag(parentTag)) {
+				// First-cut from mother …-000: preview …-001, …-002 from row index.
+				row.tag_no = buildSubTag(parentTag, sequenceNumber);
+			} else {
+				// Next process from a sub-tag: server assigns next free flat number on save.
+				row.tag_no = "";
+			}
 			return;
 		}
 		if (fieldname === "estimated_qty") {

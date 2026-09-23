@@ -671,6 +671,7 @@ function production_row_as_cutting_context(row) {
 		custom_width: row.width,
 		custom_length: row.length,
 		custom_length_c: row.length_c,
+		custom_estimated_wt: row.estimated_wt,
 		custom_slitter: row.slitter,
 		custom_leveler: row.leveler,
 		custom_reshearing: row.reshearing,
@@ -1369,58 +1370,190 @@ const SS_COIL_CUTTING_PROCESS_LABELS = {
 };
 
 function cutting_scheme_dialog_table_fields() {
-	/** Single schema for all tabs — Frappe grid breaks if column defs change on tab switch. */
+	/** Single schema for all tabs — visibility/widths are toggled per process. */
 	return [
 		{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, read_only: 1, columns: 1 },
 		{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
 		{ fieldname: "length", fieldtype: "Float", label: "Length", in_list_view: 1, columns: 2 },
-		{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 2 },
-		{ fieldname: "strip", fieldtype: "Float", label: __("Strip"), in_list_view: 1, columns: 2 },
-		{ fieldname: "total_sheets", fieldtype: "Float", label: __("Total sheets"), in_list_view: 1, columns: 2 },
+		{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 1 },
+		{ fieldname: "strip", fieldtype: "Float", label: __("Strip"), in_list_view: 1, columns: 1 },
+		{ fieldname: "total_sheets", fieldtype: "Float", label: __("Sheets"), in_list_view: 1, columns: 1 },
 		{
 			fieldname: "total_width",
 			fieldtype: "Float",
 			label: __("Total Width"),
 			in_list_view: 1,
 			read_only: 1,
-			columns: 2,
+			columns: 1,
 		},
 		{ fieldname: "tolerance_plus", fieldtype: "Float", label: "Tol(+)", in_list_view: 1, columns: 1 },
 		{ fieldname: "tolerance_minus", fieldtype: "Float", label: "Tol(-)", in_list_view: 1, columns: 1 },
 		{ fieldname: "knife", fieldtype: "Check", label: "Knife", in_list_view: 1, columns: 1 },
+		{
+			fieldname: "carry_forward",
+			fieldtype: "Check",
+			label: __("Next"),
+			in_list_view: 1,
+			columns: 1,
+		},
 	];
 }
 
-function ensure_cutting_scheme_dialog_grid_styles() {
-	if (document.getElementById("ss-coil-scheme-grid-style")) {
-		return;
+function cutting_scheme_process_column_map(process_key, is_last) {
+	if (process_key === "slitter") {
+		return {
+			seq: 1,
+			width: 2,
+			lengthcut: 1,
+			strip: 1,
+			total_width: 1,
+			tolerance_plus: 1,
+			tolerance_minus: 1,
+			knife: 1,
+			carry_forward: is_last ? 0 : 1,
+		};
 	}
-	const style = document.createElement("style");
-	style.id = "ss-coil-scheme-grid-style";
-	style.textContent = `
-		.ss-coil-scheme-slitter .grid-heading-row [data-fieldname="length"],
-		.ss-coil-scheme-slitter .grid-row [data-fieldname="length"],
-		.ss-coil-scheme-slitter .grid-heading-row [data-fieldname="total_sheets"],
-		.ss-coil-scheme-slitter .grid-row [data-fieldname="total_sheets"] { display: none !important; }
-		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="strip"],
-		.ss-coil-scheme-leveler .grid-row [data-fieldname="strip"],
-		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="total_width"],
-		.ss-coil-scheme-leveler .grid-row [data-fieldname="total_width"],
-		.ss-coil-scheme-leveler .grid-heading-row [data-fieldname="knife"],
-		.ss-coil-scheme-leveler .grid-row [data-fieldname="knife"] { display: none !important; }
-	`;
-	document.head.appendChild(style);
+	return {
+		seq: 1,
+		width: 2,
+		length: 2,
+		lengthcut: 1,
+		total_sheets: 1,
+		tolerance_plus: 1,
+		tolerance_minus: 1,
+		carry_forward: is_last ? 0 : 1,
+	};
 }
 
-function apply_cutting_scheme_grid_process_mode(grid, process_key) {
+function cutting_scheme_hidden_fields_for_process(process_key, is_last) {
+	const hide = new Set();
+	if (process_key === "slitter") {
+		hide.add("length");
+		hide.add("total_sheets");
+	} else {
+		hide.add("strip");
+		hide.add("total_width");
+		hide.add("knife");
+	}
+	if (is_last) {
+		hide.add("carry_forward");
+	}
+	return hide;
+}
+
+function ensure_cutting_scheme_dialog_grid_styles() {
+	const css = `
+		.ss-coil-scheme-grid .form-grid-container {
+			overflow-x: auto !important;
+			overflow-y: hidden;
+			width: 100%;
+		}
+		/* Keep heading + body in one scroll container (do not scroll .grid-body alone). */
+		.ss-coil-scheme-grid .grid-body,
+		.ss-coil-scheme-grid .grid-heading-row {
+			overflow-x: visible !important;
+		}
+		.ss-coil-scheme-grid .form-grid {
+			min-width: max-content;
+		}
+		.ss-coil-scheme-grid .grid-heading-row .grid-static-col,
+		.ss-coil-scheme-grid .grid-row .grid-static-col {
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+	`;
+	let style = document.getElementById("ss-coil-scheme-grid-style");
+	if (!style) {
+		style = document.createElement("style");
+		style.id = "ss-coil-scheme-grid-style";
+		document.head.appendChild(style);
+	}
+	style.textContent = css;
+}
+
+function reset_cutting_scheme_grid_columns(grid) {
+	if (!grid) {
+		return;
+	}
+	// Clear column cache AND DOM. Clearing only `columns` makes make_column()
+	// append duplicate header/body cells on the next refresh.
+	grid.visible_columns = null;
+	grid.grid_rows = [];
+	grid.grid_rows_by_docname = {};
+	if (grid.parent) {
+		$(grid.parent).find(".grid-body .grid-row").remove();
+		$(grid.parent).find(".grid-heading-row .grid-row").remove();
+	}
+	grid.header_row = null;
+	grid.header_search = null;
+	grid.filter_row = null;
+}
+
+function apply_cutting_scheme_grid_process_mode(grid, process_key, processes) {
 	if (!grid || !grid.wrapper) {
 		return;
 	}
 	ensure_cutting_scheme_dialog_grid_styles();
-	const is_slitter = process_key === "slitter";
-	grid.wrapper
-		.toggleClass("ss-coil-scheme-slitter", is_slitter)
-		.toggleClass("ss-coil-scheme-leveler", !is_slitter);
+	grid.wrapper.addClass("ss-coil-scheme-grid");
+
+	const process_list = processes || [];
+	const is_last =
+		process_list.length > 0 && process_list[process_list.length - 1] === process_key;
+	const hide = cutting_scheme_hidden_fields_for_process(process_key, is_last);
+	const col_map = cutting_scheme_process_column_map(process_key, is_last);
+	const fields = (grid.df && grid.df.fields) || grid.docfields || [];
+
+	grid.column_disp_overrides = grid.column_disp_overrides || {};
+
+	fields.forEach((df) => {
+		if (!df || !df.fieldname) {
+			return;
+		}
+		const is_hidden = hide.has(df.fieldname) ? 1 : 0;
+		df.hidden = is_hidden;
+		grid.column_disp_overrides[df.fieldname] = is_hidden;
+		if (col_map[df.fieldname]) {
+			df.columns = col_map[df.fieldname];
+		}
+		if (df.fieldname === "carry_forward") {
+			df.label = __("Next");
+		}
+		if (df.fieldname === "total_sheets") {
+			df.label = __("Sheets");
+		}
+	});
+
+	if (grid.fields_map) {
+		fields.forEach((df) => {
+			if (df && df.fieldname && grid.fields_map[df.fieldname]) {
+				grid.fields_map[df.fieldname].hidden = df.hidden;
+				grid.fields_map[df.fieldname].columns = df.columns;
+				grid.fields_map[df.fieldname].label = df.label;
+			}
+		});
+	}
+
+	// Deduplicate field defs if a prior refresh somehow stacked them.
+	if (grid.df && Array.isArray(grid.df.fields)) {
+		const seen = new Set();
+		grid.df.fields = grid.df.fields.filter((df) => {
+			if (!df || !df.fieldname || seen.has(df.fieldname)) {
+				return false;
+			}
+			seen.add(df.fieldname);
+			return true;
+		});
+		grid.docfields = grid.df.fields;
+	}
+
+	reset_cutting_scheme_grid_columns(grid);
+	if (typeof grid.reset_grid === "function") {
+		grid.reset_grid();
+	} else {
+		grid.setup_visible_columns();
+		grid.refresh();
+	}
 }
 
 function default_cutting_scheme_row_for_process(so_item_row, process_key) {
@@ -1429,8 +1562,11 @@ function default_cutting_scheme_row_for_process(so_item_row, process_key) {
 	}
 	const width = flt(so_item_row.custom_width);
 	const length = flt(so_item_row.custom_length);
-	const total_sheets = flt(so_item_row.qty);
 	const lengthcut = 1;
+	const total_sheets =
+		length && ss_coil.process && ss_coil.process.cuttingSchemeTotalSheets
+			? ss_coil.process.cuttingSchemeTotalSheets(so_item_row, length)
+			: 0;
 	return {
 		width: width || undefined,
 		length: length || undefined,
@@ -1482,17 +1618,87 @@ function show_cutting_scheme_process_tab(dialog, processes, active_process) {
 		const show = pk === active_process;
 		// Do not use df.hidden — Frappe skips rendering Table grids when hidden.
 		field.df.hidden = 0;
-		if (field.$wrapper) {
-			field.$wrapper.css("display", show ? "block" : "none");
+		const $wrap = field.$wrapper;
+		if ($wrap && $wrap.length) {
+			$wrap.toggle(show);
+			$wrap.closest(".frappe-control").toggle(show);
 		}
 		if (show && field.grid) {
-			apply_cutting_scheme_grid_process_mode(field.grid, pk);
-			field.grid.refresh();
+			apply_cutting_scheme_grid_process_mode(field.grid, pk, processes);
 		}
 	});
 }
 
-function seed_cutting_scheme_grid_if_empty(dialog, process_key) {
+function previous_cutting_scheme_process(processes, process_key) {
+	const list = processes || [];
+	const idx = list.indexOf(process_key);
+	if (idx <= 0) {
+		return null;
+	}
+	return list[idx - 1];
+}
+
+function get_cutting_scheme_rows_for_process(dialog, process_key) {
+	const field = get_cutting_scheme_field(dialog, process_key);
+	if (field && field.grid) {
+		return normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+	}
+	const cached = (dialog.__plan_cache || {})[process_key];
+	return normalize_cutting_scheme_rows(cached || [], process_key);
+}
+
+function rows_marked_for_next_process(rows) {
+	return (rows || []).filter((row) => cint(row.carry_forward));
+}
+
+function carry_forward_row_to_process(source_row, process_key, so_item_row) {
+	const defaults = default_cutting_scheme_row_for_process(so_item_row, process_key) || {};
+	const width = flt(source_row.width) || flt(defaults.width);
+	if (process_key === "slitter") {
+		return {
+			width: width || undefined,
+			strip: flt(source_row.strip) || 1,
+			lengthcut: flt(source_row.lengthcut) || undefined,
+			tolerance_plus: source_row.tolerance_plus,
+			tolerance_minus: source_row.tolerance_minus,
+			knife: cint(source_row.knife),
+			carry_forward: 0,
+		};
+	}
+	const length = flt(source_row.length) || flt(defaults.length);
+	let total_sheets =
+		flt(source_row.total_sheets) ||
+		(flt(source_row.strip) > 1 ? flt(source_row.strip) : 0) ||
+		flt(defaults.total_sheets);
+	if (
+		length &&
+		ss_coil.process &&
+		ss_coil.process.cuttingSchemeTotalSheets &&
+		so_item_row
+	) {
+		const calculated = ss_coil.process.cuttingSchemeTotalSheets(so_item_row, length);
+		if (calculated) {
+			total_sheets = calculated;
+		}
+	}
+	return {
+		width: width || undefined,
+		length: length || undefined,
+		strip: 1,
+		total_sheets: total_sheets || undefined,
+		lengthcut: flt(source_row.lengthcut) || flt(defaults.lengthcut) || 1,
+		tolerance_plus: length
+			? flt(source_row.tolerance_plus) || length + 1
+			: source_row.tolerance_plus,
+		tolerance_minus: length
+			? flt(source_row.tolerance_minus) || length - 1
+			: source_row.tolerance_minus,
+		carry_forward: 0,
+	};
+}
+
+function seed_cutting_scheme_grid_if_empty(dialog, process_key, opts) {
+	opts = opts || {};
 	if (process_key === "slitter") {
 		return;
 	}
@@ -1504,14 +1710,33 @@ function seed_cutting_scheme_grid_if_empty(dialog, process_key) {
 	if (existing.length) {
 		return;
 	}
-	const defaults = default_cutting_scheme_row_for_process(dialog.__so_item_row, process_key);
-	if (!defaults) {
+
+	const prev_key = previous_cutting_scheme_process(dialog.__processes, process_key);
+	let seed_rows = [];
+	if (prev_key) {
+		const carried = rows_marked_for_next_process(
+			get_cutting_scheme_rows_for_process(dialog, prev_key),
+		);
+		seed_rows = carried.map((row) =>
+			carry_forward_row_to_process(row, process_key, dialog.__so_item_row),
+		);
+	}
+	if (!seed_rows.length && opts.allow_so_default !== false) {
+		const defaults = default_cutting_scheme_row_for_process(dialog.__so_item_row, process_key);
+		if (defaults) {
+			seed_rows = [defaults];
+		}
+	}
+	if (!seed_rows.length) {
 		return;
 	}
-	const data = normalize_cutting_scheme_rows([defaults], process_key);
+	const data = normalize_cutting_scheme_rows(seed_rows, process_key);
 	field.df.data = data;
 	field.grid.df.data = data;
 	field.grid.refresh();
+	if (dialog.__plan_cache) {
+		dialog.__plan_cache[process_key] = data.map((row) => ({ ...row }));
+	}
 }
 
 function map_cutting_scheme_row_from_server(d) {
@@ -1526,6 +1751,7 @@ function map_cutting_scheme_row_from_server(d) {
 		tolerance_plus: d.tolerance_plus,
 		tolerance_minus: d.tolerance_minus,
 		knife: d.knife,
+		carry_forward: cint(d.carry_forward),
 	};
 }
 
@@ -1641,32 +1867,39 @@ function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
 								});
 							}
 							if (save_r.message && fromProduction) {
-								if (save_r.message.custom_calc_ratio != null) {
-									frappe.model.set_value(cdt, cdn, "calc_ratio", flt(save_r.message.custom_calc_ratio));
+								const new_ratio = flt(save_r.message.custom_calc_ratio, 6);
+								const new_rem = flt(save_r.message.custom_remaining_width, 6);
+								const row = locals[cdt] && locals[cdt][cdn];
+								if (row && save_r.message.custom_calc_ratio != null && flt(row.calc_ratio, 6) !== new_ratio) {
+									frappe.model.set_value(cdt, cdn, "calc_ratio", new_ratio);
 								}
-								if (save_r.message.custom_remaining_width != null) {
-									frappe.model.set_value(
-										cdt,
-										cdn,
-										"remaining_width",
-										flt(save_r.message.custom_remaining_width)
-									);
+								if (
+									row &&
+									save_r.message.custom_remaining_width != null &&
+									flt(row.remaining_width, 6) !== new_rem
+								) {
+									frappe.model.set_value(cdt, cdn, "remaining_width", new_rem);
 								}
 								frm.refresh_field("custom_coil_production");
 								render_production_cutting_scheme_preview(frm, cdt, cdn);
 							} else if (save_r.message) {
-								frappe.model.set_value(
-									cdt,
-									cdn,
-									"custom_calc_ratio",
-									flt(save_r.message.custom_calc_ratio),
-								);
-								frappe.model.set_value(
-									cdt,
-									cdn,
-									"custom_remaining_width",
-									flt(save_r.message.custom_remaining_width),
-								);
+								const new_ratio = flt(save_r.message.custom_calc_ratio, 6);
+								const new_rem = flt(save_r.message.custom_remaining_width, 6);
+								const row = locals[cdt] && locals[cdt][cdn];
+								if (
+									row &&
+									save_r.message.custom_calc_ratio != null &&
+									flt(row.custom_calc_ratio, 6) !== new_ratio
+								) {
+									frappe.model.set_value(cdt, cdn, "custom_calc_ratio", new_ratio);
+								}
+								if (
+									row &&
+									save_r.message.custom_remaining_width != null &&
+									flt(row.custom_remaining_width, 6) !== new_rem
+								) {
+									frappe.model.set_value(cdt, cdn, "custom_remaining_width", new_rem);
+								}
 								frm.refresh_field("items");
 								render_item_cutting_scheme_preview(frm, cdt, cdn);
 							}
@@ -1697,6 +1930,7 @@ function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
 				if (next_process === dialog.__active_process) {
 					return;
 				}
+				sync_cutting_dialog_grid_to_cache(dialog, plan_cache, dialog.__active_process);
 				dialog.__active_process = next_process;
 				active_process = next_process;
 				show_cutting_scheme_process_tab(dialog, processes, next_process);
@@ -1708,11 +1942,8 @@ function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
 			setTimeout(() => {
 				show_cutting_scheme_process_tab(dialog, processes, active_process);
 				bind_cutting_scheme_dialog_events(dialog);
-				processes.forEach((pk) => {
-					if (pk !== active_process) {
-						seed_cutting_scheme_grid_if_empty(dialog, pk);
-					}
-				});
+				// Only seed the active tab. Later tabs stay empty until opened so
+				// "Next Process" checks on the previous tab can populate them.
 				seed_cutting_scheme_grid_if_empty(dialog, active_process);
 				update_cutting_scheme_totals(dialog);
 			}, 200);
@@ -1745,9 +1976,11 @@ function bind_cutting_scheme_dialog_events(dialog) {
 			return;
 		}
 
-		field.grid.wrapper.css("overflow-x", "auto");
-		field.grid.wrapper.find(".grid-body").css("overflow-x", "auto");
-		field.grid.wrapper.find(".grid-heading-row, .rows").css("min-width", "1200px");
+		const $container = field.grid.wrapper.find(".form-grid-container");
+		if ($container.length) {
+			$container.css({ "overflow-x": "auto", "overflow-y": "hidden" });
+		}
+		field.grid.wrapper.find(".grid-body, .grid-heading-row").css("overflow-x", "visible");
 		field.grid.wrapper.find(".grid-add-row, .grid-remove-rows").css("display", "");
 
 		field.grid.wrapper.off(".ss_coil_cutting_dialog");
@@ -1765,6 +1998,37 @@ function bind_cutting_scheme_dialog_events(dialog) {
 				if (!row) return;
 
 				row.total_width = flt(row.width) * (flt(row.strip) || 1);
+
+				// Leveler / Reshearing: Total sheets = round(coil_length_m × 1000 / length_mm)
+				const fieldname = $(this).closest("[data-fieldname]").attr("data-fieldname");
+				if (
+					process_key !== "slitter" &&
+					(fieldname === "length" || $(this).attr("data-fieldname") === "length") &&
+					ss_coil.process &&
+					ss_coil.process.cuttingSchemeTotalSheets
+				) {
+					const sheets = ss_coil.process.cuttingSchemeTotalSheets(
+						dialog.__so_item_row,
+						row.length,
+					);
+					if (sheets) {
+						row.total_sheets = sheets;
+					}
+					const length = flt(row.length);
+					if (length) {
+						if (row.tolerance_plus === undefined || row.tolerance_plus === null || row.tolerance_plus === "") {
+							row.tolerance_plus = length + 1;
+						}
+						if (
+							row.tolerance_minus === undefined ||
+							row.tolerance_minus === null ||
+							row.tolerance_minus === ""
+						) {
+							row.tolerance_minus = length - 1;
+						}
+					}
+				}
+
 				field.grid.refresh_row(row_name);
 				update_cutting_scheme_totals(dialog);
 			},
@@ -1829,6 +2093,9 @@ function render_cutting_scheme_process_tabs(dialog, processes, active_process, o
 			<span style="font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b;margin-right:6px;">${__(
 				"Process",
 			)}</span>${tabs}
+			<span style="font-size:11px;color:#64748b;margin-left:8px;line-height:1.4;">${__(
+				"Tick Next Process on a row to carry that cut into the next process tab.",
+			)}</span>
 		</div>`,
 	);
 	html_field.$wrapper.find(".ss-coil-scheme-tab").off("click").on("click", function () {
@@ -1862,6 +2129,7 @@ function normalize_cutting_scheme_rows(rows, process_key = "slitter") {
 				d.tolerance_plus,
 				d.tolerance_minus,
 				d.knife,
+				d.carry_forward,
 			].some((v) => v !== undefined && v !== null && String(v).trim() !== ""),
 		)
 		.map((d, idx) => {
@@ -1875,6 +2143,7 @@ function normalize_cutting_scheme_rows(rows, process_key = "slitter") {
 				strip,
 				total_sheets,
 				total_width: is_slitter ? flt(d.width) * (strip || 0) : flt(d.width),
+				carry_forward: cint(d.carry_forward),
 			};
 		});
 }
@@ -1896,18 +2165,27 @@ function update_cutting_scheme_totals(dialog) {
 	const remaining_width = item_width - total_width;
 
 	if (process_key !== "slitter") {
+		const total_sheets_sum = rows.reduce((sum, row) => sum + flt(row.total_sheets || row.strip), 0);
+		const coil_m =
+			ss_coil.process && ss_coil.process.cuttingSchemeCoilLengthM
+				? ss_coil.process.cuttingSchemeCoilLengthM(dialog.__so_item_row)
+				: 0;
 		html_field.$wrapper.html(`
 		<div style="margin-top: 12px; display: flex; gap: 12px; flex-wrap: wrap;">
 			<div style="background:#16324f; color:#fff; padding:10px 14px; border-radius:10px; min-width:140px;">
 				<div style="font-size:11px; opacity:.8; text-transform:uppercase;">Rows</div>
 				<div style="font-size:20px; font-weight:700;">${row_count}</div>
 			</div>
+			<div style="background:#eef6ff; color:#16324f; padding:10px 14px; border-radius:10px; min-width:160px; border:1px solid #d8e6f7;">
+				<div style="font-size:11px; opacity:.8; text-transform:uppercase;">${__("Coil Length")}</div>
+				<div style="font-size:20px; font-weight:700;">${coil_m ? format_number(coil_m) + " m" : "-"}</div>
+			</div>
 			<div style="background:#edf9f2; color:#1c6b3f; padding:10px 14px; border-radius:10px; min-width:160px; border:1px solid #cbe8d7;">
 				<div style="font-size:11px; opacity:.8; text-transform:uppercase;">${__("Total Sheet")}</div>
-				<div style="font-size:20px; font-weight:700;">${format_number(total_strips)}</div>
+				<div style="font-size:20px; font-weight:700;">${format_number(total_sheets_sum)}</div>
 			</div>
-			<div style="font-size:12px;color:#64748b;padding:10px 14px;max-width:420px;line-height:1.5;">${__(
-				"Leveler / Reshearing scheme: Width, Length, LengthCut, Total Sheet (Strip), tolerances. Calc ratio on SO item is updated from Slitter tab only.",
+			<div style="font-size:12px;color:#64748b;padding:10px 14px;max-width:480px;line-height:1.5;">${__(
+				"Total sheets = round(Coil Length (m) × 1000 ÷ Length (mm)). Coil length from Weight ÷ (Thickness × Width × density). Enter Length to auto-fill Sheets.",
 			)}</div>
 		</div>
 	`);
@@ -2883,6 +3161,7 @@ function build_cutting_scheme_process_table_html(group) {
 	const is_slitter = process_key === "slitter";
 	const row_list = group.rows || [];
 	const cell = "padding:8px 10px; font-size:12px;";
+	const next_label = (row) => (cint(row.carry_forward) ? __("Yes") : __("No"));
 
 	const rows = row_list.length
 		? row_list
@@ -2897,6 +3176,7 @@ function build_cutting_scheme_process_table_html(group) {
 							<td style="${cell}">${row.tolerance_plus || ""}</td>
 							<td style="${cell}">${row.tolerance_minus || ""}</td>
 							<td style="${cell}">${row.knife ? "Yes" : "No"}</td>
+							<td style="${cell}">${next_label(row)}</td>
 						</tr>`;
 					}
 					const totalSheets =
@@ -2913,10 +3193,11 @@ function build_cutting_scheme_process_table_html(group) {
 						<td style="${cell}">${totalSheets}</td>
 						<td style="${cell}">${row.tolerance_plus || ""}</td>
 						<td style="${cell}">${row.tolerance_minus || ""}</td>
+						<td style="${cell}">${next_label(row)}</td>
 					</tr>`;
 				})
 				.join("")
-		: `<tr><td colspan="${is_slitter ? 8 : 7}" style="color:#64748b;text-align:center;padding:12px;">${__(
+		: `<tr><td colspan="${is_slitter ? 9 : 8}" style="color:#64748b;text-align:center;padding:12px;">${__(
 				"No rows saved",
 			)}</td></tr>`;
 
@@ -2924,10 +3205,12 @@ function build_cutting_scheme_process_table_html(group) {
 		? `<tr>
 			<th style="${cell}">SEQ</th><th style="${cell}">Width</th><th style="${cell}">Strip</th><th style="${cell}">LengthCut</th>
 			<th style="${cell}">Total Width</th><th style="${cell}">Tol (+)</th><th style="${cell}">Tol (-)</th><th style="${cell}">Knife</th>
+			<th style="${cell}">${__("Next")}</th>
 		</tr>`
 		: `<tr>
 			<th style="${cell}">SEQ</th><th style="${cell}">Width</th><th style="${cell}">Length</th><th style="${cell}">LengthCut</th>
 			<th style="${cell}">Total sheets</th><th style="${cell}">Tol(+)</th><th style="${cell}">Tol(-)</th>
+			<th style="${cell}">${__("Next")}</th>
 		</tr>`;
 
 	return `
@@ -2937,7 +3220,7 @@ function build_cutting_scheme_process_table_html(group) {
 				<span style="font-size:12px;color:#64748b;">${row_list.length ? `${row_list.length} ${__("row(s)")}` : __("Not saved")}</span>
 			</div>
 			<div style="overflow:auto;">
-				<table class="table table-bordered" style="margin-bottom:0; background:#fffefb; min-width:${is_slitter ? 680 : 620}px;">
+				<table class="table table-bordered" style="margin-bottom:0; background:#fffefb; min-width:${is_slitter ? 760 : 700}px;">
 					<thead style="background:#22384d; color:#f8fbff;">${thead}</thead>
 					<tbody>${rows}</tbody>
 				</table>
@@ -3455,6 +3738,7 @@ function format_cutting_scheme_preview_html(payload) {
 			const body = rows
 				.map((d, idx) => {
 					const bg = idx % 2 ? "#f8fafc" : "#ffffff";
+					const next_cell = cint(d.carry_forward) ? __("Yes") : __("No");
 					if (is_slitter) {
 						return `<tr style="background:${bg};">
 							<td style="${td}">${d.seq || ""}</td>
@@ -3465,6 +3749,7 @@ function format_cutting_scheme_preview_html(payload) {
 							<td style="${td}">${d.tolerance_plus || ""}</td>
 							<td style="${td}">${d.tolerance_minus || ""}</td>
 							<td style="${td}">${d.knife ? __("Yes") : __("No")}</td>
+							<td style="${td}">${next_cell}</td>
 						</tr>`;
 					}
 					const totalSheets =
@@ -3481,6 +3766,7 @@ function format_cutting_scheme_preview_html(payload) {
 						<td style="${td}">${totalSheets}</td>
 						<td style="${td}">${d.tolerance_plus || ""}</td>
 						<td style="${td}">${d.tolerance_minus || ""}</td>
+						<td style="${td}">${next_cell}</td>
 					</tr>`;
 				})
 				.join("");
@@ -3495,6 +3781,7 @@ function format_cutting_scheme_preview_html(payload) {
 					<th style="${th}">${__("Tol (+)")}</th>
 					<th style="${th}">${__("Tol (-)")}</th>
 					<th style="${th}">${__("Knife")}</th>
+					<th style="${th}">${__("Next")}</th>
 				</tr>`
 				: `<tr>
 					<th style="${th}">SEQ</th>
@@ -3504,6 +3791,7 @@ function format_cutting_scheme_preview_html(payload) {
 					<th style="${th}">${__("Total sheets")}</th>
 					<th style="${th}">${__("Tol (+)")}</th>
 					<th style="${th}">${__("Tol (-)")}</th>
+					<th style="${th}">${__("Next")}</th>
 				</tr>`;
 
 			return `<div style="margin:0 0 12px;border:1px solid #d7e3ef;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04);">
@@ -3514,7 +3802,7 @@ function format_cutting_scheme_preview_html(payload) {
 					<span style="font-size:11px;color:${tone.text};font-weight:600;">${rows.length} ${__("row(s)")}</span>
 				</div>
 				<div style="overflow:auto;">
-					<table style="width:100%;margin:0;border-collapse:collapse;min-width:${is_slitter ? 560 : 520}px;">
+					<table style="width:100%;margin:0;border-collapse:collapse;min-width:${is_slitter ? 640 : 600}px;">
 						<thead style="background:#243b53;color:#f8fbff;">${thead}</thead>
 						<tbody>${body}</tbody>
 					</table>

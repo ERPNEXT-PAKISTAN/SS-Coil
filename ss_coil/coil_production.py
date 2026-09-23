@@ -147,6 +147,21 @@ def sync_shared_fields_between_so_item_and_production(so_row, prod_row, fill_mis
 
 		so_empty = so_val in (None, "")
 		prod_empty = prod_val in (None, "")
+		# Float fields: ignore tiny precision noise so submitted SOs can save.
+		if prod_field in ("calc_ratio", "calc_ratio_2", "actual_ratio", "remaining_width") or so_field in (
+			"custom_calc_ratio",
+			"custom_calc_ratio_2",
+			"custom_actual_ratio",
+			"custom_remaining_width",
+		):
+			so_num = flt(so_val, 6)
+			prod_num = flt(prod_val, 6)
+			if not so_empty and so_num != prod_num:
+				prod_row.set(prod_field, so_num)
+			elif fill_missing and so_empty and not prod_empty:
+				so_row.set(so_field, prod_num)
+			continue
+
 		if not so_empty and so_val != prod_val:
 			prod_row.set(prod_field, so_val)
 		elif fill_missing and so_empty and not prod_empty:

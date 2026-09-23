@@ -391,24 +391,32 @@
    "options": "Workstation"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "calc_ratio",
    "fieldtype": "Float",
-   "label": "Calc Ratio"
+   "label": "Calc Ratio",
+   "precision": "6"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "calc_ratio_2",
    "fieldtype": "Float",
-   "label": "Calc Ratio 2"
+   "label": "Calc Ratio 2",
+   "precision": "6"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "actual_ratio",
    "fieldtype": "Float",
-   "label": "Actual Ratio"
+   "label": "Actual Ratio",
+   "precision": "6"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "remaining_width",
    "fieldtype": "Float",
-   "label": "Remaining Width"
+   "label": "Remaining Width",
+   "precision": "6"
   },
   {
    "fieldname": "section_packing",

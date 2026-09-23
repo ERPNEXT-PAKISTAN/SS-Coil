@@ -8137,6 +8137,8 @@ def _cutting_scheme_child_row_from_input(row, idx, process_key="slitter", sales_
 		child["length"] = flt(row.length)
 	if _cutting_scheme_row_has_total_sheets() and _uses_numeric_length_for_process(process_key):
 		child["total_sheets"] = flt(row.total_sheets)
+	if frappe.db.has_column("Cutting Scheme SO", "carry_forward"):
+		child["carry_forward"] = cint(row.get("carry_forward"))
 	return child
 
 
@@ -8173,10 +8175,13 @@ def _save_so_production_plan_rows(sales_order, sales_order_item, process_key, ro
 		item = frappe.get_doc("Sales Order Item", sales_order_item)
 		parent_width = flt(item.get("custom_width"))
 		qty = flt(item.get("qty"))
-		calc_ratio = ((qty / parent_width) * total_popup_width) if parent_width else 0
-		remaining_width = parent_width - total_total_width
-		item.db_set("custom_calc_ratio", calc_ratio, update_modified=False)
-		item.db_set("custom_remaining_width", remaining_width, update_modified=False)
+		# Round to avoid float-noise UpdateAfterSubmit errors on submitted Sales Orders.
+		calc_ratio = flt(((qty / parent_width) * total_popup_width) if parent_width else 0, 6)
+		remaining_width = flt(parent_width - total_total_width, 6)
+		if flt(item.get("custom_calc_ratio"), 6) != calc_ratio:
+			item.db_set("custom_calc_ratio", calc_ratio, update_modified=False)
+		if flt(item.get("custom_remaining_width"), 6) != remaining_width:
+			item.db_set("custom_remaining_width", remaining_width, update_modified=False)
 		result.update(
 			{
 				"custom_calc_ratio": calc_ratio,
@@ -8322,11 +8327,25 @@ def save_so_production_plans_for_item(sales_order, sales_order_item=None, plans=
 	if coil_production_line and frappe.db.exists("Coil Production Line", coil_production_line):
 		prod_updates = {}
 		if summary.get("custom_calc_ratio") is not None:
-			prod_updates["calc_ratio"] = summary["custom_calc_ratio"]
+			new_ratio = flt(summary["custom_calc_ratio"], 6)
+			old_ratio = flt(
+				frappe.db.get_value("Coil Production Line", coil_production_line, "calc_ratio"),
+				6,
+			)
+			if old_ratio != new_ratio:
+				prod_updates["calc_ratio"] = new_ratio
 		if summary.get("custom_remaining_width") is not None:
-			prod_updates["remaining_width"] = summary["custom_remaining_width"]
+			new_rem = flt(summary["custom_remaining_width"], 6)
+			old_rem = flt(
+				frappe.db.get_value("Coil Production Line", coil_production_line, "remaining_width"),
+				6,
+			)
+			if old_rem != new_rem:
+				prod_updates["remaining_width"] = new_rem
 		if prod_updates:
-			frappe.db.set_value("Coil Production Line", coil_production_line, prod_updates, update_modified=False)
+			frappe.db.set_value(
+				"Coil Production Line", coil_production_line, prod_updates, update_modified=False
+			)
 
 	return summary
 

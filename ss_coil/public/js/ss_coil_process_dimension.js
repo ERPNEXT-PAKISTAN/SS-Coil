@@ -103,6 +103,42 @@ ss_coil.process.weightFormulaLength = function (so_row) {
 	return denominator ? qty / denominator : 0;
 };
 
+/**
+ * Mother-coil length (metres) for Cutting Scheme sheet math.
+ * Weight / (Thickness_mm × Width_mm × 0.00000785 × 1000)
+ * Prefer estimated weight when present (same density path as SS Coil).
+ */
+ss_coil.process.cuttingSchemeCoilLengthM = function (coil_row) {
+	if (!coil_row) {
+		return 0;
+	}
+	const weight = flt(
+		coil_row.custom_estimated_wt ||
+			coil_row.estimated_wt ||
+			ss_coil.process.soRowField(coil_row, "qty"),
+	);
+	const thickness = flt(ss_coil.process.soRowField(coil_row, "thickness"));
+	const width = flt(ss_coil.process.soRowField(coil_row, "width"));
+	const denominator = thickness * width * 0.00000785 * 1000;
+	return denominator ? weight / denominator : 0;
+};
+
+/**
+ * Leveler / Reshearing total sheets:
+ * round(Coil Length (m) × 1000 / Sheet Length (mm))
+ */
+ss_coil.process.cuttingSchemeTotalSheets = function (coil_row, sheet_length_mm) {
+	const sheet_len = flt(sheet_length_mm);
+	if (!sheet_len) {
+		return 0;
+	}
+	const coil_m = ss_coil.process.cuttingSchemeCoilLengthM(coil_row);
+	if (!coil_m) {
+		return 0;
+	}
+	return Math.round((coil_m * 1000) / sheet_len);
+};
+
 ss_coil.process.effectiveInputCoilLength = function (frm) {
 	const so_row = (frm.doc.so_item || [])[0];
 	if (!so_row) {

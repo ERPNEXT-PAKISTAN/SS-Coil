@@ -2213,6 +2213,7 @@ function rebuild_job_output_from_input(frm) {
 		const row = frm.add_child("job_output");
 		apply_job_output_values(frm, row, input_row, so_row, existing_rows[0], 1, flt(so_row.width) || flt(input_row.width), 1);
 	} else {
+		const any_carry_forward = cutting_rows.some((cuttingRow) => cint(cuttingRow.carry_forward));
 		let outputIndex = 0;
 		cutting_rows.forEach((cuttingRow) => {
 			const stripCount = repeatCountForCuttingRow(frm, cuttingRow);
@@ -2228,6 +2229,11 @@ function rebuild_job_output_from_input(frm) {
 					flt(cuttingRow.width),
 					totalPieces,
 				);
+				// When Next Process is used on Cutting Scheme, only checked cuts advance.
+				if (any_carry_forward && !cint(cuttingRow.carry_forward)) {
+					row.next_process = "";
+					row.next_process_date = "";
+				}
 				outputIndex += 1;
 			}
 		});

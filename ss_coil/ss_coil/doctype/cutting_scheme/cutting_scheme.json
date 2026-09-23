@@ -27,6 +27,7 @@
   "tolerance_minus",
   "column_break_jdom",
   "knife",
+  "carry_forward",
   "section_break_hfjr",
   "so_no",
   "column_break_jxsv"
@@ -146,6 +147,15 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Knife"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "Carry this cut into the next process (and further if checked again there).",
+   "fieldname": "carry_forward",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Next Process"
   },
   {
    "fieldname": "section_break_hfjr",

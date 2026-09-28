@@ -95,6 +95,18 @@ fixtures = [
 			]
 		],
 	},
+	{
+		"dt": "Number Card",
+		"filters": [["module", "=", "SS Coil"]],
+	},
+	{
+		"dt": "Dashboard Chart",
+		"filters": [["module", "=", "SS Coil"]],
+	},
+	{
+		"dt": "Workspace",
+		"filters": [["name", "=", "SS Coil Space"]],
+	},
 ]
 
 # Apps

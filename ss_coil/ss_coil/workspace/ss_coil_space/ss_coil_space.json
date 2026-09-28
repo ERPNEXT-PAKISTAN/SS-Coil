@@ -1,8 +1,17 @@
 {
  "app": "ss_coil",
- "charts": [],
- "content": "[{\"id\":\"ss-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>SS Coil Operations</b></span>\",\"col\":12}},{\"id\":\"ss-card-1\",\"type\":\"card\",\"data\":{\"card_name\":\"Planning & Production\",\"col\":4}},{\"id\":\"ss-card-2\",\"type\":\"card\",\"data\":{\"card_name\":\"Documents & Tracking\",\"col\":4}},{\"id\":\"ss-card-3\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports & Settings\",\"col\":4}}]",
- "creation": "2026-06-05 20:55:55.735864",
+ "charts": [
+  {
+   "chart_name": "SS Coil by Status",
+   "label": "SS Coil by Status"
+  },
+  {
+   "chart_name": "Tag Registry by Status",
+   "label": "Tag Registry by Status"
+  }
+ ],
+ "content": "[{\"id\":\"ss-ind-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Indicators</b></span>\",\"col\":12}},{\"id\":\"ss-nc-total\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Total SS Coils\",\"col\":3}},{\"id\":\"ss-nc-ns\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"SS Coils Not Started\",\"col\":3}},{\"id\":\"ss-nc-ip\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"SS Coils In Process\",\"col\":3}},{\"id\":\"ss-nc-done\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"SS Coils Completed\",\"col\":3}},{\"id\":\"ss-card-1\",\"type\":\"card\",\"data\":{\"card_name\":\"Planning & Production\",\"col\":4}},{\"id\":\"ss-card-2\",\"type\":\"card\",\"data\":{\"card_name\":\"Documents & Tracking\",\"col\":4}},{\"id\":\"ss-card-3\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports & Settings\",\"col\":4}},{\"id\":\"ss-chart-status\",\"type\":\"chart\",\"data\":{\"chart_name\":\"SS Coil by Status\",\"col\":6}},{\"id\":\"ss-chart-tags\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Tag Registry by Status\",\"col\":6}}]",
+ "creation": "2026-09-26 16:16:48.434472",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -214,11 +223,28 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-12 03:01:51.743571",
+ "modified": "2026-09-26 16:40:15.216019",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Total SS Coils",
+   "number_card_name": "Total SS Coils"
+  },
+  {
+   "label": "SS Coils Not Started",
+   "number_card_name": "SS Coils Not Started"
+  },
+  {
+   "label": "SS Coils In Process",
+   "number_card_name": "SS Coils In Process"
+  },
+  {
+   "label": "SS Coils Completed",
+   "number_card_name": "SS Coils Completed"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,

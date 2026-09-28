@@ -31,6 +31,31 @@ SCRIPT_REPORTS = (
 	("Production Planning SS Coil", "SS Coil"),
 )
 
+WORKSPACE_NUMBER_CARDS = (
+	{"label": "Total SS Coils", "number_card_name": "Total SS Coils"},
+	{"label": "SS Coils Not Started", "number_card_name": "SS Coils Not Started"},
+	{"label": "SS Coils In Process", "number_card_name": "SS Coils In Process"},
+	{"label": "SS Coils Completed", "number_card_name": "SS Coils Completed"},
+)
+
+WORKSPACE_CHARTS = (
+	{"chart_name": "SS Coil by Status", "label": "SS Coil by Status"},
+	{"chart_name": "Tag Registry by Status", "label": "Tag Registry by Status"},
+)
+
+WORKSPACE_CONTENT = (
+	'[{"id":"ss-ind-header","type":"header","data":{"text":"<span class=\\"h4\\"><b>Indicators</b></span>","col":12}},'
+	'{"id":"ss-nc-total","type":"number_card","data":{"number_card_name":"Total SS Coils","col":3}},'
+	'{"id":"ss-nc-ns","type":"number_card","data":{"number_card_name":"SS Coils Not Started","col":3}},'
+	'{"id":"ss-nc-ip","type":"number_card","data":{"number_card_name":"SS Coils In Process","col":3}},'
+	'{"id":"ss-nc-done","type":"number_card","data":{"number_card_name":"SS Coils Completed","col":3}},'
+	'{"id":"ss-card-1","type":"card","data":{"card_name":"Planning & Production","col":4}},'
+	'{"id":"ss-card-2","type":"card","data":{"card_name":"Documents & Tracking","col":4}},'
+	'{"id":"ss-card-3","type":"card","data":{"card_name":"Reports & Settings","col":4}},'
+	'{"id":"ss-chart-status","type":"chart","data":{"chart_name":"SS Coil by Status","col":6}},'
+	'{"id":"ss-chart-tags","type":"chart","data":{"chart_name":"Tag Registry by Status","col":6}}]'
+)
+
 WORKSPACE_SHORTCUTS = (
 	{"type": "Page", "link_to": SS_COIL_FLOW_PAGE, "label": "SS Coil Flow", "color": "Orange", "doc_view": ""},
 	{"type": "DocType", "link_to": "SS Coil", "label": "SS Coil", "color": "Blue", "doc_view": "List"},
@@ -161,6 +186,20 @@ def sync_ss_coil_workspace():
 		if row["type"] == "Page" and not frappe.db.exists("Page", row["link_to"]):
 			continue
 		ws.append("shortcuts", row)
+
+	ws.number_cards = []
+	for row in WORKSPACE_NUMBER_CARDS:
+		if not frappe.db.exists("Number Card", row["number_card_name"]):
+			continue
+		ws.append("number_cards", row)
+
+	ws.charts = []
+	for row in WORKSPACE_CHARTS:
+		if not frappe.db.exists("Dashboard Chart", row["chart_name"]):
+			continue
+		ws.append("charts", row)
+
+	ws.content = WORKSPACE_CONTENT
 
 	ws.save(ignore_permissions=True)
 	_sync_workspace_sidebar()

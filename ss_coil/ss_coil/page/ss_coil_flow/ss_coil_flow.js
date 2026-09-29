@@ -70,11 +70,15 @@ frappe.pages["ss-coil-flow"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	frappe.require("/assets/ss_coil/js/stock_entry.js", () => {
-		frappe.require("/assets/ss_coil/js/flow_forms.js", () => {
-			frappe.require("/assets/ss_coil/js/delivery_by_tag.js", () => {
-				frappe.require("/assets/ss_coil/js/sales_order.js", () => {
-					wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
+	frappe.require("/assets/ss_coil/js/ss_coil_prints.js", () => {
+		frappe.require("/assets/ss_coil/js/stock_entry.js", () => {
+			frappe.require("/assets/ss_coil/js/ss_coil_sticker_print.js", () => {
+				frappe.require("/assets/ss_coil/js/flow_forms.js", () => {
+					frappe.require("/assets/ss_coil/js/delivery_by_tag.js", () => {
+						frappe.require("/assets/ss_coil/js/sales_order.js", () => {
+							wrapper.ss_coil_flow = new ss_coil.SSCoilFlowPage(wrapper);
+						});
+					});
 				});
 			});
 		});
@@ -156,6 +160,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 									${__("Open Stock Entry")}
 								</button>
 							</div>
+							<div class="scf-panel-actions-print"></div>
 							<div class="scf-panel-actions-create"></div>
 						</div>
 					</div>
@@ -173,6 +178,7 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 		this.$btn_next = this.$main.find(".scf-btn-next");
 		this.$btn_open = this.$main.find(".scf-btn-open");
 		this.$btn_back = this.$main.find(".scf-btn-back");
+		this.$actions_print = this.$main.find(".scf-panel-actions-print");
 		this.$actions_create = this.$main.find(".scf-panel-actions-create");
 
 		this.$main.find(".scf-refresh").on("click", () => this.load_stats());
@@ -257,6 +263,48 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 			const action = $(e.currentTarget).data("action");
 			this.run_create_action(action);
 		});
+		this.$main.on("click", ".scf-print-action", (e) => {
+			const print_id = $(e.currentTarget).data("print");
+			this.open_print(print_id);
+		});
+	}
+
+	render_print_actions(name) {
+		const actions =
+			ss_coil.prints && ss_coil.prints.actions_for
+				? ss_coil.prints.actions_for(this.active_doctype)
+				: [];
+		const saved =
+			name && !(ss_coil.flow_forms.is_local_name && ss_coil.flow_forms.is_local_name(name));
+		this._print_docname = saved ? name : null;
+		if (!this.$actions_print || !this.$actions_print.length) return;
+		if (!actions.length || !saved) {
+			this.$actions_print.empty().hide();
+			return;
+		}
+		this.$actions_print
+			.show()
+			.html(
+				`<span class="scf-print-label">${__("Print")}</span>` +
+					actions
+						.map(
+							(action) =>
+								`<button type="button" class="btn btn-sm scf-print-action" data-print="${frappe.utils.escape_html(
+									action.id
+								)}">${frappe.utils.escape_html(action.label)}</button>`
+						)
+						.join("")
+			);
+	}
+
+	open_print(action_id) {
+		const name = this._print_docname;
+		if (!name) {
+			frappe.msgprint(__("Save {0} first, then print.", [this.active_doctype]));
+			return;
+		}
+		if (!ss_coil.prints || !ss_coil.prints.open) return;
+		ss_coil.prints.open(this.active_doctype, name, action_id);
 	}
 
 	render_create_actions(doctype) {
@@ -582,11 +630,13 @@ ss_coil.SSCoilFlowPage = class SSCoilFlowPage {
 			);
 			this.$btn_open.prop("disabled", true);
 			this.update_docstatus_ui(null);
+			this.render_print_actions(null);
 			return;
 		}
 		this.$saved_name.text(name || "—");
 		this.$btn_open.prop("disabled", !name);
 		this.update_docstatus_ui(name);
+		this.render_print_actions(name);
 	}
 
 	update_docstatus_ui(name) {

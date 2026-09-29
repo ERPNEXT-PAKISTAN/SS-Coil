@@ -18,9 +18,8 @@ frappe.ui.form.on("Stock Entry", {
 		ensure_inward_tag_batch_dialog_suppressed();
 		add_stock_entry_data_entry_button(frm);
 		maybe_open_stock_entry_data_entry_from_route(frm);
-		add_stock_entry_sticker_print_button(frm);
-		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
-			add_coil_detail_print_button(frm);
+		frappe.require("/assets/ss_coil/js/ss_coil_prints.js", () => {
+			ss_coil.prints.add_form_buttons(frm);
 		});
 		if (typeof bind_ss_coil_entry_trace_formatters === "function") {
 			bind_ss_coil_entry_trace_formatters(frm, "items");

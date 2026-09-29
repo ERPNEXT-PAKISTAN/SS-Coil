@@ -63,14 +63,10 @@ frappe.ui.form.on("SS Coil", {
 	refresh(frm) {
 		frm.toggle_display("process_control_enabled", false);
 		frm.toggle_display("elapsed_time", false);
-		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
-			add_coil_detail_print_button(frm);
-		});
-		frappe.require("/assets/ss_coil/js/ss_coil_sticker_print.js", () => {
-			add_ss_coil_sticker_print_button(frm);
+		frappe.require("/assets/ss_coil/js/ss_coil_prints.js", () => {
+			ss_coil.prints.add_form_buttons(frm);
 		});
 		add_ss_coil_production_planning_report_button(frm);
-		add_ss_coil_job_sheet_print_button(frm);
 		add_ss_coil_tag_buttons(frm);
 		add_ss_coil_sales_order_buttons(frm);
 		add_process_action_buttons(frm);

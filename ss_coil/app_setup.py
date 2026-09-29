@@ -37,7 +37,39 @@ def run_post_install_setup():
 	sync_ss_sales_order_print_format()
 	sync_ss_coil_desktop_icon()
 	sync_ss_coil_workspace()
+	remove_arabic_name_fields()
 	frappe.db.commit()
+
+
+ARABIC_NAME_FIELDNAMES = (
+	"customer_name_in_arabic",
+	"supplier_name_in_arabic",
+	"custom_company_name_in_arabic",
+)
+
+
+def remove_arabic_name_fields():
+	"""Delete Arabic name fields so link validation does not select a missing column.
+
+	Sales Order (and the buying/selling doctypes) fetch customer_name_in_arabic /
+	supplier_name_in_arabic. When that column is not on the linked table, insert
+	fails with MySQL 1054. Remove the fields on every doctype, including Customer
+	and Supplier, and do not restore them from fixtures.
+	"""
+	names = frappe.get_all(
+		"Custom Field",
+		filters={"fieldname": ["in", list(ARABIC_NAME_FIELDNAMES)]},
+		pluck="name",
+	)
+	if not names:
+		return
+	doctypes = set()
+	for name in names:
+		doctypes.add(frappe.db.get_value("Custom Field", name, "dt"))
+		frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
+	for doctype in doctypes:
+		if doctype:
+			frappe.clear_cache(doctype=doctype)
 
 
 def sync_ss_coil_desktop_icon():

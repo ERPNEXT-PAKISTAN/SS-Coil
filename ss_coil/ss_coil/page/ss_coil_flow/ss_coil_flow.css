@@ -459,6 +459,31 @@ body[data-page-route="Workspaces/ss-coil-flow"] .layout-main-section {
 	gap: 6px;
 }
 
+.ss-coil-flow-page .scf-panel-actions-print {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.ss-coil-flow-page .scf-print-label {
+	font-size: 11px;
+	font-weight: 800;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #6d28d9;
+}
+
+.ss-coil-flow-page .scf-print-action {
+	background: #f5f3ff !important;
+	border-color: #7c3aed !important;
+	color: #5b21b6 !important;
+}
+
+.ss-coil-flow-page .scf-print-action:hover {
+	background: #ede9fe !important;
+}
+
 .ss-coil-flow-page .scf-panel-actions-create {
 	display: flex;
 	flex-wrap: wrap;

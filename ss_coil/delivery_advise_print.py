@@ -246,6 +246,10 @@ def _render_delivery_advise_styles():
 			break-inside: avoid;
 			page-break-before: avoid;
 		}
+		.coil-print .items th {
+			color: #000 !important;
+			background: #e2e8f0 !important;
+		}
 	}
 	.coil-print {
 		width: 100%;
@@ -356,8 +360,8 @@ def _render_delivery_advise_styles():
 	.coil-print .items .col-wrap { min-width: 48px; }
 	.coil-print .items .col-tag { min-width: 88px; }
 	.coil-print .items th {
-		background: #1e3a5f;
-		color: #fff;
+		background: #e2e8f0;
+		color: #000;
 		font-weight: 700;
 		text-transform: uppercase;
 		font-size: 9px;

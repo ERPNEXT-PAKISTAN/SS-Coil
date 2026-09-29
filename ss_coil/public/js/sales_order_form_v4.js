@@ -7,8 +7,8 @@ frappe.ui.form.on("Sales Order", {
 	refresh(frm) {
 		bind_live_dimension_events(frm);
 		add_sales_order_tag_buttons(frm);
-		frappe.require("/assets/ss_coil/js/coil_detail_print.js", () => {
-			add_coil_detail_print_button(frm);
+		frappe.require("/assets/ss_coil/js/ss_coil_prints.js", () => {
+			ss_coil.prints.add_form_buttons(frm);
 		});
 		if (typeof bind_ss_coil_entry_trace_formatters === "function") {
 			bind_ss_coil_entry_trace_formatters(frm, "items");
@@ -16,7 +16,6 @@ frappe.ui.form.on("Sales Order", {
 		}
 		hide_sales_order_job_sheet_extra_fields(frm);
 		render_sales_order_job_sheet_report(frm);
-		add_sales_order_job_sheet_print_button(frm);
 		add_sales_order_create_stock_entry_button(frm);
 		add_sales_order_create_ss_coil_button(frm);
 		add_sales_order_delivery_by_tag_button(frm);

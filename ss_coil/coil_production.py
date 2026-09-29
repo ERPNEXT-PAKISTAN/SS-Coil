@@ -558,6 +558,8 @@ def append_commercial_so_item_from_stock_entry_row(sales_order, se_row, stock_en
 
 	if _has_field("Sales Order Item", "custom_source_stock_entry"):
 		so_row.custom_source_stock_entry = stock_entry_name
+	if _has_field("Sales Order Item", "custom_entry_no"):
+		so_row.custom_entry_no = stock_entry_name
 	if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
 		so_row.custom_source_stock_entry_detail = se_row.name
 	if _has_field("Sales Order Item", "custom_stock_source_type"):

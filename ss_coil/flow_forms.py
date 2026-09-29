@@ -95,6 +95,7 @@ FLOW_FORM_CONFIGS = {
 			"custom_leveler",
 			"custom_reshearing",
 			"custom_source_stock_entry",
+			"custom_entry_no",
 			"custom_packing_type",
 			"custom_packing_weightsize",
 			"custom_no_of_pack",
@@ -223,7 +224,21 @@ def _resolve_flow_form_config(doctype):
 		get_sales_order_flow_so_item_fields,
 	)
 
-	resolved["child_fields"] = get_sales_order_flow_so_item_fields()
+	from ss_coil.stock_entry_data_entry import STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS
+
+	# Same item columns as Stock Entry, then SO-only links (stock entry no, raw material).
+	so_fields = get_sales_order_flow_so_item_fields()
+	ordered = []
+	for fieldname in (
+		*STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS,
+		"custom_source_stock_entry",
+		"custom_entry_no",
+		"custom_source_stock_entry_detail",
+		*so_fields,
+	):
+		if fieldname not in ordered:
+			ordered.append(fieldname)
+	resolved["child_fields"] = ordered
 	resolved["child_title"] = "Items"
 	resolved["hide_extra_tables"] = True
 
@@ -243,6 +258,19 @@ def _resolve_flow_form_config(doctype):
 	return resolved
 
 
+def _flow_field_label(df):
+	"""Column titles used on SS Coil Flow. Weight qty is always Qty (kg)."""
+	if df.fieldname == "qty":
+		return "Qty (kg)"
+	if df.fieldname in ("custom_source_stock_entry", "custom_source_stock_entries", "source_stock_entry"):
+		return "Stock Entry"
+	if df.fieldname in ("custom_entry_no", "entry_no"):
+		return "Stock Entry No"
+	if df.fieldname in ("custom_mill_key", "mill_key"):
+		return "Mill Key"
+	return df.label or df.fieldname
+
+
 def _meta_field_to_dict(meta, fieldname):
 	df = meta.get_field(fieldname)
 	if not df or df.fieldtype in ("Section Break", "Column Break", "Tab Break", "HTML", "Button", "Heading"):
@@ -259,11 +287,10 @@ def _meta_field_to_dict(meta, fieldname):
 				"columns": CHILD_FIELD_COLUMNS.get(fieldname, 1),
 			}
 		return None
-	if df.hidden:
-		return None
+	# Flow lists fields explicitly. A hidden flag on the standard form must not drop them.
 	return {
 		"fieldname": df.fieldname,
-		"label": df.label or ("Mill Key" if df.fieldname in ("custom_mill_key", "mill_key") else df.label),
+		"label": _flow_field_label(df),
 		"fieldtype": df.fieldtype,
 		"options": df.options,
 		"reqd": df.reqd,

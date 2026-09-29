@@ -229,49 +229,50 @@ Use the [Update on an Already Installed Server](#update-on-an-already-installed-
 
 ## Update on an Already Installed Server
 
-Use this when `ss_coil` is already installed and you only want the latest code.
+Use this when `ss_coil` is already installed. This updates code and custom fields only. It does not delete Stock Entries, Sales Orders, invoices, or any other business documents. Do not run `bench get-app` again, and do not uninstall the app.
+
+On many client servers the git remote is named `upstream`, not `origin`. `git pull origin` then fails and the old code stays in place even if migrate and restart succeed. Check the remote first.
 
 ### Standard update
 
 ```bash
-cd /home/frappe/frappe-bench
+cd /home/frappe/frappe-bench/apps/ss_coil
 
-# Remove failed clone folder if a previous get-app attempt left it behind
-rm -rf apps/SS-Coil
+# See the real remote name. Use that name below (often upstream, sometimes origin).
+git remote -v
+git status
 
-# Pull latest app code
-cd apps/ss_coil
-git fetch origin
+# Keep any local edit (for example workspace sidebar) so pull can run.
+git stash push -u -m "before ss_coil update"
+
+git fetch upstream
 git checkout main
-git pull origin main
+git pull upstream main
 
-# Apply updates on site
 cd /home/frappe/frappe-bench
 bench --site your-site-name migrate
 bench build --app ss_coil
 bench --site your-site-name clear-cache
+bench restart
 ```
 
 Replace `your-site-name` with your site, for example `ss.frappe.my`.
 
-### One-line update
+If `git remote -v` shows `origin` and not `upstream`, use `origin` in the fetch and pull lines instead.
 
-```bash
-cd /home/frappe/frappe-bench && rm -rf apps/SS-Coil && cd apps/ss_coil && git fetch origin && git checkout main && git pull origin main && cd /home/frappe/frappe-bench && bench --site your-site-name migrate && bench build --app ss_coil && bench --site your-site-name clear-cache
-```
+`bench migrate` syncs fixtures and custom fields. It does not wipe site data.
 
-### Verify latest code
+### Verify the new code is actually running
 
 ```bash
 cd /home/frappe/frappe-bench/apps/ss_coil
 git log -1 --oneline
+git status -sb
 ```
 
-You should see the latest commit from `main`, for example:
+`git status -sb` must show the branch in step with `upstream/main` (or `origin/main` if that is your remote). If it still says the branch is behind, the pull did not happen and the desk will keep the old screens.
 
-```text
-782a025 Add tag-origin fixtures and auto-setup on install/migrate.
-```
+Then hard-refresh the browser (`Ctrl+Shift+R`). On SS Coil Flow, the weight column is **Qty (kg)** on every tab. A Sales Order created from a posted Stock Entry shows the same item columns, including **Stock Entry** and **Stock Entry No**.
 
 ### If tag fields are still missing after update
 
@@ -296,7 +297,7 @@ If you see `ModuleNotFoundError: No module named 'ss_coil.install'`, the app cod
 ```bash
 ls ~/frappe-bench/apps/ss_coil/ss_coil/install.py
 ls ~/frappe-bench/apps/ss_coil/ss_coil/app_setup.py
-cd ~/frappe-bench/apps/ss_coil && git pull origin main
+cd ~/frappe-bench/apps/ss_coil && git remote -v && git pull upstream main
 ```
 
 The app folder must be named **`ss_coil`** (not `SS-Coil`). Then use `ss_coil.api.run_post_install_setup` which always works when `api.py` is present.
@@ -380,19 +381,20 @@ bench restart
 For site `ss.frappe.my`:
 
 ```bash
-cd /home/frappe/frappe-bench
-rm -rf apps/SS-Coil
-cd apps/ss_coil
-git fetch origin
+cd /home/frappe/frappe-bench/apps/ss_coil
+git remote -v
+git stash push -u -m "before ss_coil update"
+git fetch upstream
 git checkout main
-git pull origin main
+git pull upstream main
 cd /home/frappe/frappe-bench
 bench --site ss.frappe.my migrate
 bench build --app ss_coil
 bench --site ss.frappe.my clear-cache
-bench --site ss.frappe.my execute ss_coil.api.setup_tag_origin_fields
-bench --site ss.frappe.my clear-cache
+bench restart
 ```
+
+Migrate does not delete existing documents. Use `origin` instead of `upstream` only when `git remote -v` shows `origin`.
 
 ---
 
@@ -475,14 +477,20 @@ bench --site your-site-name clear-cache
 5. Run tag setup if needed
 
 ```bash
-cd /home/frappe/frappe-bench/apps/ss_coil && git pull origin main
+cd /home/frappe/frappe-bench/apps/ss_coil
+git remote -v
+git stash push -u -m "before ss_coil update"
+git fetch upstream
+git checkout main
+git pull upstream main
 cd /home/frappe/frappe-bench
 bench --site your-site-name migrate
 bench build --app ss_coil
 bench --site your-site-name clear-cache
-bench --site your-site-name execute ss_coil.api.setup_tag_origin_fields
-bench --site your-site-name clear-cache
+bench restart
 ```
+
+This does not delete business data. If the remote is `origin`, pull `origin` instead of `upstream`.
 
 ---
 

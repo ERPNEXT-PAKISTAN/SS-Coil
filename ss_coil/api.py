@@ -4949,6 +4949,8 @@ def create_sales_order_from_stock_entry(source_name):
 				so_row.delivery_date = sales_order.transaction_date
 			if _has_field("Sales Order Item", "custom_source_stock_entry"):
 				so_row.custom_source_stock_entry = source.name
+			if _has_field("Sales Order Item", "custom_entry_no"):
+				so_row.custom_entry_no = source.name
 			if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
 				so_row.custom_source_stock_entry_detail = row.name
 

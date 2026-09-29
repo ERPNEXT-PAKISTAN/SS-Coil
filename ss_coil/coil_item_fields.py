@@ -177,8 +177,53 @@ def setup_coil_item_trace_fields():
 	for dt in TRACE_CHILD_DOCTYPES:
 		frappe.clear_cache(doctype=dt)
 	frappe.clear_cache(doctype="Coil Production Line")
+	_show_sales_order_item_stock_entry_fields()
 	_backfill_ss_coil_links_from_entry_numbers()
 	return {"status": "ok", "doctypes": list(fields_by_dt.keys())}
+
+
+# Same columns the Stock Entry step shows, plus the stock entry number on each Sales Order line.
+SALES_ORDER_ITEM_STOCK_ENTRY_COLUMNS = (
+	"custom_finish_good_item",
+	"custom_tag_no",
+	"custom_mill",
+	"custom_mill_key",
+	"custom_ref_no",
+	"custom_thickness",
+	"custom_width",
+	"custom_length_c",
+	"custom_length",
+	"custom_dimension",
+	"custom_condition",
+	"custom_commodity",
+	"custom_specification",
+	"custom_estimated_wt",
+	"custom_qty_of_coil",
+	"custom_comments",
+	"custom_slitter",
+	"custom_leveler",
+	"custom_reshearing",
+	"custom_js_number",
+	"custom_location",
+	"custom_source_stock_entry",
+	"custom_entry_no",
+	"custom_source_stock_entry_detail",
+)
+
+
+def _show_sales_order_item_stock_entry_fields():
+	"""Keep Stock Entry detail columns visible on Sales Order Item. Does not change row data."""
+	for fieldname in SALES_ORDER_ITEM_STOCK_ENTRY_COLUMNS:
+		name = f"Sales Order Item-{fieldname}"
+		if not frappe.db.exists("Custom Field", name):
+			continue
+		frappe.db.set_value(
+			"Custom Field",
+			name,
+			{"hidden": 0, "in_list_view": 1, "print_hide": 0},
+			update_modified=False,
+		)
+	frappe.clear_cache(doctype="Sales Order Item")
 
 
 def _backfill_ss_coil_links_from_entry_numbers():

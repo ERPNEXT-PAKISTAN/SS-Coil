@@ -87,11 +87,9 @@ def _meta_field_to_dict(meta, fieldname):
 				"columns": CHILD_FIELD_COLUMNS.get(fieldname, 1),
 			}
 		return None
-	if df.hidden:
-		return None
 	return {
 		"fieldname": df.fieldname,
-		"label": df.label or ("Mill Key" if df.fieldname == "custom_mill_key" else df.label),
+		"label": "Qty (kg)" if fieldname == "qty" else (df.label or ("Mill Key" if df.fieldname == "custom_mill_key" else df.label)),
 		"fieldtype": df.fieldtype,
 		"options": df.options,
 		"reqd": df.reqd,

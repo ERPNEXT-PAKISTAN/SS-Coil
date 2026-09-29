@@ -803,7 +803,7 @@ function map_stock_entry_data_entry_field(df) {
 	const field = {
 		fieldtype: df.fieldtype,
 		fieldname: df.fieldname,
-		label: __(df.label),
+		label: df.fieldname === "qty" || df.label === "Qty" || df.label === "Quantity" ? __("Qty (kg)") : __(df.label),
 		options: df.options,
 		reqd: df.reqd,
 		read_only: df.read_only,
@@ -919,7 +919,7 @@ function render_stock_entry_data_entry_table_head(state, $thead) {
 		);
 		group.fields.forEach((df) => {
 			$field_row.append(
-				`<th data-fieldname="${df.fieldname}">${__(df.label)}${df.reqd ? '<span class="ss-coil-de-reqd">*</span>' : ""}</th>`
+				`<th data-fieldname="${df.fieldname}">${df.fieldname === "qty" || df.label === "Qty" || df.label === "Quantity" ? __("Qty (kg)") : __(df.label)}${df.reqd ? '<span class="ss-coil-de-reqd">*</span>' : ""}</th>`
 			);
 		});
 	});

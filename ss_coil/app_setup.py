@@ -34,6 +34,7 @@ def run_post_install_setup():
 	sync_stock_entry_sticker_print_formats()
 	sync_ss_coil_job_sheet_print_format()
 	sync_sales_contract_print_formats()
+	sync_sales_contract_terms()
 	sync_ss_sales_order_print_format()
 	sync_ss_coil_desktop_icon()
 	sync_ss_coil_workspace()
@@ -235,6 +236,47 @@ def sync_ss_coil_job_sheet_print_format():
 		if html:
 			frappe.db.set_value("Print Format", name, "html", html, update_modified=False)
 	frappe.db.set_value("Print Format", name, margins, update_modified=False)
+
+
+def sync_sales_contract_terms():
+	"""Install the Sales Contract terms template shipped with the app.
+
+	Creates the record when the site does not have it. An existing template
+	keeps its terms text so a later migrate does not overwrite edits.
+	"""
+	import json
+	import os
+
+	path = os.path.join(frappe.get_app_path("ss_coil"), "fixtures", "terms_and_conditions.json")
+	if not os.path.exists(path):
+		return
+
+	with open(path, encoding="utf-8") as handle:
+		records = json.load(handle)
+
+	record = next((row for row in records if row.get("name") == "Sales Contract"), None)
+	if not record:
+		return
+
+	if frappe.db.exists("Terms and Conditions", "Sales Contract"):
+		updates = {"selling": 1, "disabled": 0}
+		current = frappe.db.get_value("Terms and Conditions", "Sales Contract", "terms")
+		if not (current or "").strip() and record.get("terms"):
+			updates["terms"] = record.get("terms")
+		frappe.db.set_value("Terms and Conditions", "Sales Contract", updates, update_modified=False)
+		return
+
+	frappe.get_doc(
+		{
+			"doctype": "Terms and Conditions",
+			"title": record.get("title") or "Sales Contract",
+			"terms": record.get("terms") or "",
+			"selling": 1,
+			"buying": 1 if record.get("buying") else 0,
+			"hr": 0,
+			"disabled": 0,
+		}
+	).insert(ignore_permissions=True)
 
 
 def sync_sales_contract_print_formats():

@@ -181,6 +181,9 @@ function apply_ss_coil_sales_order_header_defaults(frm) {
 	if (frm.fields_dict.set_warehouse && !frm.doc.set_warehouse) {
 		frm.set_value("set_warehouse", SS_COIL_DEFAULT_WAREHOUSE);
 	}
+	if (frm.fields_dict.tc_name && !frm.doc.tc_name) {
+		frm.set_value("tc_name", "Sales Contract");
+	}
 }
 
 function apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn) {

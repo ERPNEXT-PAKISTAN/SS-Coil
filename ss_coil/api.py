@@ -333,6 +333,11 @@ def apply_sales_order_ss_coil_defaults(doc, method=None):
 		if _has_field(doc.doctype, "set_warehouse") and not doc.get("set_warehouse"):
 			doc.set_warehouse = DEFAULT_SS_COIL_WAREHOUSE
 
+	if not doc.get("tc_name") and frappe.db.exists("Terms and Conditions", "Sales Contract"):
+		doc.tc_name = "Sales Contract"
+	if doc.get("tc_name") == "Sales Contract" and not doc.get("terms"):
+		doc.terms = frappe.db.get_value("Terms and Conditions", "Sales Contract", "terms")
+
 	for row in doc.items or []:
 		if _has_field(row.doctype, "warehouse") and not row.get("warehouse"):
 			row.warehouse = (
@@ -6613,7 +6618,7 @@ def normalize_ss_coil_machine_operation_link(doc, method=None):
 
 
 def setup_updatable_stock_entry_sales_order_property_setters():
-	"""Submitted Stock Entry / Sales Order: allow Finish Good and SO line item corrections + sync."""
+	"""Submitted Stock Entry / Sales Order: allow Finish Good, SO line, and terms corrections."""
 	specs = (
 		("Stock Entry Detail", "custom_finish_good_item", "allow_on_submit", "Check", "1"),
 		("Sales Order Item", "item_code", "allow_on_submit", "Check", "1"),
@@ -6621,6 +6626,10 @@ def setup_updatable_stock_entry_sales_order_property_setters():
 		("Sales Order Item", "uom", "allow_on_submit", "Check", "1"),
 		("Sales Order Item", "stock_uom", "allow_on_submit", "Check", "1"),
 		("Sales Order Item", "custom_raw_material_item", "allow_on_submit", "Check", "1"),
+		("Sales Order", "tc_name", "allow_on_submit", "Check", "1"),
+		("Sales Order", "tc_name", "default", "Text", "Sales Contract"),
+		# Changing the template writes the terms text, so that field must update too.
+		("Sales Order", "terms", "allow_on_submit", "Check", "1"),
 	)
 	for doc_type, field_name, property, property_type, value in specs:
 		ps_name = f"{doc_type}-{field_name}-{property}"

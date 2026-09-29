@@ -66,6 +66,7 @@ FLOW_FORM_CONFIGS = {
 			"custom_mr_number",
 			"custom_customer",
 			"custom_source_stock_entries",
+			"tc_name",
 		],
 		"child_table": "items",
 		"child_doctype": "Sales Order Item",
@@ -104,7 +105,7 @@ FLOW_FORM_CONFIGS = {
 			"custom_js_number",
 			"custom_location",
 		],
-		"defaults": {"transaction_date": "Today"},
+		"defaults": {"transaction_date": "Today", "tc_name": "Sales Contract"},
 	},
 	"SS Coil": {
 		"title": "SS Coil Job Details",

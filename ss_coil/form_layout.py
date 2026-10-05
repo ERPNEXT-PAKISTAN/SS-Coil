@@ -19,6 +19,7 @@ LAYOUT_PROPERTIES = {"field_order", "hidden", "button_color"}
 def sync_coil_form_layouts():
 	"""Apply Stock Entry / Sales Order field layout from app fixtures on every install/migrate."""
 	_apply_fixture_property_setters()
+	remove_sales_order_item_legacy_columns()
 	_sync_stock_entry_job_purpose_field()
 	_ensure_stock_entry_detail_field_order()
 	ensure_ss_coil_job_sheet_field_order()
@@ -33,6 +34,33 @@ def sync_coil_form_layouts():
 	frappe.clear_cache(doctype="Purchase Receipt Item")
 	frappe.clear_cache(doctype="SS Coil")
 	frappe.clear_cache(doctype="Item")
+
+
+def remove_sales_order_item_legacy_columns():
+	"""Restore the five-column Tag No section by removing legacy layout breaks."""
+	doctype = "Sales Order Item"
+	legacy = {
+		"custom_column_break_tr3fl": "custom_js_number",
+		"custom_column_break_vphoe": "custom_comments",
+	}
+	for fieldname, anchor in legacy.items():
+		for dependent in frappe.get_all(
+			"Custom Field", filters={"dt": doctype, "insert_after": fieldname}, pluck="name"
+		):
+			frappe.db.set_value("Custom Field", dependent, "insert_after", anchor)
+		name = f"{doctype}-{fieldname}"
+		if frappe.db.get_value("Custom Field", name, "fieldtype") == "Column Break":
+			frappe.delete_doc("Custom Field", name, force=True, ignore_permissions=True)
+	for setter in frappe.get_all(
+		"Property Setter",
+		filters={"doc_type": doctype, "property": "field_order"},
+		fields=["name", "value"],
+	):
+		order = json.loads(setter.value or "[]")
+		cleaned = [fieldname for fieldname in order if fieldname not in legacy]
+		if cleaned != order:
+			frappe.db.set_value("Property Setter", setter.name, "value", json.dumps(cleaned))
+	frappe.clear_cache(doctype=doctype)
 
 
 def _apply_fixture_property_setters():

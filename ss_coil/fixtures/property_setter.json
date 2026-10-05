@@ -1550,5 +1550,50 @@
   "property_type": "Text",
   "row_name": null,
   "value": "Operation"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Order Item",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_column_break_gvj65",
+  "is_system_generated": 1,
+  "module": "SS Coil",
+  "name": "Sales Order Item-custom_column_break_gvj65-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Order Item",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_column_break_2ncpd",
+  "is_system_generated": 1,
+  "module": "SS Coil",
+  "name": "Sales Order Item-custom_column_break_2ncpd-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Order Item",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_column_break_wu2yz",
+  "is_system_generated": 1,
+  "module": "SS Coil",
+  "name": "Sales Order Item-custom_column_break_wu2yz-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
  }
 ]

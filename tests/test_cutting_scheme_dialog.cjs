@@ -70,3 +70,26 @@ while (callbacks.length) callbacks.shift()();
 assert.equal(gridDoc.total_sheets, 1579);
 assert.equal(refreshed, true);
 console.log("PASS: grid Length event recalculates Sheets without Dialog Table locals");
+
+sandbox.__ = (s) => s;
+sandbox.frappe.utils = { escape_html: (s) => String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") };
+load("escape_html");
+load("cutting_scheme_dimension_part");
+load("build_coil_production_sheet_calculations_html");
+const production = { name: "prod-1", sales_order_item: "item-1", qty: 9610,
+  thickness: 0.6, width: 1219, raw_material_tag_no: "<coil>" };
+const groups = [{ coil_production_line: "prod-1", process_key: "leveler", process_label: "Leveler",
+  rows: [{ width: 500, length: 1060, total_sheets: 1200 }] }];
+const panel = sandbox.build_coil_production_sheet_calculations_html([production], groups);
+assert(panel.includes("= 1579 sheets"));
+assert(panel.includes("1200"), "Saved manual count must remain visible separately");
+assert(panel.includes("&lt;coil&gt;"));
+assert(!panel.includes("<coil>"));
+assert(panel.includes("9610 ÷ (0.6 × 1219 × 0.00000785 × 1000)"));
+const estimated = sandbox.build_coil_production_sheet_calculations_html([{ ...production, estimated_wt: 4805 }], groups);
+assert(estimated.includes("= 790 sheets"));
+const missing = sandbox.build_coil_production_sheet_calculations_html([{ ...production, thickness: 0 }], groups);
+assert(!missing.includes("NaN") && !missing.includes("Infinity"));
+const unlinked = sandbox.build_coil_production_sheet_calculations_html([{ ...production, name: "other", sales_order_item: "other" }], groups);
+assert(!unlinked.includes("= 1579 sheets"));
+console.log("PASS: formula display uses coil values, estimated weight, correct links, and separate saved counts");

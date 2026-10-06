@@ -22,6 +22,7 @@ frappe.ui.form.on("Sales Order", {
 		render_sales_order_dashboard(frm);
 		render_packing_detail(frm);
 		render_cutting_scheme_report(frm);
+		render_coil_production_sheet_calculations(frm);
 		add_production_planning_report_button(frm);
 		load_process_charge_catalog(frm);
 		configure_sales_order_cutting_scheme_ui(frm);
@@ -485,17 +486,30 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 }
 
 frappe.ui.form.on("Coil Production Line", {
+	custom_coil_production_add(frm) {
+		render_coil_production_sheet_calculations(frm);
+	},
+	custom_coil_production_remove(frm) {
+		render_coil_production_sheet_calculations(frm);
+	},
 	slitter(frm) {
 		sync_sales_order_process_charge_lines(frm);
+		render_coil_production_sheet_calculations(frm);
 	},
 	leveler(frm) {
 		sync_sales_order_process_charge_lines(frm);
+		render_coil_production_sheet_calculations(frm);
 	},
 	reshearing(frm) {
 		sync_sales_order_process_charge_lines(frm);
+		render_coil_production_sheet_calculations(frm);
+	},
+	estimated_wt(frm) {
+		render_coil_production_sheet_calculations(frm);
 	},
 	qty(frm) {
 		sync_sales_order_process_charge_lines(frm);
+		render_coil_production_sheet_calculations(frm);
 	},
 	finish_good_item(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
@@ -507,18 +521,23 @@ frappe.ui.form.on("Coil Production Line", {
 			});
 		}
 		sync_sales_order_process_charge_lines(frm);
+		render_coil_production_sheet_calculations(frm);
 	},
 	thickness(frm, cdt, cdn) {
 		set_production_line_dimension(cdt, cdn);
+		render_coil_production_sheet_calculations(frm);
 	},
 	width(frm, cdt, cdn) {
 		set_production_line_dimension(cdt, cdn);
+		render_coil_production_sheet_calculations(frm);
 	},
 	length_c(frm, cdt, cdn) {
 		set_production_line_dimension(cdt, cdn);
+		render_coil_production_sheet_calculations(frm);
 	},
 	length(frm, cdt, cdn) {
 		set_production_line_dimension(cdt, cdn);
+		render_coil_production_sheet_calculations(frm);
 	},
 	form_render(frm, cdt, cdn) {
 		if (is_unsaved_sales_order_context(frm, cdn)) {
@@ -3647,6 +3666,58 @@ function miniTraceCard(label, value) {
 	</div>`;
 }
 
+function build_coil_production_sheet_calculations_html(coils, groups) {
+	const fmt = (value) => cutting_scheme_dimension_part(value);
+	const cells = (values) => values.map((value) => `<td style="padding:8px;border:1px solid #dbe5f1;vertical-align:top;">${value}</td>`).join("");
+	const rows = (coils || []).flatMap((coil) => {
+		const weight = flt(coil.estimated_wt) || flt(coil.qty);
+		const thickness = flt(coil.thickness);
+		const width = flt(coil.width);
+		const coil_m = ss_coil.process.cuttingSchemeCoilLengthM(coil);
+		const label = escape_html(coil.raw_material_tag_no || coil.tag_no || coil.raw_material_item || `Row ${coil.idx || ""}`);
+		const coil_calculation = coil_m > 0
+			? `${fmt(weight)} ÷ (${fmt(thickness)} × ${fmt(width)} × 0.00000785 × 1000) = ${coil_m.toFixed(3)} m`
+			: __("Enter positive coil weight, thickness, and mother width to calculate.");
+		const cuts = (groups || []).filter((group) =>
+			group.process_key !== "slitter" &&
+			(group.coil_production_line ? group.coil_production_line === coil.name : group.sales_order_item === coil.sales_order_item),
+		).flatMap((group) => (group.rows || []).map((cut) => ({ group, cut })));
+		if (!cuts.length) {
+			return [`<tr>${cells([label, "—", "—", "—", escape_html(coil_calculation) + "<br>" + __("Enter a sheet Length in Leveler / Reshearing cutting scheme to calculate sheets."), "—"])}</tr>`];
+		}
+		return cuts.map(({ group, cut }) => {
+			const length = flt(cut.length);
+			const sheets = ss_coil.process.cuttingSchemeTotalSheets(coil, length);
+			const calculation = coil_m > 0 && length > 0
+				? `round((${fmt(weight)} ÷ (${fmt(thickness)} × ${fmt(width)} × 0.00000785 × 1000)) × 1000 ÷ ${fmt(length)}) = ${sheets} sheets`
+				: __("Enter positive coil dimensions, weight, and sheet Length to calculate.");
+			return `<tr>${cells([label, escape_html(group.process_label || group.process_key), escape_html(fmt(cut.width)), escape_html(fmt(length)), escape_html(coil_calculation) + "<br><b>" + escape_html(calculation) + "</b>", escape_html(cut.total_sheets == null ? "—" : fmt(cut.total_sheets))])}</tr>`;
+		});
+	}).join("");
+	return `<div style="margin-top:12px;padding:14px;border:1px solid #dbe5f1;border-radius:8px;background:#f8fafc;">
+		<div style="font-weight:700;margin-bottom:8px;">${__("Sheet Calculation")}</div>
+		<div>${__("Coil length (m) = Weight (kg) ÷ (Thickness (mm) × Mother width (mm) × 0.00000785 × 1000)")}</div>
+		<div>${__("Total sheets = round(Coil length (m) × 1000 ÷ Sheet length (mm))")}</div>
+		<div class="text-muted" style="margin:6px 0;">${__("Uses Estimated Weight when entered, otherwise Qty. Saved Sheets shows the cutting scheme count, including manual overrides.")}</div>
+		<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+		<thead><tr>${["Mother Coil / Tag", "Process", "Cut Width (mm)", "Sheet Length (mm)", "Calculation", "Saved Sheets"].map((label) => `<th style="padding:8px;border:1px solid #dbe5f1;">${__(label)}</th>`).join("")}</tr></thead>
+		<tbody>${rows || `<tr><td colspan="6" style="padding:8px;">${__("Add a mother coil to see its calculation.")}</td></tr>`}</tbody></table></div>
+	</div>`;
+}
+
+function render_coil_production_sheet_calculations(frm) {
+	const field = frm.fields_dict.custom_coil_production;
+	if (!field?.$wrapper) return;
+	if (!ss_coil.process?.cuttingSchemeTotalSheets) {
+		return frappe.require("/assets/ss_coil/js/ss_coil_process_dimension.js", () => {
+			if (ss_coil.process?.cuttingSchemeTotalSheets) render_coil_production_sheet_calculations(frm);
+		});
+	}
+	let wrapper = field.$wrapper.children(".ss-coil-sheet-calculations");
+	if (!wrapper.length) wrapper = $('<div class="ss-coil-sheet-calculations"></div>').appendTo(field.$wrapper);
+	wrapper.html(build_coil_production_sheet_calculations_html(frm.doc.custom_coil_production || [], frm.__coil_sheet_calculation_groups || []));
+}
+
 function render_cutting_scheme_report(frm) {
 	const html_field = frm.fields_dict.custom_cutting_scheme_report;
 	if (!html_field) return;
@@ -3666,6 +3737,8 @@ function render_cutting_scheme_report(frm) {
 		},
 		callback: function (r) {
 			const groups = r.message || [];
+			frm.__coil_sheet_calculation_groups = groups;
+			render_coil_production_sheet_calculations(frm);
 			if (!groups.length) {
 				html_field.$wrapper.html("<div class='text-muted'>No cutting scheme saved yet.</div>");
 				return;

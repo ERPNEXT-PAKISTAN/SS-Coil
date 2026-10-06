@@ -607,3 +607,9 @@ its row. Missing counts are also backfilled when carrying rows and saving,
 without replacing manual counts. Slitter strip counts are not sheet counts.
 Sheets = round(weight kg / (thickness mm × mother width mm × 0.00000785
 × sheet length mm)); a numeric sheet length is required after slitting.
+
+A Sheet Calculation panel is appended below the Sales Order Coil Production
+table. It reuses the cutting-scheme report request and matches process cuts to
+their production row. It shows the formula, substituted mother-coil values,
+calculated sheets, and saved counts separately so manual overrides are visible.
+Weight/dimension edits and cutting-scheme saves refresh the panel.

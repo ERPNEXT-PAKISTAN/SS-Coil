@@ -105,14 +105,20 @@
 	<table class="items-table">
 		<thead>
 			<tr>
-				<th style="width:6%">{{ _("No") }}</th>
-				<th>{{ _("Item") }}</th>
+				<th rowspan="2" style="width:5%">{{ _("No") }}</th>
+				<th rowspan="2">{{ _("Item") }}</th>
 				{% if item_naming_by != "Item Code" %}
-					<th>{{ _("Item Code") }}</th>
+					<th rowspan="2">{{ _("Item Code") }}</th>
 				{% endif %}
-				<th class="text-right">{{ _("Quantity") }}</th>
-				<th class="text-right">{{ _("Rate") }}</th>
-				<th class="text-right">{{ _("Amount") }}</th>
+				<th colspan="3" style="width:24%">{{ _("Size (mm)") }}</th>
+				<th rowspan="2" class="text-right">{{ _("Quantity") }}</th>
+				<th rowspan="2" class="text-right">{{ _("Rate") }}</th>
+				<th rowspan="2" class="text-right">{{ _("Amount") }}</th>
+			</tr>
+			<tr>
+				<th style="width:8%">{{ _("Thickness") }}</th>
+				<th style="width:8%">{{ _("Width") }}</th>
+				<th style="width:8%">{{ _("Length") }}</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -123,6 +129,9 @@
 				{% if item_naming_by != "Item Code" %}
 					<td>{{ item.item_code }}</td>
 				{% endif %}
+				<td class="text-center">{{ "{:g}".format(frappe.utils.flt(item.get("custom_thickness"))) if item.get("custom_thickness") is not none else "—" }}</td>
+				<td class="text-center">{{ "{:g}".format(frappe.utils.flt(item.get("custom_width"))) if item.get("custom_width") is not none else "—" }}</td>
+				<td class="text-center">{{ "C" if (item.get("custom_length_c") or "") | upper == "C" else ("{:g}".format(frappe.utils.flt(item.get("custom_length"))) if item.get("custom_length") is not none else (item.get("custom_length_c") or "—")) }}</td>
 				<td class="text-right">{{ item.get_formatted("qty") }} {{ item.uom }}</td>
 				<td class="text-right">{{ item.get_formatted("net_rate", doc) }}</td>
 				<td class="text-right">{{ item.get_formatted("net_amount", doc) }}</td>

@@ -139,6 +139,7 @@ app_include_css = "/assets/ss_coil/css/stock_entry_data_entry.css?v=30"
 # include js in doctype views
 doctype_js = {
 	"Sales Order": [
+		"public/js/ss_coil_process_dimension.js",
 		"public/js/ss_coil_prints.js",
 		"public/js/coil_detail_print.js",
 		"public/js/entry_trace_links.js",

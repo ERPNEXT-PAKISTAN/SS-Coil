@@ -39,7 +39,22 @@ def run_post_install_setup():
 	sync_ss_coil_desktop_icon()
 	sync_ss_coil_workspace()
 	remove_arabic_name_fields()
+	remove_vat_emirate_fields()
 	frappe.db.commit()
+
+
+def remove_vat_emirate_fields():
+	"""Remove the UAE-only VAT Emirate customization from this Pakistan app."""
+	fields = frappe.get_all(
+		"Custom Field", filters={"fieldname": "vat_emirate"}, fields=["name", "dt", "insert_after"]
+	)
+	for field in fields:
+		for name in frappe.get_all(
+			"Custom Field", filters={"dt": field.dt, "insert_after": "vat_emirate"}, pluck="name"
+		):
+			frappe.db.set_value("Custom Field", name, "insert_after", field.insert_after or "")
+		frappe.delete_doc("Custom Field", field.name, force=1, ignore_permissions=True)
+		frappe.clear_cache(doctype=field.dt)
 
 
 ARABIC_NAME_FIELDNAMES = (

@@ -582,3 +582,28 @@ re-applies this on migrate.
 | `ss_coil/public/js/sales_order.js`, `delivery_note.js`, `sales_invoice.js`, `purchase_receipt.js`, `purchase_invoice.js` | Per-doctype form JS, mostly thin (dimension sync, tag display). |
 | `ss_coil/public/js/sales_order_manufacture.js` | "Manufacture Items" button/dialog (BOM-based), migrated from the "SO Manufacture" Client Script. Unrelated to the tag/coil system - see its own ARCHITECTURE.md section. |
 | `ss_coil/ss_coil/print_format/*/` | Print formats (Stock Entry Coil, Stock Entry Sticker, Stock Entry Sticker Thermal). |
+
+### UAE VAT Emirate removal
+
+ERPNext's UAE regional setup supplied `Sales Order-vat_emirate`, which was
+copied into the app fixtures without its optional `Address.emirate` source.
+This caused MySQL 1054 during Sales Order saves. SS Coil is used in Pakistan:
+the field is excluded from fixtures, and post-install/post-migrate setup calls
+`app_setup.remove_vat_emirate_fields` to remove existing VAT Emirate custom
+fields and repair any custom-field insertion references to them.
+
+Sales Contract and Sales Contract No Letterhead print dimensions in separate
+Thickness, Width, and Length columns under a shared Size (mm) heading. The print helper uses
+`custom_length_c = C` for coil length instead of printing its numeric zero.
+Templates also fall back to source item dimensions when an existing web worker
+has the older print helper loaded, avoiding undefined width/length values.
+
+SS Sales Order also prints Thickness, Width, and Length under a grouped
+Size (mm) heading, reading item dimension fields directly and showing C for coils.
+
+Cutting Scheme dialog rows belong to the grid data, not `locals["Dialog Table"]`.
+Length edits in Leveler/Reshearing recalculate sheets after the control updates
+its row. Missing counts are also backfilled when carrying rows and saving,
+without replacing manual counts. Slitter strip counts are not sheet counts.
+Sheets = round(weight kg / (thickness mm × mother width mm × 0.00000785
+× sheet length mm)); a numeric sheet length is required after slitting.

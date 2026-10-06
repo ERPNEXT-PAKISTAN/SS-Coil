@@ -95,26 +95,33 @@
 	<table class="sc-items">
 		<thead>
 			<tr>
-				<th style="width:4%">Sr.</th>
-				<th style="width:10%">Spec.</th>
-				<th style="width:6%">T</th>
-				<th style="width:12%">Size (mm)</th>
-				<th style="width:8%">Nbr of<br>Sheets/Coils</th>
-				<th style="width:10%">Total Qty</th>
-				<th style="width:6%">UOM</th>
-				<th style="width:8%">Unit Price</th>
-				<th style="width:10%">Amount</th>
-				<th style="width:10%">GST{% if sc.gst_rate %}<br>{{ sc.gst_rate }}%{% endif %}</th>
-				<th style="width:12%">Total Amount<br>({{ doc.currency }})</th>
+				<th rowspan="2" style="width:4%">Sr.</th>
+				<th rowspan="2" style="width:10%">Spec.</th>
+				<th colspan="3" style="width:18%">Size (mm)</th>
+				<th rowspan="2" style="width:8%">Nbr of<br>Sheets/Coils</th>
+				<th rowspan="2" style="width:10%">Total Qty</th>
+				<th rowspan="2" style="width:6%">UOM</th>
+				<th rowspan="2" style="width:8%">Unit Price</th>
+				<th rowspan="2" style="width:10%">Amount</th>
+				<th rowspan="2" style="width:10%">GST{% if sc.gst_rate %}<br>{{ sc.gst_rate }}%{% endif %}</th>
+				<th rowspan="2" style="width:12%">Total Amount<br>({{ doc.currency }})</th>
+			</tr>
+			<tr>
+				<th style="width:6%">Thickness</th>
+				<th style="width:6%">Width</th>
+				<th style="width:6%">Length</th>
 			</tr>
 		</thead>
 		<tbody>
+		{% set material_items = doc.items | rejectattr("custom_is_process_charge") | list %}
 		{% for row in sc.rows %}
+			{% set item = material_items[loop.index0] %}
 			<tr>
 				<td class="ctr">{{ row.sr }}</td>
 				<td class="ctr">{{ row.spec }}</td>
 				<td class="ctr">{{ row.thickness }}</td>
-				<td class="ctr">{{ row.size }}</td>
+				<td class="ctr">{{ row.get("width", frappe.utils.flt(item.custom_width) | string) }}</td>
+				<td class="ctr">{{ row.get("length", "C" if (item.custom_length_c or "") | upper == "C" else (item.custom_length or item.custom_length_c or "—")) }}</td>
 				<td class="ctr">{{ row.coils }}</td>
 				<td class="num">{{ "{:,.3f}".format(row.total_qty) }}</td>
 				<td class="ctr">{{ row.uom }}</td>
@@ -127,7 +134,7 @@
 		</tbody>
 		<tfoot>
 			<tr>
-				<td colspan="5" class="ctr">Total</td>
+				<td colspan="6" class="ctr">Total</td>
 				<td class="num">{{ "{:,.3f}".format(sc.total_qty) }}</td>
 				<td></td>
 				<td></td>

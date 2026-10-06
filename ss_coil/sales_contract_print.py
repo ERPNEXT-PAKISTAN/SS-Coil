@@ -57,6 +57,10 @@ def build_sales_contract_lines(doc):
 				if getattr(item, "custom_thickness", None) not in (None, "")
 				else "—",
 				"size": size,
+				"width": _fmt_num(width) if width not in (None, "") else "—",
+				"length": str(length_c).strip()
+				if str(length_c or "").strip().upper() == "C"
+				else (_fmt_num(length) if length not in (None, "") else (length_c or "—")),
 				"coils": _fmt_num(coils),
 				"total_qty": total_qty_line,
 				"uom": item.uom or item.stock_uom or "",

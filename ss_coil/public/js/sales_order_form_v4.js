@@ -1592,23 +1592,13 @@ function sanitize_process_plan_rows(rows, process_key, so_item_row) {
 	if (process_key === "slitter") {
 		return rows || [];
 	}
-	const list = rows || [];
-	if (!list.length) {
-		return list;
-	}
-	const with_length = list.filter((r) => flt(r.length));
-	const slitter_copies = list.filter((r) => !flt(r.length) && flt(r.width));
-	if (!slitter_copies.length) {
-		return list;
-	}
-	if (with_length.length === 1) {
-		return [with_length[0]];
-	}
-	if (with_length.length > 1) {
-		return with_length;
-	}
-	const defaults = default_cutting_scheme_row_for_process(so_item_row, process_key);
-	return defaults ? [defaults] : [];
+	// Backfill missing counts without adding rows or replacing manual sheet counts.
+	return (rows || []).map((row) => {
+		if (flt(row.length) > 0 && !flt(row.total_sheets)) {
+			return { ...row, total_sheets: ss_coil.process.cuttingSchemeTotalSheets(so_item_row, row.length) };
+		}
+		return row;
+	});
 }
 
 function show_cutting_scheme_process_tab(dialog, processes, active_process) {
@@ -1643,7 +1633,10 @@ function previous_cutting_scheme_process(processes, process_key) {
 function get_cutting_scheme_rows_for_process(dialog, process_key) {
 	const field = get_cutting_scheme_field(dialog, process_key);
 	if (field && field.grid) {
-		return normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key);
+		return sanitize_process_plan_rows(
+			normalize_cutting_scheme_rows(field.grid.get_data() || [], process_key),
+			process_key, dialog.__so_item_row,
+		);
 	}
 	const cached = (dialog.__plan_cache || {})[process_key];
 	return normalize_cutting_scheme_rows(cached || [], process_key);
@@ -1670,7 +1663,6 @@ function carry_forward_row_to_process(source_row, process_key, so_item_row) {
 	const length = flt(source_row.length) || flt(defaults.length);
 	let total_sheets =
 		flt(source_row.total_sheets) ||
-		(flt(source_row.strip) > 1 ? flt(source_row.strip) : 0) ||
 		flt(defaults.total_sheets);
 	if (
 		length &&
@@ -1699,6 +1691,38 @@ function carry_forward_row_to_process(source_row, process_key, so_item_row) {
 	};
 }
 
+// Add checked cuts without replacing dimensions already edited in the next tab.
+function carry_checked_cutting_scheme_rows(dialog, process_key) {
+	const processes = dialog.__processes || [];
+	const index = processes.indexOf(process_key);
+	if (index < 0) return;
+	const next_key = processes[index + 1];
+	const field = next_key && get_cutting_scheme_field(dialog, next_key);
+	if (!field?.grid) return;
+	const existing = get_cutting_scheme_rows_for_process(dialog, next_key);
+	const available = new Map();
+	existing.forEach((row) => {
+		const width = flt(row.width);
+		available.set(width, (available.get(width) || 0) + 1);
+	});
+	let changed = false;
+	rows_marked_for_next_process(get_cutting_scheme_rows_for_process(dialog, process_key)).forEach((row) => {
+		const width = flt(row.width);
+		if (available.get(width)) {
+			available.set(width, available.get(width) - 1);
+			return;
+		}
+		existing.push(carry_forward_row_to_process(row, next_key, dialog.__so_item_row));
+		changed = true;
+	});
+	if (!changed) return;
+	const data = normalize_cutting_scheme_rows(existing, next_key);
+	field.df.data = data;
+	field.grid.df.data = data;
+	field.grid.refresh();
+	dialog.__plan_cache[next_key] = data.map((row) => ({ ...row }));
+}
+
 function seed_cutting_scheme_grid_if_empty(dialog, process_key, opts) {
 	opts = opts || {};
 	if (process_key === "slitter") {
@@ -1723,7 +1747,7 @@ function seed_cutting_scheme_grid_if_empty(dialog, process_key, opts) {
 			carry_forward_row_to_process(row, process_key, dialog.__so_item_row),
 		);
 	}
-	if (!seed_rows.length && opts.allow_so_default !== false) {
+	if (!prev_key && !seed_rows.length && opts.allow_so_default !== false) {
 		const defaults = default_cutting_scheme_row_for_process(dialog.__so_item_row, process_key);
 		if (defaults) {
 			seed_rows = [defaults];
@@ -1758,6 +1782,14 @@ function map_cutting_scheme_row_from_server(d) {
 }
 
 function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
+	// Older web workers may still serve the Sales Order hooks without this helper.
+	if (!ss_coil.process?.cuttingSchemeTotalSheets) {
+		return frappe.require("/assets/ss_coil/js/ss_coil_process_dimension.js", () => {
+			if (ss_coil.process?.cuttingSchemeTotalSheets) {
+				open_cutting_scheme_dialog(frm, cdt, cdn, opts);
+			}
+		});
+	}
 	opts = opts || {};
 	const fromProduction = !!opts.from_production || cdt === "Coil Production Line";
 	const row = locals[cdt] && locals[cdt][cdn];
@@ -1818,7 +1850,18 @@ function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
 					in_place_edit: true,
 					cannot_add_rows: false,
 					data: normalize_cutting_scheme_rows(plan_cache[pk] || [], pk),
-					fields: cutting_scheme_dialog_table_fields(),
+					fields: cutting_scheme_dialog_table_fields().map((df) => {
+						if (df.fieldname === "length" && pk !== "slitter") {
+							df.onchange = function () {
+								const row = this.doc;
+								if (!row) return;
+								row.total_sheets = ss_coil.process.cuttingSchemeTotalSheets(contextRow, row.length);
+								this.grid_row?.refresh_field("total_sheets");
+								update_cutting_scheme_totals(dialog);
+							};
+						}
+						return df;
+					}),
 				});
 			});
 			dialog_fields.push({ fieldname: "totals_html", fieldtype: "HTML" });
@@ -1829,11 +1872,14 @@ function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
 				fields: dialog_fields,
 				primary_action_label: __("Save All Processes"),
 				primary_action() {
+					processes.forEach((pk) => carry_checked_cutting_scheme_rows(dialog, pk));
 					const plans_to_save = {};
 					processes.forEach((pk) => {
 						const grid_field = get_cutting_scheme_field(dialog, pk);
 						const raw = grid_field?.grid ? grid_field.grid.get_data() || [] : plan_cache[pk] || [];
-						plans_to_save[pk] = normalize_cutting_scheme_rows(raw, pk);
+						plans_to_save[pk] = sanitize_process_plan_rows(
+							normalize_cutting_scheme_rows(raw, pk), pk, contextRow,
+						);
 					});
 					for (const pk of processes) {
 						if ((plans_to_save[pk] || []).some((d) => !flt(d.width))) {
@@ -1936,6 +1982,7 @@ function open_cutting_scheme_dialog(frm, cdt, cdn, opts) {
 				dialog.__active_process = next_process;
 				active_process = next_process;
 				show_cutting_scheme_process_tab(dialog, processes, next_process);
+				carry_checked_cutting_scheme_rows(dialog, previous_cutting_scheme_process(processes, next_process));
 				seed_cutting_scheme_grid_if_empty(dialog, next_process);
 				render_cutting_scheme_process_tabs(dialog, processes, next_process, switchProcess);
 				setTimeout(() => update_cutting_scheme_totals(dialog), 0);
@@ -1987,6 +2034,14 @@ function bind_cutting_scheme_dialog_events(dialog) {
 
 		field.grid.wrapper.off(".ss_coil_cutting_dialog");
 		field.grid.wrapper.on(
+			"change.ss_coil_cutting_dialog",
+			'[data-fieldname="carry_forward"] input',
+			function () {
+				// Wait for the grid control to update its row before reading it.
+				setTimeout(() => carry_checked_cutting_scheme_rows(dialog, process_key), 0);
+			},
+		);
+		field.grid.wrapper.on(
 			"input.ss_coil_cutting_dialog change.ss_coil_cutting_dialog",
 			'[data-fieldname="width"] input, [data-fieldname="strip"] input, [data-fieldname="length"] input, [data-fieldname="lengthcut"] input, [data-fieldname="tolerance_plus"] input, [data-fieldname="tolerance_minus"] input',
 			function () {
@@ -1996,43 +2051,21 @@ function bind_cutting_scheme_dialog_events(dialog) {
 				const row_name =
 					$(this).attr("data-name") || $(this).closest(".grid-row").attr("data-name");
 				if (!row_name) return;
-				const row = (locals["Dialog Table"] || {})[row_name];
-				if (!row) return;
-
-				row.total_width = flt(row.width) * (flt(row.strip) || 1);
-
-				// Leveler / Reshearing: Total sheets = round(coil_length_m × 1000 / length_mm)
-				const fieldname = $(this).closest("[data-fieldname]").attr("data-fieldname");
-				if (
-					process_key !== "slitter" &&
-					(fieldname === "length" || $(this).attr("data-fieldname") === "length") &&
-					ss_coil.process &&
-					ss_coil.process.cuttingSchemeTotalSheets
-				) {
-					const sheets = ss_coil.process.cuttingSchemeTotalSheets(
-						dialog.__so_item_row,
-						row.length,
-					);
-					if (sheets) {
-						row.total_sheets = sheets;
+				const changed_field = $(this).closest("[data-fieldname]").attr("data-fieldname");
+				// Dialog Table rows live in grid data, not Frappe's document locals.
+				// Wait until the input control has written its parsed value to the row.
+				setTimeout(() => {
+					const grid_row = field.grid.grid_rows_by_docname?.[row_name];
+					const row = grid_row?.doc || (field.grid.get_data() || []).find((d) => d.name === row_name);
+					if (!row) return;
+					row.total_width = process_key === "slitter"
+						? flt(row.width) * (flt(row.strip) || 1) : flt(row.width);
+					if (process_key !== "slitter" && changed_field === "length") {
+						row.total_sheets = ss_coil.process.cuttingSchemeTotalSheets(dialog.__so_item_row, row.length);
+						grid_row?.refresh_field("total_sheets");
 					}
-					const length = flt(row.length);
-					if (length) {
-						if (row.tolerance_plus === undefined || row.tolerance_plus === null || row.tolerance_plus === "") {
-							row.tolerance_plus = length + 1;
-						}
-						if (
-							row.tolerance_minus === undefined ||
-							row.tolerance_minus === null ||
-							row.tolerance_minus === ""
-						) {
-							row.tolerance_minus = length - 1;
-						}
-					}
-				}
-
-				field.grid.refresh_row(row_name);
-				update_cutting_scheme_totals(dialog);
+					update_cutting_scheme_totals(dialog);
+				}, 0);
 			},
 		);
 
@@ -2167,7 +2200,7 @@ function update_cutting_scheme_totals(dialog) {
 	const remaining_width = item_width - total_width;
 
 	if (process_key !== "slitter") {
-		const total_sheets_sum = rows.reduce((sum, row) => sum + flt(row.total_sheets || row.strip), 0);
+		const total_sheets_sum = rows.reduce((sum, row) => sum + flt(row.total_sheets), 0);
 		const coil_m =
 			ss_coil.process && ss_coil.process.cuttingSchemeCoilLengthM
 				? ss_coil.process.cuttingSchemeCoilLengthM(dialog.__so_item_row)

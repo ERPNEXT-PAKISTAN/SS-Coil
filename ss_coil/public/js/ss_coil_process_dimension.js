@@ -120,7 +120,7 @@ ss_coil.process.cuttingSchemeCoilLengthM = function (coil_row) {
 	const thickness = flt(ss_coil.process.soRowField(coil_row, "thickness"));
 	const width = flt(ss_coil.process.soRowField(coil_row, "width"));
 	const denominator = thickness * width * 0.00000785 * 1000;
-	return denominator ? weight / denominator : 0;
+	return weight > 0 && thickness > 0 && width > 0 ? weight / denominator : 0;
 };
 
 /**
@@ -129,7 +129,7 @@ ss_coil.process.cuttingSchemeCoilLengthM = function (coil_row) {
  */
 ss_coil.process.cuttingSchemeTotalSheets = function (coil_row, sheet_length_mm) {
 	const sheet_len = flt(sheet_length_mm);
-	if (!sheet_len) {
+	if (sheet_len <= 0) {
 		return 0;
 	}
 	const coil_m = ss_coil.process.cuttingSchemeCoilLengthM(coil_row);

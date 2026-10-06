@@ -2189,7 +2189,7 @@ function ensure_cutting_detail_from_so_plan(frm) {
 	if ((frm.doc.cutting_detail || []).length) {
 		return;
 	}
-	if (!frm.doc.name || !frm.doc.sales_order_item || !frm.doc.operation) {
+	if (!frm.doc.name || (!frm.doc.sales_order_item && !frm.doc.coil_production_line) || !frm.doc.operation) {
 		return;
 	}
 	if (frm._cutting_detail_backfill_pending) {

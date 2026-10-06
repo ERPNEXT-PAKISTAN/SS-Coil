@@ -2856,6 +2856,29 @@ def _build_child_tag(parent_tag_no, sequence_number):
 	return f"{base}-{sequence}"
 
 
+def _restore_ss_coil_sales_order_item_link(doc):
+	"""Recover a missing plan key from the explicitly linked production row."""
+	if doc.get("sales_order_item") or not doc.get("coil_production_line"):
+		return
+	prod = frappe.db.get_value(
+		"Coil Production Line", doc.coil_production_line,
+		["parent", "parenttype", "sales_order_item"], as_dict=True,
+	)
+	if not prod or prod.parenttype != "Sales Order" or prod.parent != doc.get("order_no"):
+		return
+	if not prod.sales_order_item:
+		from ss_coil.coil_production import link_coil_production_to_sales_order_items
+
+		source = frappe.get_doc("Sales Order", doc.order_no)
+		link_coil_production_to_sales_order_items(source)
+		linked = next((row for row in source.get("custom_coil_production", []) if row.name == doc.coil_production_line), None)
+		prod.sales_order_item = linked.sales_order_item if linked else None
+	if prod.sales_order_item and frappe.db.get_value(
+		"Sales Order Item", prod.sales_order_item, "parent"
+	) == doc.order_no:
+		doc.sales_order_item = prod.sales_order_item
+
+
 def _ss_coil_sales_order_item_doc(doc):
 	if not doc.get("sales_order_item"):
 		return None
@@ -2903,6 +2926,9 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 	if doc.doctype != "SS Coil":
 		return
 
+	_restore_ss_coil_sales_order_item_link(doc)
+	if doc.is_new() and not doc.cutting_detail and doc.get("sales_order_item"):
+		_append_cutting_scheme_to_ss_coil(doc, doc.sales_order_item, operation=doc.operation)
 	so_item_doc = _ss_coil_sales_order_item_doc(doc)
 	so_row = (doc.so_item or [None])[0]
 
@@ -5590,6 +5616,8 @@ def _sync_ss_coil_cutting_detail_and_job_output(doc):
 def backfill_ss_coil_cutting_detail(ss_coil):
 	"""Fill empty cutting_detail from SO plan (or previous coil's cutting table)."""
 	doc = frappe.get_doc("SS Coil", ss_coil)
+	doc.check_permission("write")
+	_restore_ss_coil_sales_order_item_link(doc)
 	if doc.cutting_detail:
 		return {"updated": False, "reason": "already_has_rows"}
 
@@ -5775,11 +5803,13 @@ def create_ss_coil_from_sales_order(
 	"""
 	from ss_coil.coil_production import (
 		find_production_line,
+		link_coil_production_to_sales_order_items,
 		production_line_as_so_item_proxy,
 		sales_order_has_coil_production,
 	)
 
 	source = frappe.get_doc("Sales Order", source_name)
+	link_coil_production_to_sales_order_items(source)
 	prod = None
 	so_item = None
 	proxy = None
@@ -5820,6 +5850,7 @@ def create_ss_coil_from_sales_order(
 		ss_coil.sales_order_item = proxy.get("name")
 	if prod and _has_field("SS Coil", "coil_production_line"):
 		ss_coil.coil_production_line = prod.name
+	_restore_ss_coil_sales_order_item_link(ss_coil)
 	ss_coil.customer_name = source.customer_name
 	ss_coil.for_customer = source.get("custom_for_customer") or proxy.get("custom_for_customer")
 	ss_coil.order_received_date = source.transaction_date

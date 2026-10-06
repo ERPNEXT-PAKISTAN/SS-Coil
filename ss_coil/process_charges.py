@@ -137,6 +137,12 @@ def _ensure_process_charge_custom_fields():
 def is_process_charge_row(row):
 	if bool(cint_safe(row.get("custom_is_process_charge"))) or bool(row.get("custom_process_charge_key")):
 		return True
+	# Legacy orders used charge item names on material rows. Keep traced mother
+	# coils as production rows unless explicit charge markers above say otherwise.
+	if row.get("custom_raw_material_item") and (
+		row.get("custom_raw_material_tag_no") or row.get("custom_source_stock_entry_detail")
+	):
+		return False
 	# Fallback: known process-charge service items (markers may be missing briefly)
 	item_code = row.get("item_code")
 	if not item_code:

@@ -613,3 +613,17 @@ table. It reuses the cutting-scheme report request and matches process cuts to
 their production row. It shows the formula, substituted mother-coil values,
 calculated sheets, and saved counts separately so manual overrides are visible.
 Weight/dimension edits and cutting-scheme saves refresh the panel.
+
+SS Coil cutting schemes are keyed by Sales Order Item. Creation, before-validate
+sync, and the empty-scheme backfill restore a missing `sales_order_item` from
+`coil_production_line`, checking both rows belong to the selected Sales Order.
+New entries populate an empty cutting table before output generation. Existing
+entries use the backfill action, which preserves existing cuts and requires
+write permission; the UI permits backfill when only the production link exists.
+
+Legacy material rows can use item names such as Slitting Charges while carrying
+mother-coil and Stock Entry trace fields. `is_process_charge_row` preserves
+these as production rows unless explicit charge markers are set. Name-only
+classification previously cleared their production/item links and prevented
+SS Coil cutting schemes from loading. Link recovery also reconciles a missing
+production/item link in memory using the Sales Order's traced material rows.

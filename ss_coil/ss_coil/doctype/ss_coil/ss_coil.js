@@ -86,7 +86,8 @@ frappe.ui.form.on("SS Coil", {
 		backfill_so_item_tag_no(frm);
 		render_ss_coil_job_sheet_report(frm);
 		render_ss_coil_formulas(frm);
-		sync_linked_stock_entry_field(frm);
+		// Refresh updates link descriptions without changing the saved source entry.
+		sync_linked_stock_entry_field(frm, true);
 		apply_sales_order_item_link_title(frm);
 	},
 	operation(frm) {
@@ -1753,6 +1754,18 @@ frappe.ui.form.on("Coil Input", {
 	},
 });
 
+function set_ss_coil_calculated_value(frm, fieldname, value) {
+	// Database Float values are stored to at most nine decimal places. Compare
+	// at field precision so a saved value does not become dirty on every refresh.
+	const digits = Math.min(9, precision(fieldname, frm.doc) ?? 9);
+	const rounded = flt(value, digits);
+	// Summing separately rounded child weights can differ by one storage unit.
+	const tolerance = 1e-9 + Number.EPSILON * Math.max(1, Math.abs(rounded));
+	if (Math.abs(flt(frm.doc[fieldname], digits) - rounded) > tolerance) {
+		return frm.set_value(fieldname, rounded);
+	}
+}
+
 function update_grand_totals(frm) {
 	const total_width_sum = ss_coil.process.grandTotalWidth(frm);
 	const estimated_wt_sum = (frm.doc.job_output || []).reduce(
@@ -1760,8 +1773,8 @@ function update_grand_totals(frm) {
 		0,
 	);
 
-	frm.set_value("grand_total_width", total_width_sum);
-	frm.set_value("grand_estimated_wt", estimated_wt_sum);
+	set_ss_coil_calculated_value(frm, "grand_total_width", total_width_sum);
+	set_ss_coil_calculated_value(frm, "grand_estimated_wt", estimated_wt_sum);
 	update_remaining_width(frm);
 	update_calc_ratio(frm);
 	render_ss_coil_formulas(frm);
@@ -1822,12 +1835,12 @@ function update_calc_ratio(frm) {
 		ss_coil.formulas && ss_coil.formulas.calc_ratio_value
 			? ss_coil.formulas.calc_ratio_value(frm)
 			: flt(frm.doc.calc_ratio);
-	frm.set_value("calc_ratio", value);
+	set_ss_coil_calculated_value(frm, "calc_ratio", value);
 }
 
 function update_remaining_width(frm) {
 	const value = ss_coil.process.remainingWidthValue(frm);
-	frm.set_value("remaining_width", value);
+	set_ss_coil_calculated_value(frm, "remaining_width", value);
 	render_ss_coil_formulas(frm);
 }
 

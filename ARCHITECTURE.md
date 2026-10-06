@@ -627,3 +627,10 @@ these as production rows unless explicit charge markers are set. Name-only
 classification previously cleared their production/item links and prevented
 SS Coil cutting schemes from loading. Link recovery also reconciles a missing
 production/item link in memory using the Sales Order's traced material rows.
+
+SS Coil refresh compares calculated header values at field precision (capped
+at the database Float scale of nine decimals) before calling `frm.set_value`.
+Raw JavaScript ratios differ slightly from stored decimals and previously
+marked saved entries dirty on every refresh. Refresh also updates Stock Entry
+link descriptions without autofilling or clearing the saved source link;
+autofill is reserved for changing the Sales Order.

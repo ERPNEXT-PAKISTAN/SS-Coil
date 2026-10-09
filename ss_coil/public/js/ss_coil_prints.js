@@ -44,12 +44,17 @@ ss_coil.prints.add_form_buttons = function (frm) {
 	ss_coil.prints.actions_for(frm.doctype).forEach((action) => {
 		if (frm.remove_custom_button) {
 			frm.remove_custom_button(action.label, __("Print"));
+			frm.remove_custom_button(action.label);
 		}
-		frm.add_custom_button(
+		const inspection = action.id === "inspection_1" || action.id === "inspection_2";
+		const button = frm.add_custom_button(
 			action.label,
 			() => ss_coil.prints.open(frm.doctype, frm.doc.name, action.id),
-			__("Print")
+			inspection ? undefined : __("Print")
 		);
+		if (inspection && button && frm.page?.inner_toolbar) {
+			button.prependTo(frm.page.inner_toolbar);
+		}
 	});
 };
 

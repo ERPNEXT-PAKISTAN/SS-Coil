@@ -29,5 +29,5 @@
 {% if inspection_print_html %}
 {{ inspection_print_html | safe }}
 {% else %}
-{{ build_inspection_print_html(doc, 1) | safe }}
+{% include "ss_coil/ss_coil/print_format/ss_coil_inspection_1/ss_coil_inspection_1_fallback.html" %}
 {% endif %}

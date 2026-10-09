@@ -18,6 +18,7 @@ from ss_coil.delivery_advise_print import (
 	DELIVERY_ADVISE_PRINT_FORMATS,
 	build_delivery_advise_print_html,
 )
+from ss_coil.inspection_print import PRINT_FORMATS as INSPECTION_PRINT_FORMATS, build_inspection_print_html
 from ss_coil.job_sheet_print import build_ss_coil_job_sheet_html
 
 STICKER_PRINT_FORMATS = (
@@ -40,10 +41,12 @@ def pdf_body_html(jenv, template, print_format, args):
 	_inject_delivery_advise_print_html(print_format, args)
 	_inject_job_sheet_print_html(print_format, args)
 	_inject_sales_contract_context(print_format, args)
+	if print_format and print_format.name in INSPECTION_PRINT_FORMATS:
+		args["inspection_print_html"] = build_inspection_print_html(args["doc"], INSPECTION_PRINT_FORMATS[print_format.name])
 
 	# Bypass Print Designer for formats that rely on injected context / custom Jinja.
 	if print_format and print_format.name in (
-		{SS_COIL_JOB_SHEET_FORMAT, "Sales Invoice Format", "SS Sales Order"} | SALES_CONTRACT_PRINT_FORMATS
+		{SS_COIL_JOB_SHEET_FORMAT, "Sales Invoice Format", "SS Sales Order"} | SALES_CONTRACT_PRINT_FORMATS | set(INSPECTION_PRINT_FORMATS)
 	):
 		return fw_pdf_body_html(template, args)
 

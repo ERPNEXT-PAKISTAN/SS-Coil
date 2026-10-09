@@ -35,6 +35,7 @@ def run_post_install_setup():
 	sync_ss_coil_detail_print_format()
 	sync_stock_entry_sticker_print_formats()
 	sync_ss_coil_job_sheet_print_format()
+	sync_inspection_print_formats()
 	sync_sales_contract_print_formats()
 	sync_sales_contract_terms()
 	sync_ss_sales_order_print_format()
@@ -414,3 +415,14 @@ def sync_ss_sales_order_print_format():
 		},
 		update_modified=False,
 	)
+
+
+def sync_inspection_print_formats():
+	"""Install both reference-style inspection print formats on every migration."""
+	from pathlib import Path
+	from frappe.modules.import_file import import_file_by_path
+	for form in (1, 2):
+		folder = f"ss_coil_inspection_{form}"
+		path = Path(frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder))
+		import_file_by_path(str(path / f"{folder}.json"), force=True)
+		frappe.db.set_value("Print Format", f"SS Coil Inspection {form}", "html", (path / f"{folder}.html").read_text(), update_modified=False)

@@ -24,6 +24,8 @@ ss_coil.prints.ACTIONS = {
 		{ id: "tag_print", label: __("Tag Print") },
 		{ id: "coil_detail", label: __("Coil Detail"), format: "SS Coil Detail" },
 		{ id: "job_sheet", label: __("Job Sheet"), format: "SS Coil Job Sheet" },
+		{ id: "inspection_1", label: __("Inspection 1"), format: "SS Coil Inspection 1" },
+		{ id: "inspection_2", label: __("Inspection 2"), format: "SS Coil Inspection 2" },
 	],
 };
 

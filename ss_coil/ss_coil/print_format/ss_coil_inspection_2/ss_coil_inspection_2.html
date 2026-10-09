@@ -1,0 +1,33 @@
+<style>
+@page { size:A4 portrait; margin:7mm; }
+.print-format { font-family:Arial,sans-serif; font-size:9px; color:#172033; padding:0!important; }
+.inspection-print-page { page-break-after:always; }
+.inspection-print-page:last-child { page-break-after:auto; }
+.inspection-print-page table { border-collapse:collapse; width:100%; table-layout:fixed; margin:0; }
+.inspection-print-page th,.inspection-print-page td { border:1px solid #64748b; padding:2px 3px!important; font-size:8px!important; line-height:1.2; vertical-align:middle!important; word-wrap:break-word; }
+.inspection-print-page th { background:#e2e8f0!important; color:#1e3a5f!important; text-align:center; }
+.inspection-print-page .inspection-company { margin-bottom:5mm; }
+.inspection-print-page .inspection-company td { border:0; font-size:10px!important; }
+.inspection-print-page .inspection-company strong { font-size:12px; }
+.inspection-logo { float:left; max-width:16mm; max-height:16mm; margin-right:3mm; }
+.inspection-print-page .inspection-company .inspection-title { width:35%; border:1px solid #64748b; text-align:center; font-weight:bold; font-size:12px!important; }
+.inspection-print-page .inspection-heading { margin-bottom:4mm; }
+.inspection-print-page .inspection-heading>tbody>tr>td { border:0; padding:0!important; vertical-align:top!important; }
+.inspection-print-page .inspection-details th { width:32%; text-align:left; }
+.inspection-print-page .inspection-details td { height:5mm; }
+.inspection-print-page .inspection-tolerances td { text-align:center; height:20mm; }
+.inspection-print-page .inspection-measurements { text-align:center; }
+.inspection-print-page .inspection-measurements tbody td { height:5mm; }
+.inspection-print-page .inspection-checkpoints .checkpoint-group { width:25mm; }
+.inspection-print-page .inspection-checkpoints .checkpoint-label { width:15mm; }
+.inspection-print-page .inspection-remarks { min-height:10mm; padding:3mm 0; white-space:pre-wrap; font-size:9px; }
+.inspection-print-page .inspection-signatures td { height:8mm; }
+.inspection-print-page thead { display:table-header-group; }
+.inspection-print-page tr { page-break-inside:avoid; }
+@media screen { .print-format { width:210mm; max-width:210mm; padding:7mm!important; } }
+</style>
+{% if inspection_print_html %}
+{{ inspection_print_html | safe }}
+{% else %}
+{{ build_inspection_print_html(doc, 2) | safe }}
+{% endif %}

@@ -16,12 +16,14 @@ from ss_coil.api import (
 	build_stock_entry_sticker_payload,
 	get_stock_entry_sticker_logo_url,
 )
+from ss_coil.inspection_print import build_inspection_print_html
 from ss_coil.coil_print import build_coil_detail_print_html
 from ss_coil.delivery_advise_print import build_delivery_advise_print_html
 from ss_coil.job_sheet_print import build_ss_coil_job_sheet_html
 from ss_coil.sales_contract_print import build_sales_contract_lines
 
 __all__ = [
+	"build_inspection_print_html",
 	"build_coil_detail_print_html",
 	"build_delivery_advise_print_html",
 	"build_sales_contract_lines",

@@ -26,7 +26,8 @@
   "column_break_egol",
   "burr_tail_ws_2",
   "camber",
-  "burr_head_ds_2"
+  "burr_head_ds_2",
+  "api_st"
  ],
  "fields": [
   {
@@ -131,6 +132,12 @@
    "fieldname": "burr_head_ds_2",
    "fieldtype": "Float",
    "label": "Burr Head DS 2"
+  },
+  {
+   "fieldname": "api_st",
+   "label": "API St",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
   }
  ],
  "grid_page_length": 50,

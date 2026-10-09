@@ -61,6 +61,7 @@ frappe.ui.form.on("SS Coil", {
 		});
 	},
 	refresh(frm) {
+		frappe.require(["/assets/ss_coil/css/stock_entry_data_entry.css", "/assets/ss_coil/js/ss_coil_inspections.js"], () => ss_coil.inspections.render(frm));
 		frm.toggle_display("process_control_enabled", false);
 		frm.toggle_display("elapsed_time", false);
 		frappe.require("/assets/ss_coil/js/ss_coil_prints.js", () => {

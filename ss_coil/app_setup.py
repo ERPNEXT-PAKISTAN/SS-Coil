@@ -28,6 +28,8 @@ def run_post_install_setup():
 	setup_ss_coil_machine_operation_link()
 	setup_sales_order_job_sheet_fields()
 	ensure_process_charge_items()
+	from ss_coil.inspection_setup import sync_inspection_fields
+	sync_inspection_fields()
 	sync_coil_form_layouts()
 	sync_delivery_advise_print_formats()
 	sync_ss_coil_detail_print_format()

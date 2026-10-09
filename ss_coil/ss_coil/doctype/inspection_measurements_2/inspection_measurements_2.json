@@ -20,7 +20,34 @@
   "burr_height_max",
   "edge_wave_max",
   "column_break_mwaq",
-  "camber"
+  "camber",
+  "thickness_ds",
+  "thickness_c",
+  "thickness_ws",
+  "width_head",
+  "width_tail",
+  "length_l1",
+  "length_l2",
+  "diagonal_a",
+  "diagonal_b",
+  "diagonal_difference",
+  "flatness_ds",
+  "flatness_c",
+  "flatness_ws",
+  "burr_thickness",
+  "burr_cut",
+  "burr_difference",
+  "appearance_dent",
+  "appearance_pimple",
+  "appearance_dimple",
+  "appearance_bump",
+  "appearance_scratch",
+  "appearance_rust",
+  "appearance_abrasion",
+  "appearance_dirty",
+  "appearance_stain",
+  "appearance_passed",
+  "appearance_reject"
  ],
  "fields": [
   {
@@ -96,6 +123,168 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Camber"
+  },
+  {
+   "fieldname": "thickness_ds",
+   "label": "Thickness DS",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "thickness_c",
+   "label": "Thickness C",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "thickness_ws",
+   "label": "Thickness WS",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "width_head",
+   "label": "Width Head",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "width_tail",
+   "label": "Width Tail",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "length_l1",
+   "label": "Length L1",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "length_l2",
+   "label": "Length L2",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "diagonal_a",
+   "label": "Diagonal A",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "diagonal_b",
+   "label": "Diagonal B",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "diagonal_difference",
+   "label": "Diagonal A-B",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "flatness_ds",
+   "label": "Flatness DS",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "flatness_c",
+   "label": "Flatness C",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "flatness_ws",
+   "label": "Flatness WS",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "burr_thickness",
+   "label": "Burr Thickness",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "burr_cut",
+   "label": "Burr Cut",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "burr_difference",
+   "label": "Burr B=C-T",
+   "fieldtype": "Float",
+   "precision": "3"
+  },
+  {
+   "fieldname": "appearance_dent",
+   "label": "Dent",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_pimple",
+   "label": "Pimple",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_dimple",
+   "label": "Dimple",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_bump",
+   "label": "Bump",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_scratch",
+   "label": "Scratch",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_rust",
+   "label": "Rust",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_abrasion",
+   "label": "Abrasion",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_dirty",
+   "label": "Dirty",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_stain",
+   "label": "Stain",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_passed",
+   "label": "Passed",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
+  },
+  {
+   "fieldname": "appearance_reject",
+   "label": "Reject",
+   "fieldtype": "Select",
+   "options": "\nOK\nNG"
   }
  ],
  "grid_page_length": 50,

@@ -85,12 +85,46 @@
   "formula_tab",
   "formulas",
   "inspection_report_tab",
+  "custom_inspection_form1",
   "company_detail",
   "section_break_hgei",
   "customer_order_detail",
   "thickness",
+  "custom_section_break_xnwi4",
+  "custom_slitter_inspection_sheet_1",
+  "custom_section_break_hjo2g",
+  "inspection_1_thickness_min",
+  "inspection_1_thickness_max",
+  "inspection_1_width_min",
+  "inspection_1_width_max",
+  "inspection_1_weight_min",
+  "inspection_1_weight_max",
+  "inspection_1_burr_max",
+  "inspection_1_remarks",
+  "inspection_1_inspected_by",
+  "inspection_1_inspected_date",
+  "inspection_1_checked_by",
+  "inspection_1_checked_date",
   "inspection_report_2_tab",
-  "slitter_inspection_sheet_2"
+  "custom_inspection_form2",
+  "custom_detail_heading",
+  "custom_section_break_ntuhc",
+  "slitter_inspection_sheet_2",
+  "custom_section_break_jehj7",
+  "inspection_2_thickness_min",
+  "inspection_2_thickness_max",
+  "inspection_2_width_min",
+  "inspection_2_width_max",
+  "inspection_2_length_min",
+  "inspection_2_length_max",
+  "inspection_2_edge_wave_max",
+  "inspection_2_camber_max",
+  "inspection_2_burr_max",
+  "inspection_2_remarks",
+  "inspection_2_inspected_by",
+  "inspection_2_inspected_date",
+  "inspection_2_checked_by",
+  "inspection_2_checked_date"
  ],
  "fields": [
   {
@@ -497,16 +531,19 @@
   {
    "fieldname": "company_detail",
    "fieldtype": "HTML",
-   "label": "Company Detail"
+   "label": "Company Detail",
+   "hidden": 1
   },
   {
    "fieldname": "section_break_hgei",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "fieldname": "customer_order_detail",
    "fieldtype": "HTML",
-   "label": "Customer Order Detail"
+   "label": "Customer Order Detail",
+   "hidden": 1
   },
   {
    "fieldname": "inspection_report_2_tab",
@@ -517,7 +554,251 @@
    "fieldname": "slitter_inspection_sheet_2",
    "fieldtype": "Table",
    "label": "Slitter Inspection Sheet 2",
-   "options": "Inspection Measurements 2"
+   "options": "Inspection Measurements 2",
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_section_break_xnwi4",
+   "fieldtype": "Section Break",
+   "no_copy": 0,
+   "read_only": 0,
+   "reqd": 0,
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_slitter_inspection_sheet_1",
+   "fieldtype": "Table",
+   "label": "Slitter Inspection Sheet 1",
+   "no_copy": 0,
+   "options": "Inspection Measurement",
+   "read_only": 0,
+   "reqd": 0,
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_section_break_hjo2g",
+   "fieldtype": "Section Break",
+   "no_copy": 0,
+   "read_only": 0,
+   "reqd": 0,
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_inspection_form1",
+   "fieldtype": "HTML",
+   "label": "Inspection Form1",
+   "no_copy": 0,
+   "read_only": 0,
+   "reqd": 0
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_detail_heading",
+   "fieldtype": "HTML",
+   "label": "Detail Heading",
+   "no_copy": 0,
+   "read_only": 0,
+   "reqd": 0,
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_section_break_ntuhc",
+   "fieldtype": "Section Break",
+   "no_copy": 0,
+   "read_only": 0,
+   "reqd": 0,
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_section_break_jehj7",
+   "fieldtype": "Section Break",
+   "no_copy": 0,
+   "read_only": 0,
+   "reqd": 0,
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 0,
+   "fieldname": "custom_inspection_form2",
+   "fieldtype": "HTML",
+   "label": "Inspection Form2",
+   "no_copy": 0,
+   "read_only": 0,
+   "reqd": 0
+  },
+  {
+   "fieldname": "inspection_1_thickness_min",
+   "label": "Thickness Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_1_thickness_max",
+   "label": "Thickness Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_1_width_min",
+   "label": "Width Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_1_width_max",
+   "label": "Width Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_1_weight_min",
+   "label": "Weight Min (kg)",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_1_weight_max",
+   "label": "Weight Max (kg)",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_1_burr_max",
+   "label": "Burr Height Max",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_1_remarks",
+   "label": "Remarks",
+   "fieldtype": "Small Text",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_1_inspected_by",
+   "label": "Inspected By",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_1_inspected_date",
+   "label": "Inspection Date",
+   "fieldtype": "Date",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_1_checked_by",
+   "label": "Checked By",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_1_checked_date",
+   "label": "Checked Date",
+   "fieldtype": "Date",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_thickness_min",
+   "label": "Thickness Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_2_thickness_max",
+   "label": "Thickness Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_2_width_min",
+   "label": "Width Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_2_width_max",
+   "label": "Width Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_2_length_min",
+   "label": "Length Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_2_length_max",
+   "label": "Length Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_2_edge_wave_max",
+   "label": "Edge Wave Max",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_camber_max",
+   "label": "Camber Max",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_burr_max",
+   "label": "Burr Height Max",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_remarks",
+   "label": "Remarks",
+   "fieldtype": "Small Text",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_inspected_by",
+   "label": "Inspected By",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_inspected_date",
+   "label": "Inspection Date",
+   "fieldtype": "Date",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_checked_by",
+   "label": "Checked By",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_2_checked_date",
+   "label": "Checked Date",
+   "fieldtype": "Date",
+   "hidden": 1
   }
  ],
  "grid_page_length": 50,

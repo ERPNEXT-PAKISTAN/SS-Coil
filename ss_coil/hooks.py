@@ -21,6 +21,8 @@ fixtures = [
 				"in",
 				[
 					"SS Coil",
+					"Inspection Measurement",
+					"Inspection Measurements 2",
 					"Coil Output",
 					"Coil Input",
 					"Cutting Scheme",
@@ -59,15 +61,15 @@ fixtures = [
 	},
 	{
 		"dt": "Property Setter",
-		"filters": [["doc_type", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Sales Order Item", "Stock Entry", "Stock Entry Detail", "Delivery Note Item", "Sales Invoice Item", "Purchase Receipt Item", "Purchase Invoice Item", "Expense Claim", "Journal Entry", "Payment Entry", "Purchase Order", "Purchase Receipt", "Purchase Invoice"]]],
+		"filters": [["doc_type", "in", ["SS Coil", "Inspection Measurement", "Inspection Measurements 2", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Sales Order Item", "Stock Entry", "Stock Entry Detail", "Delivery Note Item", "Sales Invoice Item", "Purchase Receipt Item", "Purchase Invoice Item", "Expense Claim", "Journal Entry", "Payment Entry", "Purchase Order", "Purchase Receipt", "Purchase Invoice"]]],
 	},
 	{
 		"dt": "Client Script",
-		"filters": [["dt", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Stock Entry"]]],
+		"filters": [["dt", "in", ["SS Coil", "Inspection Measurement", "Inspection Measurements 2", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Sales Order", "Stock Entry"]]],
 	},
 	{
 		"dt": "Server Script",
-		"filters": [["reference_doctype", "in", ["SS Coil", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Stock Entry", "Stock Entry Detail"]]],
+		"filters": [["reference_doctype", "in", ["SS Coil", "Inspection Measurement", "Inspection Measurements 2", "Coil Output", "Coil Input", "Cutting Scheme", "Cutting Scheme SO", "Coil SO", "For Customer", "Stock Entry", "Stock Entry Detail"]]],
 	},
 	{
 		"dt": "Terms and Conditions",

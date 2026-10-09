@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-10-08 20:17:15.234013",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_juxr",
+  "thickness_min",
+  "thickness_max",
+  "column_break_vraz",
+  "width_min",
+  "width_max",
+  "column_break_jier",
+  "length1_min",
+  "length1_max",
+  "column_break_yiba",
+  "burr_height_max",
+  "edge_wave_max",
+  "column_break_mwaq",
+  "camber"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_juxr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "thickness_min",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Min"
+  },
+  {
+   "fieldname": "thickness_max",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Max"
+  },
+  {
+   "fieldname": "column_break_vraz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "width_min",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Width Min"
+  },
+  {
+   "fieldname": "width_max",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Width Max"
+  },
+  {
+   "fieldname": "column_break_jier",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "length1_min",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length1 Min"
+  },
+  {
+   "fieldname": "length1_max",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length1 Max"
+  },
+  {
+   "fieldname": "column_break_yiba",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "burr_height_max",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Burr Height Max"
+  },
+  {
+   "fieldname": "edge_wave_max",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Edge Wave Max"
+  },
+  {
+   "fieldname": "column_break_mwaq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "camber",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Camber"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-09 18:50:56.571808",
+ "modified_by": "Administrator",
+ "module": "SS Coil",
+ "name": "Inspection Measurements 2",
+ "owner": "techcraft986@gmail.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

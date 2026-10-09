@@ -87,7 +87,10 @@
   "inspection_report_tab",
   "company_detail",
   "section_break_hgei",
-  "customer_order_detail"
+  "customer_order_detail",
+  "thickness",
+  "inspection_report_2_tab",
+  "slitter_inspection_sheet_2"
  ],
  "fields": [
   {
@@ -288,11 +291,6 @@
    "label": "Thickness"
   },
   {
-   "fieldname": "section_break_qasa",
-   "fieldtype": "Section Break",
-   "hidden": 1
-  },
-  {
    "fieldname": "width",
    "fieldtype": "Float",
    "label": "Width"
@@ -325,16 +323,6 @@
    "label": "WS"
   },
   {
-   "fieldname": "column_break_slet",
-   "fieldtype": "Column Break",
-   "hidden": 1
-  },
-  {
-   "fieldname": "section_break_zbvk",
-   "fieldtype": "Section Break",
-   "hidden": 1
-  },
-  {
    "fieldname": "mill",
    "fieldtype": "Data",
    "label": "Mill"
@@ -345,11 +333,6 @@
    "label": "Commodity"
   },
   {
-   "fieldname": "column_break_ajyx",
-   "fieldtype": "Column Break",
-   "hidden": 1
-  },
-  {
    "fieldname": "specifications",
    "fieldtype": "Data",
    "label": "Specifications"
@@ -358,11 +341,6 @@
    "fieldname": "works",
    "fieldtype": "Data",
    "label": "Works"
-  },
-  {
-   "fieldname": "column_break_kbpk",
-   "fieldtype": "Column Break",
-   "hidden": 1
   },
   {
    "fieldname": "mother_coil_detail_section",
@@ -438,11 +416,6 @@
    "fieldname": "grand_estimated_wt",
    "fieldtype": "Float",
    "label": "Grand Estimated WT"
-  },
-  {
-   "fieldname": "column_break_yzap",
-   "fieldtype": "Column Break",
-   "hidden": 1
   },
   {
    "fieldname": "input_coil",
@@ -534,12 +507,23 @@
    "fieldname": "customer_order_detail",
    "fieldtype": "HTML",
    "label": "Customer Order Detail"
+  },
+  {
+   "fieldname": "inspection_report_2_tab",
+   "fieldtype": "Tab Break",
+   "label": "Inspection Report 2"
+  },
+  {
+   "fieldname": "slitter_inspection_sheet_2",
+   "fieldtype": "Table",
+   "label": "Slitter Inspection Sheet 2",
+   "options": "Inspection Measurements 2"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-18 01:20:00.000000",
+ "modified": "2026-10-08 20:21:37.326268",
  "modified_by": "techcraft986@gmail.com",
  "module": "SS Coil",
  "name": "SS Coil",

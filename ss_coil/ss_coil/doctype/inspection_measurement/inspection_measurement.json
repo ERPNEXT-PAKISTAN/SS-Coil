@@ -1,0 +1,151 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-10-08 18:56:57.549584",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_wm0f",
+  "thickness_head_ds",
+  "thickness_tail_ds",
+  "column_break_pnet",
+  "thickness_tail_ws",
+  "thickness_head_c",
+  "column_break_wgsh",
+  "thickness_head_ws",
+  "thickness_tail_c",
+  "column_break_kvkj",
+  "width_head_end",
+  "width_center",
+  "width_tail_end",
+  "column_break_opqq",
+  "burr_tail_ws_1",
+  "burr_head_ds_1",
+  "column_break_egol",
+  "burr_tail_ws_2",
+  "camber",
+  "burr_head_ds_2"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_wm0f",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "thickness_head_ds",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Head DS"
+  },
+  {
+   "fieldname": "thickness_tail_ds",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Tail DS"
+  },
+  {
+   "fieldname": "column_break_pnet",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "thickness_tail_ws",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Tail WS"
+  },
+  {
+   "fieldname": "thickness_head_c",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Head C"
+  },
+  {
+   "fieldname": "column_break_wgsh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "thickness_head_ws",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Head WS"
+  },
+  {
+   "fieldname": "thickness_tail_c",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Thickness Tail C"
+  },
+  {
+   "fieldname": "column_break_kvkj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "width_head_end",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Width Head End"
+  },
+  {
+   "fieldname": "width_center",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Width Center"
+  },
+  {
+   "fieldname": "width_tail_end",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Width Tail End"
+  },
+  {
+   "fieldname": "column_break_opqq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "burr_tail_ws_1",
+   "fieldtype": "Float",
+   "label": "Burr Tail WS 1"
+  },
+  {
+   "fieldname": "burr_head_ds_1",
+   "fieldtype": "Float",
+   "label": "Burr Head DS 1"
+  },
+  {
+   "fieldname": "column_break_egol",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "burr_tail_ws_2",
+   "fieldtype": "Float",
+   "label": "Burr Tail WS 2"
+  },
+  {
+   "fieldname": "camber",
+   "fieldtype": "Data",
+   "label": "Camber"
+  },
+  {
+   "fieldname": "burr_head_ds_2",
+   "fieldtype": "Float",
+   "label": "Burr Head DS 2"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-09 18:49:43.973039",
+ "modified_by": "Administrator",
+ "module": "SS Coil",
+ "name": "Inspection Measurement",
+ "owner": "techcraft986@gmail.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

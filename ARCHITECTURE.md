@@ -275,6 +275,16 @@ it — e.g. a Sales Order Item's source link was cleared, or data drifted):
   — re-runs the same recompute the save hook does, useful to trigger it
   without making an unrelated edit just to force a save.
 
+**Two-way header updates**: the document being saved/synced supplies Customer
+(`custom_customer` ↔ `customer`), For Customer, Driver Name, Vehicle No and
+Invoice / IGP No (`custom_invoice__igp_no` ↔ `custom_igp_no`). Empty optional
+values clear the corresponding field. SE → SO also refreshes Customer Name.
+SO saves push its current in-memory values; they must never pull SE headers
+first, which would replace newly edited IGP values. Submitted updates use
+`on_update_after_submit` on both doctypes. The manual sync buttons save pending
+edits before invoking server sync. Headers use explicit business field mappings
+and direct database writes, avoiding recursive document save hooks.
+
 **Reverse creation**: Sales Order also gets a "Create Stock Entry" button
 (`create_stock_entry_from_sales_order`), mirroring
 `create_sales_order_from_stock_entry` with source/target swapped — same
@@ -570,6 +580,19 @@ customizations. `ensure_item_ss_coil_field_order` in `form_layout.py`
 re-applies this on migrate.
 
 ## File map
+
+SS Coil Sales Report uses a sibling `ss_coil_sales_report.html` client-side
+template for the report Print/PDF actions. It prints selected filters, customer
+rows, additive weight/amount totals (excluding Price), and calculation notes.
+Use landscape orientation for its thirteen columns.
+The script aggregates submitted Material Receipts, Delivery Notes, and Sales
+Invoices separately per customer, applying document read permissions before
+loading child rows. Stock-updating invoice dispatches exclude Delivery Note
+links to prevent duplicate weights. Company is required; optional date/customer
+filters limit transactions, and scrap item/group filters classify dispatches.
+Remaining weight with a From Date is period movement, excluding opening stock;
+receivable is the current outstanding balance on the selected invoices.
+`workspace_sync.py` adds this report to the workspace and sidebar on migration.
 
 | File | Role |
 |---|---|

@@ -1,0 +1,73 @@
+{%
+var esc = function(value) { return frappe.utils.escape_html(String(value == null ? "" : value)); };
+var rows = data.filter(function(row) { return !row.is_total_row; });
+var visible_columns = columns.filter(function(col) { return col.fieldname && col.fieldname !== "currency" && col.fieldname !== "invoice_qty"; });
+var total_fields = ["mill_tag_weight", "number_of_coils", "received_weight", "scrap", "finish_goods", "out_weight", "remaining_weight", "amount", "with_sales_tax_amount", "receivable"];
+var totals = {};
+total_fields.forEach(function(key) { totals[key] = 0; });
+rows.forEach(function(row) { total_fields.forEach(function(key) { totals[key] += Number(row[key] || 0); }); });
+var currency = rows.length ? rows[0].currency : "";
+var number = function(value, precision) { return Number(value || 0).toLocaleString(undefined, {minimumFractionDigits: precision, maximumFractionDigits: precision}); };
+var formatted = function(value, col) {
+    return col.fieldtype === "Currency" ? esc(format_currency(Number(value || 0), currency)) : col.fieldtype === "Float" ? number(value, 3) : esc(value);
+};
+var filter_labels = {company: "Company", from_date: "From Date", to_date: "To Date", customer: "Customer", scrap_item: "Scrap Item", scrap_item_group: "Scrap Item Group"};
+%}
+<style>
+.ss-sales-print { font-family: Arial, sans-serif; color: #222; font-size: 9px; }
+.ss-sales-print h2 { text-align: center; font-size: 20px; margin: 0 0 12px; }
+.ss-sales-print .filters { line-height: 1.8; margin-bottom: 12px; }
+.ss-sales-print .filters span { display: inline-block; margin-right: 18px; }
+.ss-sales-print table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.ss-sales-print th, .ss-sales-print td { border: 1px solid #bbb; padding: 5px 4px; vertical-align: top; overflow-wrap: anywhere; }
+.ss-sales-print th { background: #eef1f4 !important; font-weight: bold; }
+.ss-sales-print .numeric { text-align: right; }
+.ss-sales-print .total td { font-weight: bold; background: #eef1f4 !important; }
+.ss-sales-print thead { display: table-header-group; }
+.ss-sales-print tr { page-break-inside: avoid; }
+.ss-sales-print .notes { font-size: 9px; line-height: 1.5; margin-top: 12px; }
+@media print { .print-format { max-width: none !important; padding: 0 !important; } }
+</style>
+<div class="ss-sales-print">
+    <h2>{{ __("SS Coil Sales Report") }}</h2>
+    <div class="filters">
+    {% Object.keys(filter_labels).forEach(function(key) { if (filters[key]) { %}
+        <span><strong>{{ __(filter_labels[key]) }}:</strong> {{ esc(key === "from_date" || key === "to_date" ? frappe.datetime.str_to_user(filters[key]) : filters[key]) }}</span>
+    {% } }); %}
+    {% if (currency) { %}<span><strong>{{ __("Currency") }}:</strong> {{ esc(currency) }}</span>{% } %}
+    </div>
+    <table>
+        <colgroup>
+        {% visible_columns.forEach(function(col) { %}
+            <col style="width: {{ col.fieldname === "customer_name" ? "14%" : col.fieldname === "remarks" ? "18%" : "6.18%" }};">
+        {% }); %}
+        </colgroup>
+        <thead><tr>
+        {% visible_columns.forEach(function(col) { %}
+            <th class="{{ ["Float", "Currency"].includes(col.fieldtype) ? "numeric" : "" }}">{{ esc(__(col.label || col.name)) }}</th>
+        {% }); %}
+        </tr></thead>
+        <tbody>
+        {% rows.forEach(function(row) { %}
+            <tr>
+            {% visible_columns.forEach(function(col) { %}
+                <td class="{{ ["Float", "Currency"].includes(col.fieldtype) ? "numeric" : "" }}">{{ col.fieldname === "remarks" ? "" : formatted(row[col.fieldname], col) }}</td>
+            {% }); %}
+            </tr>
+        {% }); %}
+        {% if (!rows.length) { %}<tr><td colspan="{{ visible_columns.length }}">{{ __("No data for the selected filters.") }}</td></tr>{% } %}
+        {% if (rows.length) { %}
+            <tr class="total">
+            {% visible_columns.forEach(function(col) { %}
+                <td class="{{ ["Float", "Currency"].includes(col.fieldtype) ? "numeric" : "" }}">{{ col.fieldname === "customer_name" ? __("Total") : total_fields.includes(col.fieldname) ? formatted(totals[col.fieldname], col) : "" }}</td>
+            {% }); %}
+            </tr>
+        {% } %}
+        </tbody>
+    </table>
+    <div class="notes">
+        {{ __("Submitted transactions only. Weights are in kg. Mill tag weight is receipt Estimated WT; coil count is receipt Qty of Coil. Out weight is net dispatch; returns reduce weight. Remaining weight is received weight less out weight. With From Date selected, this is period net movement and excludes opening stock.") }}<br>
+        {{ __("Price is invoice net amount divided by invoiced quantity and is not summed. Amounts use company currency. Tax-inclusive amount includes all invoice taxes and charges. Receivable is the current outstanding balance of invoices in the selected period.") }}<br>
+        {{ __("Select Scrap Item or Scrap Item Group to separate scrap from finished goods. Totals cover the rows included in this print.") }}
+    </div>
+</div>

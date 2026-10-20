@@ -1,0 +1,29 @@
+{
+ "doctype": "Report",
+ "name": "SS Coil Sales Report",
+ "report_name": "SS Coil Sales Report",
+ "module": "SS Coil",
+ "ref_doctype": "Sales Invoice",
+ "report_type": "Script Report",
+ "is_standard": "Yes",
+ "disabled": 0,
+ "prepared_report": 0,
+ "add_total_row": 0,
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Sales User"
+  }
+ ]
+}

@@ -40,7 +40,6 @@ STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"custom_thickness",
 	"custom_width",
 	"custom_length_c",
-	"custom_length",
 	"custom_dimension",
 	"custom_condition",
 	"custom_commodity",
@@ -51,7 +50,6 @@ STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"custom_slitter",
 	"custom_leveler",
 	"custom_reshearing",
-	"custom_js_number",
 	"custom_location",
 ]
 
@@ -89,7 +87,10 @@ def _meta_field_to_dict(meta, fieldname):
 		return None
 	return {
 		"fieldname": df.fieldname,
-		"label": "Qty (kg)" if fieldname == "qty" else (df.label or ("Mill Key" if df.fieldname == "custom_mill_key" else df.label)),
+		"label": {
+			"qty": "Qty (kg)",
+			"custom_estimated_wt": "Tag WT",
+		}.get(fieldname, df.label or ("Mill Key" if df.fieldname == "custom_mill_key" else df.label)),
 		"fieldtype": df.fieldtype,
 		"options": df.options,
 		"reqd": df.reqd,

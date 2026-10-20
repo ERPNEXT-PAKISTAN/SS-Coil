@@ -196,6 +196,7 @@ doc_events = {
 		],
 		"after_insert": "ss_coil.api.sync_sales_order_item_tag_registry",
 		"on_update": "ss_coil.api.sync_sales_order_item_tag_registry",
+		"on_update_after_submit": "ss_coil.api.sync_sales_order_headers_to_stock_entries",
 	},
 	"SS Coil": {
 		# prepare_ss_coil_output_tags/sync_ss_coil_process_tracking used to be
@@ -231,6 +232,7 @@ doc_events = {
 		"before_validate": "ss_coil.api.prepare_stock_entry_links",
 		"before_save": "ss_coil.api.prepare_stock_entry_links",
 		"on_update": "ss_coil.api.sync_stock_entry_finish_good_to_sales_orders",
+		"on_update_after_submit": "ss_coil.api.sync_stock_entry_finish_good_to_sales_orders",
 		"before_print": "ss_coil.api.prepare_stock_entry_sticker_print",
 	},
 	"Delivery Note": {"before_validate": "ss_coil.api.assign_delivery_note_item_tags"},

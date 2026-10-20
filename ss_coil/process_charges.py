@@ -332,25 +332,36 @@ def sync_sales_order_process_charge_lines(doc, method=None):
 
 
 def _dedupe_commercial_items_by_stock_entry_detail(doc):
-	"""Remove duplicate Finish Good rows that share the same SE detail link."""
-	seen_details = set()
-	to_remove = []
+	"""Keep one commercial item and production line per Stock Entry detail."""
+	items_by_detail = {}
+	item_rows_to_remove = []
 	for row in list(_source_rows(doc)):
 		detail = row.get("custom_source_stock_entry_detail")
 		if not detail:
 			continue
-		if detail in seen_details:
-			to_remove.append(row)
-			continue
-		seen_details.add(detail)
-	for row in to_remove:
-		# Do not remove if a coil production line still points at this SO item
-		from ss_coil.coil_production import get_coil_production_rows, sales_order_has_coil_production
+		if detail in items_by_detail:
+			item_rows_to_remove.append(row)
+		else:
+			items_by_detail[detail] = row
 
-		if sales_order_has_coil_production(doc):
-			linked = any(p.get("sales_order_item") == row.name for p in get_coil_production_rows(doc))
-			if linked:
-				continue
+	from ss_coil.coil_production import COIL_PRODUCTION_TABLE
+
+	production_rows_to_remove = []
+	production_by_detail = set()
+	for prod in list(doc.get(COIL_PRODUCTION_TABLE) or []):
+		detail = prod.get("source_stock_entry_detail")
+		if not detail or detail not in items_by_detail:
+			continue
+		if detail in production_by_detail:
+			production_rows_to_remove.append(prod)
+			continue
+		production_by_detail.add(detail)
+		if prod.meta.has_field("sales_order_item"):
+			prod.sales_order_item = items_by_detail[detail].name
+
+	for row in production_rows_to_remove:
+		doc.remove(row)
+	for row in item_rows_to_remove:
 		doc.remove(row)
 
 

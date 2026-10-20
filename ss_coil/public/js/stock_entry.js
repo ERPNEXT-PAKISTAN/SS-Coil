@@ -292,7 +292,10 @@ function add_stock_entry_create_sales_order_button(frm) {
 	if (frm.fields_dict.custom_linked_sales_orders) {
 		frm.add_custom_button(
 			__("Sync Sales Orders"),
-			function () {
+			async function () {
+				if (frm.is_dirty()) {
+					await frm.save(frm.doc.docstatus === 1 ? "Update" : "Save");
+				}
 				frappe.call({
 					method: "ss_coil.api.sync_stock_entry_links_from_source",
 					args: { stock_entry: frm.doc.name },

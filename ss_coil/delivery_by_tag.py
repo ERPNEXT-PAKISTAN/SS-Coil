@@ -215,7 +215,100 @@ def _fetch_delivery_tag_rows(filters: dict):
 				"rate": flt(row.rate),
 			}
 		)
-	return out
+	return _expand_pending_ss_coil_outputs(out, filters)
+
+
+def _expand_pending_ss_coil_outputs(sales_order_rows, filters):
+	"""Show each undelivered SS Coil output as its own selectable SO row."""
+	if not frappe.db.table_exists("Coil Output") or not frappe.db.table_exists("SS Coil"):
+		return sales_order_rows
+
+	where = [
+		"so.docstatus = 1",
+		"so.status not in ('Closed', 'Completed', 'Cancelled')",
+		"ifnull(soi.delivered_by_supplier, 0) = 0",
+		"(abs(ifnull(soi.qty, 0)) - abs(ifnull(soi.delivered_qty, 0))) > 0",
+		"ifnull(trim(co.tag_no), '') != ''",
+		"ifnull(reg.status, '') not in ('Delivered', 'Invoiced', 'Cancelled')",
+		"ifnull(reg.current_doctype, '') != 'Delivery Note'",
+	]
+	params = {}
+	if filters.get("sales_order"):
+		where.append("so.name = %(sales_order)s")
+		params["sales_order"] = filters["sales_order"]
+	if filters.get("customer"):
+		where.append("so.customer = %(customer)s")
+		params["customer"] = filters["customer"]
+	if filters.get("company"):
+		where.append("so.company = %(company)s")
+		params["company"] = filters["company"]
+
+	outputs = frappe.db.sql(
+		f"""
+		select
+			so.name as sales_order, so.customer, so.customer_name, so.company,
+			so.transaction_date, soi.name as so_detail, soi.idx,
+			soi.item_code, soi.item_name, soi.qty as order_qty,
+			soi.delivered_qty, soi.uom, soi.warehouse, soi.rate,
+			co.tag_no as output_tag_no,
+			co.actual_wt, co.estimated_wt, co.idx as output_idx, sc.name as ss_coil
+		from `tabSS Coil` sc
+		inner join `tabSales Order` so on so.name = sc.order_no
+		inner join `tabSales Order Item` soi on soi.name = sc.sales_order_item
+		inner join `tabCoil Output` co on co.parent = sc.name and co.parentfield = 'job_output'
+		left join `tabTag Registry` reg on reg.tag_no = co.tag_no
+		where {' and '.join(where)}
+		order by so.transaction_date desc, so.name, soi.idx, co.idx
+		""",
+		params,
+		as_dict=True,
+	)
+	outputs = [
+		output
+		for output in outputs
+		if flt(output.actual_wt) > 0 or flt(output.estimated_wt) > 0
+	]
+	if not outputs:
+		return sales_order_rows
+
+	output_details = {row.so_detail for row in outputs}
+	rows = [row for row in sales_order_rows if row.get("so_detail") not in output_details]
+	for output in outputs:
+		weight = flt(output.actual_wt) or flt(output.estimated_wt)
+		selection_key = f"{output.so_detail}|{output.output_tag_no}"
+		rows.append(
+			{
+				"sales_order": output.sales_order,
+				"customer": output.customer,
+				"customer_name": output.customer_name,
+				"company": output.company,
+				"transaction_date": str(output.transaction_date) if output.transaction_date else "",
+				"so_detail": output.so_detail,
+				"selection_key": selection_key,
+				"output_tag_no": output.output_tag_no,
+				"ss_coil": output.ss_coil,
+				"idx": output.idx,
+				"item_code": output.item_code,
+				"item_name": output.item_name,
+				"tag_no": output.output_tag_no,
+				"custom_tag_no": output.output_tag_no,
+				"custom_sub_tag_no": "",
+				"qty": weight,
+				"delivered_qty": 0,
+				"pending_qty": weight,
+				"uom": output.uom,
+				"warehouse": output.warehouse,
+				"dimension": "",
+				"mill": "",
+				"mill_key": "",
+				"location": "",
+				"js_number": "",
+				"thickness": "",
+				"width": "",
+				"rate": flt(output.rate),
+			}
+		)
+	return rows
 
 
 @frappe.whitelist()
@@ -321,6 +414,7 @@ def _resolve_target_delivery_note(target_doc, customer=None, company=None):
 @frappe.whitelist()
 def load_delivery_note_items_by_tags(
 	so_detail_names=None,
+	output_tags=None,
 	customer: str | None = None,
 	company: str | None = None,
 	target_doc=None,
@@ -330,6 +424,14 @@ def load_delivery_note_items_by_tags(
 	from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note
 
 	selected = _parse_name_list(so_detail_names)
+	if isinstance(output_tags, str):
+		output_tags = frappe.parse_json(output_tags)
+	output_tags = output_tags if isinstance(output_tags, (list, tuple)) else []
+	output_tags = [
+		{"so_detail": str(row.get("so_detail") or "").strip(), "tag_no": str(row.get("tag_no") or "").strip()}
+		for row in output_tags
+		if isinstance(row, dict) and row.get("so_detail") and row.get("tag_no")
+	]
 	if not selected:
 		frappe.throw(_("Select at least one Tag / item row"))
 
@@ -364,6 +466,24 @@ def load_delivery_note_items_by_tags(
 	if len(customers) > 1:
 		frappe.throw(_("Selected tags belong to more than one Customer"))
 
+	eligible_outputs = {}
+	if output_tags:
+		eligible_rows = _expand_pending_ss_coil_outputs(
+			[], {"customer": customer or meta_rows[0].customer, "company": company or meta_rows[0].company}
+		)
+		eligible_outputs = {
+			(row["so_detail"], row["output_tag_no"]): row
+			for row in eligible_rows
+			if row.get("output_tag_no")
+		}
+		invalid = [
+			selection
+			for selection in output_tags
+			if (selection["so_detail"], selection["tag_no"]) not in eligible_outputs
+		]
+		if invalid:
+			frappe.throw(_("One or more selected SS Coil output tags are no longer pending delivery"))
+
 	by_so = {}
 	tag_by_detail = {}
 	for row in meta_rows:
@@ -373,6 +493,7 @@ def load_delivery_note_items_by_tags(
 	target = _resolve_target_delivery_note(target_doc, customer=customer, company=company)
 	if cint(replace_items):
 		target.set("items", [])
+	existing_dn_item_names = {row.name for row in target.items or []}
 
 	for sales_order, details in by_so.items():
 		target = make_delivery_note(
@@ -380,6 +501,44 @@ def load_delivery_note_items_by_tags(
 			target_doc=target,
 			kwargs={"filtered_children": details},
 		)
+
+	if output_tags:
+		output_by_detail = {}
+		for selection in output_tags:
+			output = eligible_outputs[(selection["so_detail"], selection["tag_no"])]
+			output_by_detail.setdefault(selection["so_detail"], []).append(output)
+		so_rows_by_name = {row.name: row for row in meta_rows}
+		mapped_by_detail = {}
+		for row in target.items or []:
+			if row.name not in existing_dn_item_names and row.get("so_detail"):
+				mapped_by_detail.setdefault(row.so_detail, []).append(row)
+		for so_detail, outputs_for_detail in output_by_detail.items():
+			mapped_rows = mapped_by_detail.get(so_detail) or []
+			if not mapped_rows:
+				frappe.throw(_("Could not map selected output tag to Delivery Note item {0}").format(so_detail))
+			base = mapped_rows[0]
+			so_row = so_rows_by_name.get(so_detail)
+			pending_so_qty = max(flt(so_row.qty) - flt(so_row.delivered_qty), 0) if so_row else 0
+			total_output_qty = sum(flt(output.get("pending_qty")) for output in outputs_for_detail)
+			if pending_so_qty and total_output_qty > pending_so_qty + 0.000001:
+				frappe.throw(_("Selected output tag weights exceed the pending Sales Order quantity"))
+			base_values = base.as_dict()
+			for fieldname in (
+				"name", "idx", "owner", "creation", "modified", "modified_by", "parent", "parenttype", "parentfield"
+			):
+				base_values.pop(fieldname, None)
+			target.remove(base)
+			for output in outputs_for_detail:
+				item = target.append("items", dict(base_values))
+				weight = flt(output.get("pending_qty"))
+				item.qty = weight
+				item.custom_tag_no = output["output_tag_no"]
+				conversion = flt(item.get("conversion_factor")) or 1
+				item.stock_qty = weight * conversion
+				item.amount = weight * flt(item.get("rate"))
+				item.net_amount = weight * flt(item.get("net_rate") or item.get("rate"))
+				item.base_amount = weight * flt(item.get("base_rate") or item.get("rate"))
+				item.base_net_amount = weight * flt(item.get("base_net_rate") or item.get("base_rate") or item.get("rate"))
 
 	if not target.items:
 		frappe.throw(_("No Delivery Note items were created for the selected tags"))

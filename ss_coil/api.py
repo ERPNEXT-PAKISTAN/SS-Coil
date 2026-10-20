@@ -1220,6 +1220,44 @@ def _apply_stock_entry_link_summary(stock_entry_name, sales_order_names):
 	return updates
 
 
+# Explicit business headers only: never copy totals, status, or accounting fields.
+STOCK_ENTRY_SALES_ORDER_HEADER_FIELDS = (
+	("custom_customer", "customer"),
+	("custom_for_customer", "custom_for_customer"),
+	("custom_driver_name", "custom_driver_name"),
+	("custom_vehicle_no", "custom_vehicle_no"),
+	("custom_invoice__igp_no", "custom_igp_no"),
+)
+
+
+def _linked_header_updates(source, target_doctype):
+	forward = source.doctype == "Stock Entry"
+	updates = {}
+	for se_field, so_field in STOCK_ENTRY_SALES_ORDER_HEADER_FIELDS:
+		source_field, target_field = (se_field, so_field) if forward else (so_field, se_field)
+		if source.meta.has_field(source_field) and _has_field(target_doctype, target_field):
+			updates[target_field] = source.get(source_field)
+	if forward and updates.get("customer"):
+		updates["customer_name"] = frappe.get_cached_value("Customer", updates["customer"], "customer_name")
+	return updates
+
+
+def _push_sales_order_header_to_stock_entry(sales_order, stock_entry_name):
+	updates = _linked_header_updates(sales_order, "Stock Entry")
+	if updates:
+		frappe.db.set_value("Stock Entry", stock_entry_name, updates, update_modified=True)
+	return updates
+
+
+def sync_sales_order_headers_to_stock_entries(doc, method=None):
+	"""Also handle header edits made with Update on submitted Sales Orders."""
+	for stock_entry_name in dict.fromkeys(
+		row.get("custom_source_stock_entry") for row in doc.items or []
+		if row.get("custom_source_stock_entry")
+	):
+		_push_sales_order_header_to_stock_entry(doc, stock_entry_name)
+
+
 def _push_stock_entry_header_to_sales_order(stock_entry_name, sales_order_name):
 	if not stock_entry_name or not sales_order_name:
 		return {}
@@ -1227,11 +1265,7 @@ def _push_stock_entry_header_to_sales_order(stock_entry_name, sales_order_name):
 		return {}
 
 	stock_entry = frappe.get_doc("Stock Entry", stock_entry_name)
-	updates = {}
-
-	igp = stock_entry.get("custom_invoice__igp_no")
-	if igp and _has_field("Sales Order", "custom_igp_no"):
-		updates["custom_igp_no"] = igp
+	updates = _linked_header_updates(stock_entry, "Sales Order")
 
 	warehouse = _stock_entry_inward_warehouse(stock_entry)
 	if warehouse:
@@ -2957,6 +2991,19 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 			input_row.estimated_wt = so_metrics["estimated_wt"]
 			input_row.estimated_qty = so_metrics["estimated_qty"]
 			input_row.actual_qty = so_metrics["actual_qty"]
+		if _uses_numeric_length_for_process(_ss_coil_process_key_for_doc(doc)):
+			total_sheets = sum(flt(row.get("total_sheets")) for row in doc.cutting_detail or [])
+			if total_sheets:
+				for input_row in doc.input_coil:
+					input_row.estimated_qty = total_sheets
+				for output_row in doc.job_output or []:
+					matching_rows = [
+						row for row in doc.cutting_detail
+						if flt(row.get("width")) == flt(output_row.get("width"))
+					]
+					output_row.estimated_qty = sum(
+						flt(row.get("total_sheets")) for row in (matching_rows or doc.cutting_detail)
+					)
 
 	if so_item_doc:
 		mill = so_item_doc.get("custom_mill")
@@ -3044,6 +3091,22 @@ def _sync_job_output_rows_from_cutting_detail(doc):
 	def apply_values(row, existing_row=None, sequence_number=1, output_width=None, pieces_count=1):
 		so_metrics = _coil_so_table_qty_metrics(so_row)
 		estimated_qty = flt(so_metrics["estimated_qty"])
+		if _uses_numeric_length_for_process(_ss_coil_process_key_for_doc(doc)):
+			matching_cutting_rows = [
+				cutting_row
+				for cutting_row in cutting_rows
+				if flt(getattr(cutting_row, "width", 0)) == flt(output_width)
+			]
+			if matching_cutting_rows:
+				estimated_qty = sum(
+					_cutting_row_sheet_count(cutting_row, _ss_coil_process_key_for_doc(doc))
+					for cutting_row in matching_cutting_rows
+				)
+			else:
+				estimated_qty = sum(
+					_cutting_row_sheet_count(cutting_row, _ss_coil_process_key_for_doc(doc))
+					for cutting_row in cutting_rows
+				)
 		row_width = output_width or getattr(existing_row, "width", None) or getattr(so_row, "width", None)
 		estimated_wt = _job_output_estimated_wt(input_row, so_row, row_width)
 		for fieldname in target_fields:
@@ -4305,6 +4368,13 @@ def create_next_ss_coil_entry(source_name):
 			output_row=output_row.as_dict(),
 		)
 		if target_doc.cutting_detail:
+			input_quantity = sum(
+				flt(row.get("total_sheets"))
+				for row in target_doc.cutting_detail
+				if flt(row.get("total_sheets"))
+			)
+			if input_quantity and target_doc.input_coil:
+				target_doc.input_coil[0].estimated_qty = input_quantity
 			_sync_ss_coil_cutting_detail_and_job_output(target_doc)
 
 		target_doc.insert(ignore_permissions=True)
@@ -6054,9 +6124,7 @@ def sync_sales_order_stock_entry_links(sales_order):
 	stock_entry_updates = {}
 	production_updates = {}
 	for stock_entry_name in stock_entry_names:
-		_push_stock_entry_header_to_sales_order(stock_entry_name, sales_order)
-		if _has_field("Sales Order", "custom_igp_no"):
-			_push_sales_order_igp_to_stock_entry(sales_order, stock_entry_name)
+		_push_sales_order_header_to_stock_entry(doc, stock_entry_name)
 		result = _sync_linked_stock_entry_sales_order_lines(
 			stock_entry_name, sales_order, primary="sales_order"
 		)
@@ -6136,7 +6204,7 @@ def sync_stock_entry_links_from_source(stock_entry):
 		"stock_entry_updates": stock_entry_updates,
 		"production_updates_by_sales_order": production_updates_by_so,
 		"sales_orders_updated": list(
-			dict.fromkeys(list(item_updates_by_so.keys()) + list(production_updates_by_so.keys()))
+			dict.fromkeys(sales_order_names + list(item_updates_by_so.keys()) + list(production_updates_by_so.keys()))
 		),
 	}
 
@@ -6164,6 +6232,7 @@ def sync_stock_entry_finish_good_to_sales_orders(doc, method=None):
 		return
 
 	for sales_order_name in sales_order_names:
+		_push_stock_entry_header_to_sales_order(doc.name, sales_order_name)
 		_push_stock_entry_tags_to_sales_order(doc.name, sales_order_name)
 
 
@@ -6195,9 +6264,7 @@ def sync_stock_entry_sales_order_links(doc, method=None):
 		if doc.name not in linked:
 			linked.append(doc.name)
 		_apply_stock_entry_link_summary(stock_entry_name, linked)
-		_push_stock_entry_header_to_sales_order(stock_entry_name, doc.name)
-		if _has_field("Sales Order", "custom_igp_no"):
-			_push_sales_order_igp_to_stock_entry(doc.name, stock_entry_name)
+		_push_sales_order_header_to_stock_entry(doc, stock_entry_name)
 
 
 def prepare_stock_entry_links(doc, method=None):

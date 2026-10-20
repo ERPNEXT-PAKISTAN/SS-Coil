@@ -26,6 +26,7 @@ TRACKING_DOCTYPES = (
 )
 
 SCRIPT_REPORTS = (
+	("SS Coil Sales Report", "Sales Invoice"),
 	("Tag Registry Trace", "Tag Registry"),
 	("Production Planning", "Sales Order"),
 	("Production Planning SS Coil", "SS Coil"),
@@ -57,6 +58,7 @@ WORKSPACE_CONTENT = (
 )
 
 WORKSPACE_SHORTCUTS = (
+	{"type": "Report", "link_to": "SS Coil Sales Report", "label": "SS Coil Sales Report", "color": "Green", "doc_view": "List"},
 	{"type": "Page", "link_to": SS_COIL_FLOW_PAGE, "label": "SS Coil Flow", "color": "Orange", "doc_view": ""},
 	{"type": "DocType", "link_to": "SS Coil", "label": "SS Coil", "color": "Blue", "doc_view": "List"},
 	{"type": "DocType", "link_to": "Sales Order", "label": "Sales Order", "color": "Orange", "doc_view": "List"},
@@ -84,6 +86,7 @@ SIDEBAR_ITEMS = (
 	{"type": "Link", "label": "Stock Entry", "link_to": "Stock Entry", "link_type": "DocType", "icon": "package", "indent": 1, "child": 1},
 	{"type": "Link", "label": "Tag Registry", "link_to": "Tag Registry", "link_type": "DocType", "icon": "tag", "indent": 1, "child": 1},
 	{"type": "Section Break", "label": "Reports", "icon": "notepad-text", "indent": 0, "child": 0, "collapsible": 1, "keep_closed": 1},
+	{"type": "Link", "label": "SS Coil Sales Report", "link_to": "SS Coil Sales Report", "link_type": "Report", "icon": "", "indent": 1, "child": 1},
 	{"type": "Link", "label": "Production Planning", "link_to": "Production Planning", "link_type": "Report", "icon": "", "indent": 1, "child": 1},
 	{"type": "Link", "label": "Production Planning SS Coil", "link_to": "Production Planning SS Coil", "link_type": "Report", "icon": "", "indent": 1, "child": 1},
 	{"type": "Link", "label": "Tag Registry Trace", "link_to": "Tag Registry Trace", "link_type": "Report", "icon": "", "indent": 1, "child": 1},

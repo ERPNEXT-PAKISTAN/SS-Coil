@@ -1,0 +1,37 @@
+{
+ "doctype": "DocType",
+ "name": "Coil Balance Row",
+ "module": "SS Coil",
+ "istable": 1,
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "raw_tag_no",
+  "output_tag_no",
+  "remainder_tag_no",
+  "received_qty",
+  "received_width",
+  "processed_width",
+  "produced_qty",
+  "remaining_width",
+  "remaining_qty",
+  "remaining_type",
+  "qty_basis"
+ ],
+ "fields": [
+  {"fieldname": "raw_tag_no", "label": "Raw Tag No", "fieldtype": "Data", "in_list_view": 1, "read_only": 1, "allow_on_submit": 1},
+  {"fieldname": "output_tag_no", "label": "Produced Tag No(s)", "fieldtype": "Small Text", "in_list_view": 1, "read_only": 1, "allow_on_submit": 1},
+  {"fieldname": "remainder_tag_no", "label": "Remainder Tag No", "fieldtype": "Data", "in_list_view": 1, "read_only": 1, "allow_on_submit": 1},
+  {"fieldname": "received_qty", "label": "Received Qty (kg)", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
+  {"fieldname": "received_width", "label": "Received Width", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
+  {"fieldname": "processed_width", "label": "Produced Width", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
+  {"fieldname": "produced_qty", "label": "Produced Qty (kg)", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
+  {"fieldname": "remaining_width", "label": "Remaining Width", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
+  {"fieldname": "remaining_qty", "label": "Remaining Qty (kg)", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
+  {"fieldname": "remaining_type", "label": "Remainder Type", "fieldtype": "Select", "options": "Unprocessed\nLeftover\nScrap / Waste\nFully Processed", "in_list_view": 1, "allow_on_submit": 1},
+  {"fieldname": "qty_basis", "label": "Qty Basis", "fieldtype": "Data", "read_only": 1, "allow_on_submit": 1}
+ ],
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

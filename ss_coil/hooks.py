@@ -185,6 +185,7 @@ doc_events = {
 		"before_validate": [
 			"ss_coil.api.apply_sales_order_ss_coil_defaults",
 			"ss_coil.coil_production.sync_sales_order_items_and_production",
+			"ss_coil.coil_balance.sync_sales_order_coil_balance_rows",
 			"ss_coil.api.sync_sales_order_item_tags_from_stock_entry",
 			"ss_coil.api.sync_sales_order_item_dimensions",
 			"ss_coil.process_charges.sync_sales_order_process_charge_lines",
@@ -223,6 +224,7 @@ doc_events = {
 			"ss_coil.api.normalize_ss_coil_machine_operation_link",
 			"ss_coil.api.sync_ss_coil_sales_order_item_fields",
 			"ss_coil.api.prepare_ss_coil_output_tags",
+			"ss_coil.coil_balance.sync_ss_coil_balance_rows",
 			"ss_coil.api.sync_ss_coil_process_tracking",
 		],
 		"on_update": "ss_coil.api.sync_ss_coil_process_tracking",

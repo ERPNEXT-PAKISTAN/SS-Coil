@@ -30,6 +30,25 @@ function render_ss_coil_formulas(frm) {
 	}
 }
 
+function load_ss_coil_balance_child_table(frm) {
+	const fieldname = "coil_balance";
+	if (!frm.doc.name || !frm.fields_dict[fieldname] || (frm.doc[fieldname] || []).length) return;
+	frappe.call({
+		method: "ss_coil.api.get_coil_balance_rows",
+		args: { doctype: "SS Coil", name: frm.doc.name },
+		callback: (r) => {
+			if (!r.message || (frm.doc[fieldname] || []).length) return;
+			(r.message || []).forEach((values) => {
+				const row = frappe.model.add_child(frm.doc, "Coil Balance Row", fieldname);
+				["raw_tag_no", "output_tag_no", "received_qty", "received_width", "processed_width", "produced_qty", "remaining_width", "remaining_qty", "remaining_type", "qty_basis"].forEach((key) => {
+					row[key] = values[key];
+				});
+			});
+			frm.refresh_field(fieldname);
+		},
+	});
+}
+
 frappe.ui.form.on("SS Coil", {
 	setup(frm) {
 		frm.set_query("order_no", function () {
@@ -82,6 +101,7 @@ frappe.ui.form.on("SS Coil", {
 		apply_ss_coil_cutting_detail_grid_mode(frm);
 		rebuild_job_output_if_needed(frm);
 		ensure_cutting_detail_from_so_plan(frm);
+		load_ss_coil_balance_child_table(frm);
 		render_job_output_qr_fields(frm);
 		load_ss_coil_flow_and_dashboards(frm);
 		backfill_so_item_tag_no(frm);
@@ -406,6 +426,23 @@ function apply_sales_order_item_link_title(frm) {
 }
 
 function set_stock_entry_field_description(frm, rows) {
+	const linkedField = frm.fields_dict.linked_stock_entries_html;
+	if (linkedField && linkedField.$wrapper) {
+		const esc = (value) => frappe.utils.escape_html(String(value || ""));
+		const entries = rows && rows.length
+			? rows
+				.map((row) => {
+					const name = esc(row.name);
+					const detail = [row.purpose, row.posting_date].filter(Boolean).map(esc).join(" · ");
+					return `<a class="ss-coil-linked-stock-entry" href="/app/stock-entry/${encodeURIComponent(
+						row.name
+					)}">${name}</a>${detail ? `<span class="text-muted"> (${detail})</span>` : ""}`;
+				})
+				.join('<span class="text-muted"> · </span>')
+			: `<span class="text-muted">${__("No linked Stock Entry found for this Sales Order.")}</span>`;
+		linkedField.$wrapper.html(`<div class="ss-coil-linked-stock-entries">${entries}</div>`);
+	}
+
 	const control = frm.fields_dict.stock_entry;
 	if (!control) return;
 	if (!rows || !rows.length) {
@@ -434,6 +471,9 @@ function sync_linked_stock_entry_field(frm, skipAutofill = false) {
 		},
 		callback: function (r) {
 			const rows = r.message || [];
+			if (frm.doc.stock_entry && !rows.some((row) => row.name === frm.doc.stock_entry)) {
+				rows.unshift({ name: frm.doc.stock_entry });
+			}
 			set_stock_entry_field_description(frm, rows);
 			if (skipAutofill) return;
 			if (!rows.length) {

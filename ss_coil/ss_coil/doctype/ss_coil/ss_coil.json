@@ -20,6 +20,7 @@
   "sales_order_item",
   "coil_production_line",
   "stock_entry",
+  "linked_stock_entries_html",
   "column_break_bgis",
   "customer_name",
   "for_customer",
@@ -66,6 +67,8 @@
   "output",
   "section_break_znud",
   "job_output",
+  "coil_balance_section",
+  "coil_balance",
   "grand_estimated_wt",
   "section_break_ifey",
   "planning",
@@ -402,6 +405,20 @@
    "options": "Coil Output"
   },
   {
+   "fieldname": "coil_balance_section",
+   "fieldtype": "Section Break",
+   "label": "Coil Balance",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "coil_balance",
+   "fieldtype": "Table",
+   "label": "Coil Balance",
+   "options": "Coil Balance Row",
+   "allow_on_submit": 1,
+   "description": "Per-tag material balance. Quantity values are estimated from width unless measured separately."
+  },
+  {
    "fieldname": "section_break_ifey",
    "fieldtype": "Section Break"
   },
@@ -466,6 +483,11 @@
    "fieldtype": "Link",
    "label": "Stock Entry",
    "options": "Stock Entry"
+  },
+  {
+   "fieldname": "linked_stock_entries_html",
+   "fieldtype": "HTML",
+   "label": "Linked Stock Entries"
   },
   {
    "fieldname": "column_break_pmky",

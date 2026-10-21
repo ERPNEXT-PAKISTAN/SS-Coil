@@ -1,0 +1,20 @@
+frappe.query_reports["Coil Stock Movement"] = {
+	filters: [
+		{ fieldname: "company", label: __("Company"), fieldtype: "Link", options: "Company", default: frappe.defaults.get_user_default("Company"), reqd: 1 },
+		{ fieldname: "from_date", label: __("From Date"), fieldtype: "Date", default: frappe.datetime.add_months(frappe.datetime.get_today(), -1), reqd: 1 },
+		{ fieldname: "to_date", label: __("To Date"), fieldtype: "Date", default: frappe.datetime.get_today(), reqd: 1 },
+		{ fieldname: "item_code", label: __("Item"), fieldtype: "Link", options: "Item" },
+		{ fieldname: "warehouse", label: __("Warehouse"), fieldtype: "Link", options: "Warehouse" },
+		{ fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" },
+		{ fieldname: "tag_no", label: __("Tag No"), fieldtype: "Data" },
+		{ fieldname: "stock_entry", label: __("Stock Entry"), fieldtype: "Link", options: "Stock Entry" },
+		{ fieldname: "sales_order", label: __("Sales Order"), fieldtype: "Link", options: "Sales Order" },
+		{ fieldname: "voucher_type", label: __("Voucher Type"), fieldtype: "Select", options: "\nStock Entry\nPurchase Receipt\nDelivery Note\nSales Invoice\nStock Reconciliation" },
+		{ fieldname: "batch_no", label: __("Batch No"), fieldtype: "Link", options: "Batch" },
+		{ fieldname: "serial_no", label: __("Serial No"), fieldtype: "Data" },
+		{ fieldname: "thickness", label: __("Thickness"), fieldtype: "Float" },
+		{ fieldname: "width", label: __("Width"), fieldtype: "Float" },
+		{ fieldname: "mill", label: __("Mill"), fieldtype: "Data" },
+		{ fieldname: "include_zero_qty", label: __("Include Zero Quantity"), fieldtype: "Check", default: 0 },
+	],
+};

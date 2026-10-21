@@ -3438,7 +3438,7 @@ def build_stock_entry_sticker_payload(doc, row):
 		"No of Coils": _fmt_float(row.get("custom_qty_of_coil")),
 		"Thickness": row.get("custom_thickness") or "-",
 		"Width": row.get("custom_width") or "-",
-		"Length": row.get("custom_length") or "-",
+		"Length": _sticker_format_length(row.get("custom_length_c")),
 		"Mill": row.get("custom_mill") or "-",
 		"Ref No": row.get("custom_ref_no") or "-",
 		"Date": date_value,
@@ -3470,6 +3470,7 @@ def _sticker_triple_row(items, divider=False):
 
 def build_stock_entry_sticker_body_html(fields):
 	"""Build the ordered/grouped field markup for the sticker's left column."""
+	length_label = "Length"
 	triple_box = (
 		'<div class="sticker-triple-box">'
 		+ _sticker_triple_row(
@@ -3483,7 +3484,7 @@ def build_stock_entry_sticker_body_html(fields):
 			[
 				("Thick", fields["Thickness"]),
 				("Width", fields["Width"]),
-				("Length", fields["Length"]),
+				(length_label, fields.get(length_label, "-")),
 			],
 			divider=True,
 		)
@@ -3725,7 +3726,11 @@ def build_ss_coil_sticker_payload(doc, row):
 
 	thickness = row.get("thickness") if row.get("thickness") not in (None, "") else so_row.get("thickness") or "-"
 	width = row.get("width") if row.get("width") not in (None, "") else so_row.get("width") or "-"
-	length_source = row.get("length") if row.get("length") not in (None, "") else so_row.get("length")
+	length_source = row.get("length_c") or row.get("custom_length_c")
+	if length_source in (None, ""):
+		length_source = so_row.get("length_c") or so_row.get("custom_length_c")
+	if length_source in (None, "") and doc.get("sales_order_item"):
+		length_source = frappe.db.get_value("Sales Order Item", doc.sales_order_item, "custom_length_c")
 
 	return {
 		"Tag No": row.get("tag_no") or "-",
@@ -8782,6 +8787,24 @@ def get_sales_order_cutting_scheme_report(sales_order):
 
 	result.sort(key=lambda row: (row.get("sales_order_item") or "", row.get("process_key") or ""))
 	return result
+
+
+@frappe.whitelist()
+def get_coil_balance_rows(doctype, name):
+	"""Return calculated child rows to display on older documents before their next save."""
+	if doctype not in ("Sales Order", "SS Coil"):
+		frappe.throw(_("Coil balance is not available for {0}.").format(doctype))
+	doc = frappe.get_doc(doctype, name)
+	doc.check_permission("read")
+	from ss_coil.coil_balance import sync_sales_order_coil_balance_rows, sync_ss_coil_balance_rows
+
+	if doctype == "Sales Order":
+		sync_sales_order_coil_balance_rows(doc)
+		fieldname = "custom_coil_balance"
+	else:
+		sync_ss_coil_balance_rows(doc)
+		fieldname = "coil_balance"
+	return [row.as_dict() for row in (doc.get(fieldname) or [])]
 
 
 def run_post_install_setup():

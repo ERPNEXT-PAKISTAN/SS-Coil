@@ -92,13 +92,12 @@ def _delivery_advise_item_rows(doc):
 			{
 				"tag_no": item.get("custom_tag_no") or item.get("custom_child_tag_no") or "-",
 				"ref_no": item.get("custom_ref_no") or "-",
-				"mill_key": item.get("custom_mill_key") or "-",
 				"commodity": item.get("custom_commodity") or "-",
 				"specification": item.get("custom_specification") or "-",
 				"mill": item.get("custom_mill") or "-",
 				"thickness": item.get("custom_thickness") if item.get("custom_thickness") not in (None, "") else "-",
 				"width": item.get("custom_width") if item.get("custom_width") not in (None, "") else "-",
-				"length": item.get("custom_length") if item.get("custom_length") not in (None, "") else "-",
+				"length_c": item.get("custom_length_c") if item.get("custom_length_c") not in (None, "") else "-",
 				"qty": qty if qty else "-",
 				"weight": weight if weight else "-",
 				"js_no": item.get("custom_js_number") or "-",
@@ -127,13 +126,12 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 			"<tr>"
 			f'<td class="col-tag col-wrap">{_cell(row["tag_no"])}</td>'
 			f'<td class="col-medium col-wrap">{_cell(row["ref_no"])}</td>'
-			f'<td class="col-medium col-wrap">{_cell(row["mill_key"])}</td>'
 			f'<td class="col-compact">{_cell(row["commodity"])}</td>'
 			f'<td class="col-wrap">{_cell(row["specification"])}</td>'
 			f'<td class="col-medium">{_cell(row["mill"])}</td>'
 			f'<td class="col-compact">{_cell(row["thickness"])}</td>'
 			f'<td class="col-compact">{_cell(row["width"])}</td>'
-			f'<td class="col-compact">{_cell(row["length"])}</td>'
+			f'<td class="col-compact">{_cell(row["length_c"])}</td>'
 			f'<td class="col-compact">{_cell(row["qty"])}</td>'
 			f'<td class="col-compact">{_cell(row["weight"])}</td>'
 			f'<td class="col-medium">{_cell(row["js_no"])}</td>'
@@ -174,13 +172,12 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 		+ '<table class="items"><thead><tr>'
 		+ '<th class="col-tag col-wrap">Tag No</th>'
 		+ '<th class="col-medium col-wrap">Ref No</th>'
-		+ '<th class="col-medium col-wrap">Mill Key</th>'
 		+ '<th class="col-compact">Commodity</th>'
 		+ '<th class="col-wrap">Specification</th>'
 		+ '<th class="col-medium">Mill</th>'
 		+ '<th class="col-compact">Thickness</th>'
 		+ '<th class="col-compact">Width</th>'
-		+ '<th class="col-compact">Length</th>'
+		+ '<th class="col-compact">Length C</th>'
 		+ '<th class="col-compact">Qty</th>'
 		+ '<th class="col-compact">Weight</th>'
 		+ '<th class="col-medium">JS No</th>'
@@ -189,7 +186,7 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 		+ "</tr></thead><tbody>"
 		+ "".join(item_rows)
 		+ '<tr class="totals-row">'
-		+ '<td colspan="9" class="totals-label">Total</td>'
+		+ '<td colspan="8" class="totals-label">Total</td>'
 		+ f'<td class="col-compact">{escape(total_qty_text)}</td>'
 		+ f'<td class="col-compact">{escape(total_weight_text)}</td>'
 		+ '<td colspan="3"></td>'

@@ -20,6 +20,7 @@ frappe.ui.form.on("Sales Order", {
 		add_sales_order_create_ss_coil_button(frm);
 		add_sales_order_delivery_by_tag_button(frm);
 		render_sales_order_dashboard(frm);
+		load_sales_order_coil_balance_child_table(frm);
 		render_packing_detail(frm);
 		render_cutting_scheme_report(frm);
 		render_coil_production_sheet_calculations(frm);
@@ -2354,6 +2355,25 @@ function render_sales_order_dashboard(frm) {
 					);
 				},
 			});
+		},
+	});
+}
+
+function load_sales_order_coil_balance_child_table(frm) {
+	const fieldname = "custom_coil_balance";
+	if (!frm.doc.name || !frm.fields_dict[fieldname] || (frm.doc[fieldname] || []).length) return;
+	frappe.call({
+		method: "ss_coil.api.get_coil_balance_rows",
+		args: { doctype: "Sales Order", name: frm.doc.name },
+		callback: (r) => {
+			if (!r.message || (frm.doc[fieldname] || []).length) return;
+			(r.message || []).forEach((values) => {
+				const row = frappe.model.add_child(frm.doc, "Coil Balance Row", fieldname);
+				["raw_tag_no", "output_tag_no", "received_qty", "received_width", "processed_width", "produced_qty", "remaining_width", "remaining_qty", "remaining_type", "qty_basis"].forEach((key) => {
+					row[key] = values[key];
+				});
+			});
+			frm.refresh_field(fieldname);
 		},
 	});
 }

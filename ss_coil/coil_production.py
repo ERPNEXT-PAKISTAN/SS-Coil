@@ -263,6 +263,22 @@ def setup_coil_production_fields():
 				"insert_after": "custom_coil_production_section",
 				"description": "Mother coil, tags, dimensions, and processes. Commercial lines stay in Items.",
 			},
+			{
+				"fieldname": "custom_coil_balance_section",
+				"label": "Coil Balance",
+				"fieldtype": "Section Break",
+				"insert_after": COIL_PRODUCTION_TABLE,
+				"collapsible": 1,
+			},
+			{
+				"fieldname": "custom_coil_balance",
+				"label": "Coil Balance",
+				"fieldtype": "Table",
+				"options": "Coil Balance Row",
+				"insert_after": "custom_coil_balance_section",
+				"allow_on_submit": 1,
+				"description": "Per-tag material balance. Quantity values are estimated from width unless measured separately.",
+			},
 		],
 		"SS Coil": [
 			{

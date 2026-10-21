@@ -45,22 +45,22 @@ def execute(filters=None):
 			values[field] = f"%{filters[field]}%" if field == "serial_no" else filters[field]
 	if filters.get("sales_order"):
 		base_conditions.append("tr.sales_order = %(sales_order)s")
-		values.sales_order = filters.sales_order
+		values["sales_order"] = filters.sales_order
 	if filters.get("customer"):
 		base_conditions.append("coalesce(ste.custom_customer, dn.customer, si.customer, so.customer, cust_tag.name) = %(customer)s")
-		values.customer = filters.customer
+		values["customer"] = filters.customer
 	if filters.get("tag_no"):
 		base_conditions.append("(coalesce(sed.custom_tag_no, dni.custom_tag_no, pri.custom_tag_no, sii.custom_tag_no, tr.tag_no) like %(tag_no)s)")
-		values.tag_no = f"%{filters.tag_no}%"
+		values["tag_no"] = f"%{filters.tag_no}%"
 	if filters.get("thickness") not in (None, ""):
 		base_conditions.append("coalesce(sed.custom_thickness, pri.custom_thickness) = %(thickness)s")
-		values.thickness = filters.thickness
+		values["thickness"] = filters.thickness
 	if filters.get("width") not in (None, ""):
 		base_conditions.append("coalesce(sed.custom_width, pri.custom_width) = %(width)s")
-		values.width = filters.width
+		values["width"] = filters.width
 	if filters.get("mill"):
 		base_conditions.append("coalesce(sed.custom_mill, pri.custom_mill) like %(mill)s")
-		values.mill = f"%{filters.mill}%"
+		values["mill"] = f"%{filters.mill}%"
 
 	joins = """
 		left join `tabStock Entry Detail` sed on sle.voucher_type = 'Stock Entry' and sed.name = sle.voucher_detail_no

@@ -225,6 +225,17 @@
   },
   {
    "hidden": 0,
+   "is_query_report": 1,
+   "label": "Coil Stock Movement",
+   "link_count": 0,
+   "link_to": "Coil Stock Movement",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Stock Ledger Entry",
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
    "is_query_report": 0,
    "label": "Print Designer",
    "link_count": 0,
@@ -234,7 +245,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-15 10:46:26.210090",
+ "modified": "2026-10-22 01:55:53.065840",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",
@@ -349,6 +360,14 @@
    "label": "Tag Registry Trace",
    "link_to": "Tag Registry Trace",
    "report_ref_doctype": "Tag Registry",
+   "type": "Report"
+  },
+  {
+   "color": "Blue",
+   "doc_view": "List",
+   "label": "Coil Stock Movement",
+   "link_to": "Coil Stock Movement",
+   "report_ref_doctype": "Stock Ledger Entry",
    "type": "Report"
   }
  ],

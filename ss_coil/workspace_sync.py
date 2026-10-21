@@ -30,6 +30,7 @@ SCRIPT_REPORTS = (
 	("Tag Registry Trace", "Tag Registry"),
 	("Production Planning", "Sales Order"),
 	("Production Planning SS Coil", "SS Coil"),
+	("Coil Stock Movement", "Stock Ledger Entry"),
 )
 
 WORKSPACE_NUMBER_CARDS = (
@@ -70,6 +71,7 @@ WORKSPACE_SHORTCUTS = (
 	{"type": "DocType", "link_to": "Tag Number Settings", "label": "Tag Number Settings", "color": "Yellow", "doc_view": "List"},
 	{"type": "Report", "link_to": "Production Planning", "label": "Production Planning", "color": "Red", "doc_view": "List"},
 	{"type": "Report", "link_to": "Tag Registry Trace", "label": "Tag Registry Trace", "color": "Red", "doc_view": "List"},
+	{"type": "Report", "link_to": "Coil Stock Movement", "label": "Coil Stock Movement", "color": "Blue", "doc_view": "List"},
 )
 
 SIDEBAR_ITEMS = (
@@ -90,6 +92,7 @@ SIDEBAR_ITEMS = (
 	{"type": "Link", "label": "Production Planning", "link_to": "Production Planning", "link_type": "Report", "icon": "", "indent": 1, "child": 1},
 	{"type": "Link", "label": "Production Planning SS Coil", "link_to": "Production Planning SS Coil", "link_type": "Report", "icon": "", "indent": 1, "child": 1},
 	{"type": "Link", "label": "Tag Registry Trace", "link_to": "Tag Registry Trace", "link_type": "Report", "icon": "", "indent": 1, "child": 1},
+	{"type": "Link", "label": "Coil Stock Movement", "link_to": "Coil Stock Movement", "link_type": "Report", "icon": "package", "indent": 1, "child": 1},
 )
 
 

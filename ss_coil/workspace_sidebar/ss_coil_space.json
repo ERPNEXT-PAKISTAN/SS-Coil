@@ -206,9 +206,21 @@
    "link_type": "Report",
    "show_arrow": 0,
    "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "package",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Coil Stock Movement",
+   "link_to": "Coil Stock Movement",
+   "link_type": "Report",
+   "show_arrow": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-10-22 01:55:28.910282",
+ "modified": "2026-10-22 01:55:53.796357",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",

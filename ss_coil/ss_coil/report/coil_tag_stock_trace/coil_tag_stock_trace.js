@@ -1,0 +1,22 @@
+frappe.query_reports["Coil Tag Stock Trace"] = {
+	filters: [
+		{ fieldname: "company", label: __("Company"), fieldtype: "Link", options: "Company", default: frappe.defaults.get_user_default("Company"), reqd: 1 },
+		{ fieldname: "from_date", label: __("From Date"), fieldtype: "Date", default: frappe.datetime.add_months(frappe.datetime.get_today(), -1), reqd: 1 },
+		{ fieldname: "to_date", label: __("To Date"), fieldtype: "Date", default: frappe.datetime.get_today(), reqd: 1 },
+		{ fieldname: "root_tag_no", label: __("Root / Input Tag No"), fieldtype: "Data" },
+		{ fieldname: "parent_tag_no", label: __("Parent Tag No"), fieldtype: "Data" },
+		{ fieldname: "tag_no", label: __("Any Tag No"), fieldtype: "Data" },
+		{ fieldname: "sales_order", label: __("Sales Order"), fieldtype: "Link", options: "Sales Order" },
+		{ fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" },
+		{ fieldname: "status", label: __("Tag Status"), fieldtype: "Select", options: "\nActive\nProduced\nDelivered\nInvoiced\nLinked\nCancelled" },
+		{ fieldname: "item_code", label: __("Item"), fieldtype: "Link", options: "Item" },
+		{ fieldname: "warehouse", label: __("Warehouse"), fieldtype: "Link", options: "Warehouse" },
+		{ fieldname: "stock_entry", label: __("Stock Entry"), fieldtype: "Link", options: "Stock Entry" },
+		{ fieldname: "voucher_type", label: __("Voucher Type"), fieldtype: "Select", options: "\nStock Entry\nPurchase Receipt\nDelivery Note\nSales Invoice\nStock Reconciliation" },
+		{ fieldname: "batch_no", label: __("Batch No"), fieldtype: "Link", options: "Batch" },
+		{ fieldname: "serial_no", label: __("Serial No"), fieldtype: "Data" },
+		{ fieldname: "thickness", label: __("Thickness"), fieldtype: "Float" },
+		{ fieldname: "width", label: __("Width"), fieldtype: "Float" },
+		{ fieldname: "mill", label: __("Mill"), fieldtype: "Data" },
+	],
+};

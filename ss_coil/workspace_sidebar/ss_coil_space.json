@@ -218,9 +218,21 @@
    "link_type": "Report",
    "show_arrow": 0,
    "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "git-branch",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Coil Tag Stock Trace",
+   "link_to": "Coil Tag Stock Trace",
+   "link_type": "Report",
+   "show_arrow": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-10-22 01:55:53.796357",
+ "modified": "2026-10-22 02:46:02.654213",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",

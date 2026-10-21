@@ -49,7 +49,6 @@ FLOW_FORM_CONFIGS = {
 			"custom_dimension",
 			"custom_ref_no",
 			"custom_mill",
-			"custom_mill_key",
 			"custom_js_number",
 			"custom_location",
 		],
@@ -63,7 +62,6 @@ FLOW_FORM_CONFIGS = {
 			"transaction_date",
 			"delivery_date",
 			"custom_for_customer",
-			"custom_mr_number",
 			"custom_customer",
 			"custom_source_stock_entries",
 			"tc_name",
@@ -79,7 +77,6 @@ FLOW_FORM_CONFIGS = {
 			"custom_tag_no",
 			"custom_raw_material_tag_no",
 			"custom_mill",
-			"custom_mill_key",
 			"custom_ref_no",
 			"custom_thickness",
 			"custom_width",
@@ -178,7 +175,6 @@ FLOW_FORM_CONFIGS = {
 			"custom_dimension",
 			"against_sales_order",
 			"custom_mill",
-			"custom_mill_key",
 			"custom_js_number",
 			"custom_location",
 		],
@@ -267,26 +263,12 @@ def _flow_field_label(df):
 		return "Stock Entry"
 	if df.fieldname in ("custom_entry_no", "entry_no"):
 		return "Stock Entry No"
-	if df.fieldname in ("custom_mill_key", "mill_key"):
-		return "Mill Key"
 	return df.label or df.fieldname
 
 
 def _meta_field_to_dict(meta, fieldname):
 	df = meta.get_field(fieldname)
 	if not df or df.fieldtype in ("Section Break", "Column Break", "Tab Break", "HTML", "Button", "Heading"):
-		if fieldname in ("custom_mill_key", "mill_key") and frappe.db.has_column(meta.name, fieldname):
-			return {
-				"fieldname": fieldname,
-				"label": "Mill Key",
-				"fieldtype": "Data",
-				"options": None,
-				"reqd": 0,
-				"default": None,
-				"read_only": 0,
-				"depends_on": None,
-				"columns": CHILD_FIELD_COLUMNS.get(fieldname, 1),
-			}
 		return None
 	# Flow lists fields explicitly. A hidden flag on the standard form must not drop them.
 	return {

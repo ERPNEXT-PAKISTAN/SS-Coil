@@ -193,6 +193,9 @@ function flow_compact_fieldtype(fieldtype) {
 
 function flow_display_label(df) {
 	if (!df) return "";
+	if (df.fieldname === "custom_create_tag_numbers") {
+		return __("Tag");
+	}
 	if (df.fieldname === "qty" || df.label === "Qty" || df.label === "Quantity") {
 		return __("Qty (kg)");
 	}

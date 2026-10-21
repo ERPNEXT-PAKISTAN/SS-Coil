@@ -32,12 +32,24 @@ function render_ss_coil_formulas(frm) {
 
 function load_ss_coil_balance_child_table(frm) {
 	const fieldname = "coil_balance";
-	if (!frm.doc.name || !frm.fields_dict[fieldname] || (frm.doc[fieldname] || []).length) return;
+	// New forms have a temporary name; the balance API only accepts saved SS Coil records.
+	if (
+		!frm.doc.name ||
+		(frm.is_new && frm.is_new()) ||
+		!frm.fields_dict[fieldname] ||
+		(frm.doc[fieldname] || []).length
+	) return;
+	const docname = frm.doc.name;
 	frappe.call({
 		method: "ss_coil.api.get_coil_balance_rows",
-		args: { doctype: "SS Coil", name: frm.doc.name },
+		args: { doctype: "SS Coil", name: docname },
 		callback: (r) => {
-			if (!r.message || (frm.doc[fieldname] || []).length) return;
+			if (
+				!r.message ||
+				frm.doc.name !== docname ||
+				(frm.is_new && frm.is_new()) ||
+				(frm.doc[fieldname] || []).length
+			) return;
 			(r.message || []).forEach((values) => {
 				const row = frappe.model.add_child(frm.doc, "Coil Balance Row", fieldname);
 				["raw_tag_no", "output_tag_no", "received_qty", "received_width", "processed_width", "produced_qty", "remaining_width", "remaining_qty", "remaining_type", "qty_basis"].forEach((key) => {

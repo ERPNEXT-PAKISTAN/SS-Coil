@@ -1517,8 +1517,10 @@ function add_ss_coil_sales_order_buttons(frm) {
 				freeze_message: __("Preparing SS Coil..."),
 				callback(r) {
 					if (!r.message) return;
-					frappe.model.sync(r.message);
-					frappe.set_route("Form", "SS Coil", r.message.name);
+					frappe.model.with_doctype("SS Coil", () => {
+						frappe.model.sync(r.message);
+						frappe.set_route("Form", "SS Coil", r.message.name);
+					});
 				},
 			});
 		},

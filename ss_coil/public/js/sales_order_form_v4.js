@@ -362,8 +362,10 @@ function open_ss_coil_from_sales_order(sales_order, sales_order_item, operation,
 		freeze_message: __("Preparing SS Coil..."),
 		callback(r) {
 			if (!r.message) return;
-			frappe.model.sync(r.message);
-			frappe.set_route("Form", "SS Coil", r.message.name);
+			frappe.model.with_doctype("SS Coil", () => {
+				frappe.model.sync(r.message);
+				frappe.set_route("Form", "SS Coil", r.message.name);
+			});
 		},
 	});
 }

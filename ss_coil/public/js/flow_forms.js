@@ -573,6 +573,31 @@ function flow_apply_document_items(state, data) {
 	flow_update_row_count(state);
 }
 
+function flow_refresh_saved_sales_order_items(state) {
+	if (!state || state.doctype !== "Sales Order" || !state.saved_name) return;
+	state.refreshing_saved_items = true;
+	return frappe.call({
+		method: "ss_coil.flow_forms.get_flow_form_document",
+		args: { doctype: "Sales Order", name: state.saved_name },
+		callback(r) {
+			if (r.message) {
+				state.saved_name = r.message.name || state.saved_name;
+				flow_apply_document_items(state, r.message);
+			}
+			state.refreshing_saved_items = false;
+			if (Number.isInteger(state.pending_cutting_index)) {
+				const item = state.items[state.pending_cutting_index];
+				state.pending_cutting_index = null;
+				if (item) ss_coil.flow_forms.open_cutting_scheme(state, item);
+			}
+		},
+		error() {
+			state.refreshing_saved_items = false;
+			state.pending_cutting_index = null;
+		},
+	});
+}
+
 function flow_setup_ui(state, $root, options = {}) {
 	state.$root = $root;
 	$root.html(flow_form_shell_html(state.meta));
@@ -1246,6 +1271,7 @@ ss_coil.flow_forms.save = function ($container, handlers = {}) {
 			callback(r) {
 				const name = (r.message && r.message.name) || state.saved_name;
 				state.saved_name = name;
+				flow_refresh_saved_sales_order_items(state);
 				$host.removeData("ss_coil_flow_mapped_doc");
 				if (handlers.on_saved) {
 					handlers.on_saved(name, r.message || {});
@@ -1273,6 +1299,7 @@ ss_coil.flow_forms.save = function ($container, handlers = {}) {
 		callback(r) {
 			const name = (r.message && r.message.name) || state.saved_name;
 			state.saved_name = name;
+			flow_refresh_saved_sales_order_items(state);
 			if (handlers.on_saved) {
 				handlers.on_saved(name, r.message || {});
 			} else {
@@ -1288,6 +1315,10 @@ ss_coil.flow_forms.open_document = function (doctype, name) {
 };
 
 ss_coil.flow_forms.open_cutting_scheme = function (state, item) {
+	if (state && state.refreshing_saved_items) {
+		state.pending_cutting_index = state.items.indexOf(item);
+		return;
+	}
 	const sales_order = state && state.saved_name;
 	const row_name = item && item.name;
 	if (!sales_order || ss_coil.flow_forms.is_local_name(sales_order)) {
@@ -1361,6 +1392,7 @@ ss_coil.flow_forms.submit = function ($container, handlers = {}) {
 		callback(r) {
 			const name = (r.message && r.message.name) || state.saved_name;
 			state.saved_name = name;
+			flow_refresh_saved_sales_order_items(state);
 			$host.removeData("ss_coil_flow_mapped_doc");
 			if (handlers.on_submitted) {
 				handlers.on_submitted(name, r.message || {});

@@ -1441,11 +1441,17 @@ ss_coil.flow_forms.create_sales_order_from_stock_entry = function (stock_entry_n
 
 ss_coil.flow_forms.sync_mapped_doc = function (doctype, doc, handlers = {}) {
 	frappe.model.with_doctype(doctype, () => {
-		frappe.model.sync(doc);
+		const synced = frappe.model.sync(doc);
+		const local_doc = synced && synced[0];
+		if (local_doc) {
+			local_doc.__islocal = 1;
+			local_doc.__unsaved = 1;
+			frappe.provide(`frappe.model.docinfo.${doctype}.${local_doc.name}`);
+		}
 		if (handlers.on_created) {
-			handlers.on_created(doc);
+			handlers.on_created(local_doc || doc);
 		} else {
-			frappe.set_route("Form", doctype, doc.name);
+			frappe.set_route("Form", doctype, (local_doc || doc).name);
 		}
 	});
 };

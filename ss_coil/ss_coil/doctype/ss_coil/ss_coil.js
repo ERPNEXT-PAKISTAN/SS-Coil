@@ -1518,8 +1518,13 @@ function add_ss_coil_sales_order_buttons(frm) {
 				callback(r) {
 					if (!r.message) return;
 					frappe.model.with_doctype("SS Coil", () => {
-						frappe.model.sync(r.message);
-						frappe.set_route("Form", "SS Coil", r.message.name);
+						const local_doc = (frappe.model.sync(r.message) || [])[0];
+						if (local_doc) {
+							local_doc.__islocal = 1;
+							local_doc.__unsaved = 1;
+							frappe.provide(`frappe.model.docinfo.SS Coil.${local_doc.name}`);
+						}
+						frappe.set_route("Form", "SS Coil", (local_doc || r.message).name);
 					});
 				},
 			});

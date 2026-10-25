@@ -41,7 +41,7 @@ JOB_OUTPUT_COLUMNS = (
 	("customer", "Customer"),
 	("thickness", "Thick"),
 	("width", "Width"),
-	("length", "Length"),
+	("length", "Length (Mtr)"),
 	("estimated_qty", "Est Qty"),
 	("actual_qty", "Actual Qty"),
 	("estimated_wt", "Est WT"),

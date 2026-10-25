@@ -112,7 +112,7 @@
    "fieldname": "length",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Length"
+   "label": "Length (Mtr)"
   },
   {
    "fieldname": "next_process",

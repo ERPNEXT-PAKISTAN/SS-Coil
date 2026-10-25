@@ -4,20 +4,11 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.model.naming import _format_autoname
+from frappe.model.naming import getseries
+from frappe.utils import now_datetime
 
-# The doctype JSON used a fixed "format:JS{YY}-.{#####}.-SL" autoname for
-# every SS Coil document regardless of its actual Operation, so a Leveler or
-# Reshearing document was still named like a Slitter one. Only three
-# Operations exist in this system today (Slitter/Leveler/Reshearing) - keep
-# "SL" as the fallback so any future/unmapped Operation still gets a name
-# instead of erroring.
-#
-# Note: the counter (tabSeries) is keyed by the literal text *before* the
-# "#####" placeholder ("JS26-", once {YY} is resolved) - the suffix after it
-# doesn't affect the series key. So Slitter/Leveler/Reshearing all continue
-# sharing one counter (JS26-00001, 00002, 00003...), they just get a
-# different trailing suffix; existing numbering isn't disrupted or forked.
+# Each operation gets a distinct tabSeries key so its yearly sequence starts
+# and advances independently, while the visible number keeps the suffix last.
 SS_COIL_OPERATION_NAME_SUFFIXES = {
 	"Slitter": "SL",
 	"Leveler": "LV",
@@ -39,11 +30,10 @@ SS_COIL_NON_BLOCKING_STATUSES = ("Completed", "Closed")
 
 class SSCoil(Document):
 	def autoname(self):
-		# _format_autoname replicates the exact "format:" parsing the original
-		# JSON autoname used (make_autoname alone rejects the {YY}/{#####}
-		# brace syntax when not going through the "format:" prefix path).
 		suffix = SS_COIL_OPERATION_NAME_SUFFIXES.get(self.operation, "SL")
-		self.name = _format_autoname(f"format:JS{{YY}}-.{{#####}}.-{suffix}", self)
+		year = now_datetime().strftime("%y")
+		sequence = getseries(f"JS-{year}-{suffix}-", 5)
+		self.name = f"JS-{year}-{sequence}-{suffix}"
 
 	def validate(self):
 		if not self.get("order_status"):

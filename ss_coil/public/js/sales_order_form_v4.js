@@ -98,7 +98,12 @@ function render_sales_order_job_sheet_report(frm) {
 		});
 		field.$wrapper.closest(".form-section").addClass("ss-coil-job-sheet-full-section");
 	}
-	if (!frm.doc.name || (frm.is_new && frm.is_new())) {
+	if (
+		!frm.doc.name ||
+		String(frm.doc.name).startsWith("new-sales-order-") ||
+		frm.doc.__islocal ||
+		(frm.is_new && frm.is_new())
+	) {
 		field.$wrapper.html(so_job_sheet_placeholder(__("Save the Sales Order to load the job sheet.")));
 		return;
 	}
@@ -631,6 +636,9 @@ function add_sales_order_tag_buttons(frm) {
 
 frappe.ui.form.on("Sales Order Item", {
 	item_code(frm, cdt, cdn) {
+		if (frm.__ss_coil_applying_se_fields) {
+			return;
+		}
 		const row = locals[cdt][cdn];
 		if (is_process_charge_row(row)) {
 			return;
@@ -831,16 +839,16 @@ function reapply_stock_entry_coil_fields_to_sales_order(frm) {
 				const payload = detail && map[detail] ? map[detail].sales_order_item : null;
 				if (!payload) return;
 				Object.keys(payload).forEach((fieldname) => {
-					if (fieldname === "item_code") return; // keep FG already set
 					const value = payload[fieldname];
 					if (value === undefined || value === null || value === "") return;
 					const current = row[fieldname];
+					const authoritative = ["item_code", "item_name", "custom_finish_good_item"].includes(fieldname);
 					const empty =
 						current === undefined ||
 						current === null ||
 						current === "" ||
 						(typeof current === "number" && !current && value);
-					if (empty) {
+					if (authoritative || empty) {
 						frappe.model.set_value(row.doctype, row.name, fieldname, value);
 					}
 				});
@@ -2260,7 +2268,15 @@ function render_sales_order_dashboard(frm) {
 
 function load_sales_order_coil_balance_child_table(frm) {
 	const fieldname = "custom_coil_balance";
-	if (!frm.doc.name || !frm.fields_dict[fieldname] || (frm.doc[fieldname] || []).length) return;
+	const name = String(frm.doc.name || "");
+	if (
+		frm.is_new() ||
+		frm.doc.__islocal ||
+		!name ||
+		name.startsWith("new-sales-order-") ||
+		!frm.fields_dict[fieldname] ||
+		(frm.doc[fieldname] || []).length
+	) return;
 	frappe.call({
 		method: "ss_coil.api.get_coil_balance_rows",
 		args: { doctype: "Sales Order", name: frm.doc.name },

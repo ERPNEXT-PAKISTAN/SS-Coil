@@ -531,8 +531,8 @@ def _link_origin_tag_to_sales_order_items(
 def _find_sales_order_item_for_stock_entry_row(sales_order, se_row, stock_entry_name):
 	"""Pick the Sales Order Item that should receive this Stock Entry Detail row.
 
-	When several SO lines share the same finish-good item code, match by explicit
-	custom_source_stock_entry_detail, then by row index among still-unassigned lines.
+	When several SO lines share item codes, match by explicit detail link, then
+	finish-good and raw-item identity, then row order among unassigned lines.
 	"""
 	if not sales_order or not se_row:
 		return None
@@ -557,6 +557,7 @@ def _find_sales_order_item_for_stock_entry_row(sales_order, se_row, stock_entry_
 			"name",
 			"idx",
 			"item_code",
+			"custom_finish_good_item",
 			"custom_raw_material_item",
 			"custom_raw_material_tag_no",
 			"custom_source_stock_entry",
@@ -570,14 +571,14 @@ def _find_sales_order_item_for_stock_entry_row(sales_order, se_row, stock_entry_
 			return True
 		if row.custom_source_stock_entry_detail and row.custom_source_stock_entry_detail != se_detail:
 			return False
+		if finish_good and row.item_code != finish_good:
+			return False
+		so_raw_item = row.custom_raw_material_item or row.custom_finish_good_item
+		if raw_item and so_raw_item and so_raw_item != raw_item:
+			return False
 		if row.custom_raw_material_tag_no:
 			return False
-		if finish_good and row.item_code != finish_good:
-			rm = row.custom_raw_material_item or row.item_code
-			if raw_item and rm == raw_item:
-				return True
-			return False
-		if not finish_good and raw_item and row.item_code != raw_item:
+		if raw_item and row.item_code != finish_good and not so_raw_item:
 			return False
 		return True
 
@@ -2346,7 +2347,7 @@ def _get_linked_stock_entry_detail_row(so_row, stock_entry):
 	if detail_name and frappe.db.exists("Stock Entry Detail", detail_name):
 		return frappe.get_doc("Stock Entry Detail", detail_name)
 
-	raw_item = so_row.get("custom_raw_material_item")
+	raw_item = so_row.get("custom_raw_material_item") or so_row.get("custom_finish_good_item")
 	finish_good = so_row.get("item_code")
 	se_rows = frappe.get_all(
 		"Stock Entry Detail",
@@ -2483,6 +2484,9 @@ def _sales_order_item_tag_sync_values(so_row):
 def _sales_order_item_line_sync_values(so_row):
 	"""Persist tag/coil fields plus process Operation links for manual sync."""
 	updates = _sales_order_item_tag_sync_values(so_row)
+	for fieldname in ("item_code", "item_name", "custom_finish_good_item"):
+		if _has_field("Sales Order Item", fieldname):
+			updates[fieldname] = so_row.get(fieldname)
 	for fieldname in PROCESS_SO_FIELDS:
 		if _has_field("Sales Order Item", fieldname):
 			updates[fieldname] = _normalized_process_value(so_row.get(fieldname))
@@ -2631,11 +2635,10 @@ def _persist_child_updates(doctype, name, updates):
 def _apply_sales_order_finish_good_to_stock_entry_row(so_row, se_row):
 	if not _has_field("Stock Entry Detail", "custom_finish_good_item"):
 		return
+	# Sales Order item_code is the finished item; copy it back to the Stock
+	# Entry's Finish Good field while preserving its native item_code.
 	finish_good = so_row.get("item_code")
-	raw_item = so_row.get("custom_raw_material_item")
-	if finish_good and raw_item and finish_good != se_row.get("item_code"):
-		se_row.custom_finish_good_item = finish_good
-	elif finish_good and not se_row.get("custom_finish_good_item"):
+	if finish_good:
 		se_row.custom_finish_good_item = finish_good
 
 
@@ -4921,12 +4924,9 @@ def _copyable_fieldnames(source_doctype, target_doctype):
 def create_sales_order_from_stock_entry(source_name):
 	"""Build a new (unsaved) Sales Order pre-filled from a Stock Entry.
 
-	Commercial `items` = Finish Good (+ later process charges). Manufacturing
-	data (mother coil, tags, dims, processes) goes on Coil Production Line
-	(`custom_coil_production`) when that table is installed.
-
-	Legacy fallback: if the production table is missing, copies SE Detail
-	fields onto Sales Order Item as before.
+	Sales Order Item.item_code/item_name keep the actual Stock Entry item.
+	The produced Finish Good is stored separately in custom_finish_good_item;
+	coil tags, dimensions, and process selections stay on that same item row.
 
 	Returns the doc for the client to open via frappe.model.open_mapped_doc —
 	nothing is inserted here; the user reviews/edits and saves it themselves.
@@ -4981,19 +4981,25 @@ def get_stock_entry_coil_field_map(stock_entry):
 	source = frappe.get_doc("Stock Entry", stock_entry)
 	out = {}
 	for row in source.items or []:
+		finish_good = row.get("custom_finish_good_item")
+		raw_item = row.get("item_code")
 		payload = {
-			"item_code": row.get("custom_finish_good_item") or row.get("item_code"),
+			"item_code": finish_good or raw_item,
+			"item_name": (
+				frappe.db.get_value("Item", finish_good, "item_name") if finish_good else None
+			)
+			or (frappe.db.get_value("Item", raw_item, "item_name") if raw_item else None)
+			or row.get("item_name"),
 			"qty": flt(row.get("qty")) or 1,
 			"warehouse": row.get("warehouse"),
 			"custom_source_stock_entry": stock_entry,
 			"custom_source_stock_entry_detail": row.name,
 			"custom_stock_source_type": STOCK_SOURCE_STOCK_ENTRY,
 		}
-		# Finish good commercial identity
-		finish_good = row.get("custom_finish_good_item")
-		raw_item = row.get("item_code")
-		if finish_good:
-			payload["item_code"] = finish_good
+		# Sales Order's "Mother Coil" custom field stores the source SE item.
+		if raw_item and _has_field("Sales Order Item", "custom_finish_good_item"):
+			payload["custom_finish_good_item"] = raw_item
+		if raw_item:
 			payload["custom_raw_material_item"] = raw_item
 		tag = row.get("custom_tag_no")
 		if tag:
@@ -5096,35 +5102,25 @@ def get_stock_entry_coil_field_map(stock_entry):
 
 
 def _apply_finish_good_to_sales_order_row(so_row, se_row):
-	"""When Stock Entry Detail has Finish Good Item, SO line is the FG and
-	the received mother coil becomes the raw-material link (item + tag).
-
-	Without Finish Good Item, behaviour stays as before: SO item_code is the
-	same received item_code from the Stock Entry row.
-	"""
+	"""Set Sales Order item to the finish good and store source item as Mother Coil."""
 	finish_good = se_row.get("custom_finish_good_item") if _has_field(se_row.doctype, "custom_finish_good_item") else None
-	if not finish_good:
-		return
-
 	raw_item = se_row.get("item_code")
-	so_row.item_code = finish_good
-
-	item = frappe.db.get_value(
-		"Item",
-		finish_good,
-		["item_name", "stock_uom", "sales_uom"],
-		as_dict=True,
-	)
-	if item:
-		so_row.item_name = item.item_name
-		so_row.stock_uom = item.stock_uom
-		so_row.uom = item.sales_uom or item.stock_uom
+	finished_item = finish_good or raw_item
+	if finished_item:
+		so_row.item_code = finished_item
+		item_name = frappe.db.get_value("Item", finished_item, "item_name")
+		if item_name:
+			so_row.item_name = item_name
+		item = frappe.db.get_value("Item", finished_item, ["stock_uom", "sales_uom"], as_dict=True)
+		if item:
+			so_row.stock_uom = item.stock_uom
+			so_row.uom = item.sales_uom or item.stock_uom
 
 	if _has_field("Sales Order Item", "custom_raw_material_item") and raw_item:
 		so_row.custom_raw_material_item = raw_item
 
 	if _has_field("Sales Order Item", "custom_finish_good_item"):
-		so_row.custom_finish_good_item = finish_good
+		so_row.custom_finish_good_item = raw_item
 
 	if _has_field("Sales Order Item", "custom_stock_source_type"):
 		so_row.custom_stock_source_type = STOCK_SOURCE_STOCK_ENTRY
@@ -5140,6 +5136,41 @@ def _apply_finish_good_to_sales_order_row(so_row, se_row):
 		and frappe.db.exists("Batch", batch_no)
 	):
 		so_row.custom_raw_material_batch_no = batch_no
+
+
+def repair_sales_order_item_identity_from_stock_entry(sales_order):
+	"""Repair SO item_code/name to the finish good and keep source item as Mother Coil."""
+	doc = frappe.get_doc("Sales Order", sales_order)
+	if doc.docstatus not in (0, 1):
+		frappe.throw("Only draft or submitted Sales Orders can be repaired.")
+
+	from ss_coil.process_charges import is_process_charge_row
+
+	updated = []
+	for row in doc.items or []:
+		if is_process_charge_row(row):
+			continue
+		stock_entry = row.get("custom_source_stock_entry")
+		if not stock_entry:
+			continue
+		se_row = _get_linked_stock_entry_detail_row(row, stock_entry)
+		if not se_row or not se_row.get("item_code"):
+			continue
+		_apply_finish_good_to_sales_order_row(row, se_row)
+		values = {key: row.get(key) for key in ("item_code", "item_name", "custom_finish_good_item")}
+		updated.append({"sales_order_item": row.name, **values})
+	if updated:
+		if doc.docstatus == 0:
+			doc.save(ignore_permissions=True)
+		else:
+			for row in updated:
+				frappe.db.set_value(
+					"Sales Order Item",
+					row["sales_order_item"],
+					{key: row[key] for key in ("item_code", "item_name", "custom_finish_good_item")},
+					update_modified=True,
+				)
+	return {"sales_order": doc.name, "updated_items": updated}
 
 
 @frappe.whitelist()
@@ -5691,7 +5722,7 @@ def get_sales_order_ss_coil_create_options(source_name):
 				"sales_order_item": row.name,
 				"item_code": row.item_code,
 				"item_name": row.item_name,
-				"raw_material_item": row.get("custom_raw_material_item"),
+				"raw_material_item": row.get("custom_finish_good_item") or row.get("custom_raw_material_item"),
 				"qty": flt(row.qty),
 				"dimension": row.get("custom_dimension"),
 				"tag_no": row.get("custom_raw_material_tag_no") or row.get("custom_tag_no"),

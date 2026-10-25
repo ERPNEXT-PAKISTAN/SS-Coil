@@ -1,8 +1,4 @@
-"""Sales Order process charge lines (Slitting / Leveling / Reshearing).
-
-When a production SO item has Slitter / Leveler / Reshearing set, matching
-non-stock service rows are added so each process can be invoiced at its own rate.
-"""
+"""Process flags and legacy process charge row helpers for Sales Orders."""
 
 from __future__ import annotations
 
@@ -250,12 +246,11 @@ def _charge_source_aliases(doc):
 
 
 def sync_sales_order_process_charge_lines(doc, method=None):
-	"""Maintain process charge lines on Sales Order Items.
+	"""Keep each process selection on its material Sales Order Item row.
 
-	With Coil Production Line, commercial Items must stay Finish Good only —
-	auto charge rows were perceived as “double items” and churned on every
-	save (remove + re-add). When production exists we strip charge rows and
-	clear process flags from FG items; charges are not auto-created.
+	Older versions generated separate service items for Slitting / Leveling /
+	Reshearing. Remove those generated rows; the selected process fields on the
+	material item are the source of truth for downstream SS Coil creation.
 	"""
 	if getattr(doc, "doctype", None) != "Sales Order":
 		return
@@ -264,71 +259,22 @@ def sync_sales_order_process_charge_lines(doc, method=None):
 	if doc.docstatus and cint_safe(doc.docstatus) > 0:
 		return
 
-	from ss_coil.coil_production import sales_order_has_coil_production
-
-	if sales_order_has_coil_production(doc):
-		# Clear process flags from FG — they live on Coil Production only
-		for row in _source_rows(doc):
-			for fieldname in (
-				"custom_slitter",
-				"custom_leveler",
-				"custom_reshearing",
-				"custom_packing_type",
-				"custom_packing_weightsize",
-				"custom_no_of_pack",
-				"custom_packing_remarks",
-				"custom_packing_comments",
-			):
-				if _has_field("Sales Order Item", fieldname) and row.get(fieldname) not in (None, ""):
-					row.set(fieldname, "")
-		# Remove auto process-charge lines so Items stay FG-only
-		for charge in list(_charge_rows(doc)):
-			doc.remove(charge)
-		_dedupe_commercial_items_by_stock_entry_detail(doc)
-		return
-
-	# Legacy Sales Orders without Coil Production: keep old charge sync behaviour
-	wanted = {}  # (source_name, process_key) -> source_row
-	for source_key, source, processes in _charge_source_specs(doc):
-		for process_key in processes:
-			wanted[(source_key, process_key)] = source
-
-	aliases = _charge_source_aliases(doc)
-
-	to_remove = []
-	seen = set()
-	for charge in _charge_rows(doc):
-		raw_source = charge.get("custom_process_charge_source")
-		process_key = charge.get("custom_process_charge_key")
-		if not process_key:
-			for catalog_key, meta in PROCESS_CHARGE_CATALOG.items():
-				if charge.get("item_code") == meta["item_code"]:
-					process_key = catalog_key
-					charge.custom_process_charge_key = process_key
-					charge.custom_is_process_charge = 1
-					break
-
-		canonical_source = aliases.get(raw_source, raw_source) if raw_source else raw_source
-		key = (canonical_source, process_key)
-		source = wanted.get(key) if key[0] and key[1] else None
-		if not source or key in seen:
-			to_remove.append(charge)
-			continue
-		seen.add(key)
-		_apply_charge_values(charge, source, key[1], overwrite_rate=False)
-
-	for charge in to_remove:
+	for charge in list(_charge_rows(doc)):
 		doc.remove(charge)
 
-	for key, source in wanted.items():
-		if key in seen:
-			continue
-		process_key = key[1]
-		item_code = process_charge_item_code(process_key)
-		if not item_code or not frappe.db.exists("Item", item_code):
-			continue
-		row = doc.append("items", {})
-		_apply_charge_values(row, source, process_key, overwrite_rate=True)
+
+def repair_sales_order_process_charge_rows(sales_order):
+	"""Remove old generated process rows from one draft Sales Order."""
+	doc = frappe.get_doc("Sales Order", sales_order)
+	if doc.docstatus != 0:
+		frappe.throw(_("Only draft Sales Orders can have generated process rows removed."))
+	charge_names = [row.name for row in _charge_rows(doc)]
+	if charge_names:
+		for row in list(doc.items or []):
+			if row.name in charge_names:
+				doc.remove(row)
+		doc.save(ignore_permissions=True)
+	return {"sales_order": doc.name, "removed_process_rows": len(charge_names)}
 
 
 def _dedupe_commercial_items_by_stock_entry_detail(doc):

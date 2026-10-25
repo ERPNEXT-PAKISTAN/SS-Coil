@@ -18,8 +18,8 @@ def build_delivery_advise_print_html(doc):
 			return ""
 
 		header = _delivery_advise_header(doc)
-		rows, total_qty, total_weight = _delivery_advise_item_rows(doc)
-		return _render_delivery_advise_html(header, rows, total_qty, total_weight)
+		rows, total_qty, total_weight, total_estimated_wt = _delivery_advise_item_rows(doc)
+		return _render_delivery_advise_html(header, rows, total_qty, total_weight, total_estimated_wt)
 	except Exception:
 		frappe.log_error(title="Delivery Advise Print Error")
 		return "<p>Unable to render Delivery Advise print format.</p>"
@@ -81,13 +81,16 @@ def _delivery_advise_item_rows(doc):
 	rows = []
 	total_qty = 0.0
 	total_weight = 0.0
+	total_estimated_wt = 0.0
 
 	for row in doc.items or []:
 		item = _normalize_item_row(row)
 		qty = flt(item.get("custom_qty_of_coil"))
 		weight = flt(item.get("qty"))
+		estimated_wt = flt(item.get("custom_estimated_wt"))
 		total_qty += qty
 		total_weight += weight
+		total_estimated_wt += estimated_wt
 		rows.append(
 			{
 				"tag_no": item.get("custom_tag_no") or item.get("custom_child_tag_no") or "-",
@@ -100,13 +103,14 @@ def _delivery_advise_item_rows(doc):
 				"length_c": item.get("custom_length_c") if item.get("custom_length_c") not in (None, "") else "-",
 				"qty": qty if qty else "-",
 				"weight": weight if weight else "-",
+				"estimated_wt": estimated_wt if estimated_wt else "-",
 				"js_no": item.get("custom_js_number") or "-",
 				"condition": item.get("custom_condition") or "-",
 				"remarks": item.get("custom_remarks") or "-",
 			}
 		)
 
-	return rows, total_qty, total_weight
+	return rows, total_qty, total_weight, total_estimated_wt
 
 
 def _cell(value):
@@ -119,7 +123,7 @@ def _text(value, default="-"):
 	return str(value)
 
 
-def _render_delivery_advise_html(header, rows, total_qty, total_weight):
+def _render_delivery_advise_html(header, rows, total_qty, total_weight, total_estimated_wt):
 	item_rows = []
 	for row in rows:
 		item_rows.append(
@@ -134,6 +138,7 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 			f'<td class="col-compact">{_cell(row["length_c"])}</td>'
 			f'<td class="col-compact">{_cell(row["qty"])}</td>'
 			f'<td class="col-compact">{_cell(row["weight"])}</td>'
+			f'<td class="col-compact">{_cell(row["estimated_wt"])}</td>'
 			f'<td class="col-medium">{_cell(row["js_no"])}</td>'
 			f'<td class="col-compact">{_cell(row["condition"])}</td>'
 			f'<td class="col-wrap">{_cell(row["remarks"])}</td>'
@@ -142,6 +147,7 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 
 	total_qty_text = _text(total_qty if total_qty else "-")
 	total_weight_text = _text(total_weight if total_weight else "-")
+	total_estimated_wt_text = _text(total_estimated_wt if total_estimated_wt else "-")
 
 	return (
 		_render_delivery_advise_styles()
@@ -180,6 +186,7 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 		+ '<th class="col-compact">Length C</th>'
 		+ '<th class="col-compact">Qty</th>'
 		+ '<th class="col-compact">Weight</th>'
+		+ '<th class="col-compact">Estimated WT</th>'
 		+ '<th class="col-medium">JS No</th>'
 		+ '<th class="col-compact">Condition</th>'
 		+ '<th class="col-wrap">Remarks</th>'
@@ -189,6 +196,7 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight):
 		+ '<td colspan="8" class="totals-label">Total</td>'
 		+ f'<td class="col-compact">{escape(total_qty_text)}</td>'
 		+ f'<td class="col-compact">{escape(total_weight_text)}</td>'
+		+ f'<td class="col-compact">{escape(total_estimated_wt_text)}</td>'
 		+ '<td colspan="3"></td>'
 		+ "</tr></tbody></table></div>"
 		+ '<div class="signatures-wrap"><table class="signatures" width="100%"><tr>'

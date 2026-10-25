@@ -88,7 +88,7 @@ COIL_OUTPUT_FIELDS = (
 	("customer", _("Customer")),
 	("thickness", _("Thickness")),
 	("width", _("Width")),
-	("length", _("Length")),
+	("length", _("Length (Mtr)")),
 	("estimated_qty", _("Est Qty")),
 	("actual_qty", _("Actual Qty")),
 	("packing_type", _("Packing Type")),

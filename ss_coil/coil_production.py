@@ -250,7 +250,7 @@ def setup_coil_production_fields():
 		"Sales Order Item": [
 			{
 				"fieldname": "custom_finish_good_item",
-				"label": "Finish Good Item",
+				"label": "Mother Coil",
 				"fieldtype": "Link",
 				"options": "Item",
 				"insert_after": "item_code",
@@ -304,6 +304,15 @@ def setup_coil_production_fields():
 
 	if to_create:
 		create_custom_fields(to_create, update=True)
+	if frappe.db.exists("Custom Field", "Sales Order Item-custom_finish_good_item"):
+		frappe.db.set_value(
+			"Custom Field",
+			"Sales Order Item-custom_finish_good_item",
+			"label",
+			"Mother Coil",
+			update_modified=False,
+		)
+		frappe.clear_cache(doctype="Sales Order Item")
 
 	# Ensure destination fields exist before moving legacy production rows.
 	migration = migrate_coil_production_rows_to_sales_order_items()
@@ -402,7 +411,7 @@ def migrate_coil_production_rows_to_sales_order_items():
 				updates[item_field] = value
 		for legacy_field, item_field in (
 			("finish_good_item", "item_code"),
-			("finish_good_item", "custom_finish_good_item"),
+			("raw_material_item", "custom_finish_good_item"),
 			("item_name", "item_name"),
 			("qty", "qty"),
 			("ss_coil", "custom_ss_coil"),

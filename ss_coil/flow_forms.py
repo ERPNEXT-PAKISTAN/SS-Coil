@@ -385,10 +385,8 @@ def _write_child_rows(doc, child_table, child_fields, incoming):
 		values = {k: row_data.get(k) for k in child_fields if k in row_data}
 		if not row_name and not any(value not in (None, "") for value in values.values()):
 			continue
-		if row_name and doc.get(child_table):
-			row = next((item for item in doc.get(child_table) if item.name == row_name), None)
-			if not row:
-				continue
+		row = next((item for item in doc.get(child_table) or [] if item.name == row_name), None) if row_name else None
+		if row:
 			for fieldname, value in values.items():
 				row.set(fieldname, value)
 		else:
@@ -665,10 +663,9 @@ def _overlay_flow_values(doc, doctype, data):
 		return
 	if doctype == "Stock Entry":
 		from ss_coil.stock_entry_data_entry import (
-			STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS,
 			_all_parent_fieldnames,
 			_apply_data_entry_tag_row_flags,
-			_parse_item_rows,
+			_sync_stock_entry_items,
 			_sync_stock_entry_type_purpose,
 		)
 
@@ -676,13 +673,7 @@ def _overlay_flow_values(doc, doctype, data):
 			if fieldname in data:
 				doc.set(fieldname, data.get(fieldname))
 		_sync_stock_entry_type_purpose(doc)
-		incoming = _parse_item_rows(data)
-		for index, row_data in enumerate(incoming):
-			if index >= len(doc.items):
-				break
-			for fieldname in STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS:
-				if fieldname in row_data:
-					doc.items[index].set(fieldname, row_data.get(fieldname))
+		_sync_stock_entry_items(doc, data)
 		_apply_data_entry_tag_row_flags(doc)
 		return
 
@@ -693,17 +684,75 @@ def _overlay_flow_values(doc, doctype, data):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 	for child_table, child_fields in _iter_table_specs(config):
-		incoming = data.get(child_table) or (
-			[] if child_table != config["child_table"] else data.get("items") or []
-		)
+		if child_table not in data and child_table != config["child_table"]:
+			# Some mapped forms intentionally hide tables (for example Coil
+			# Production on the Sales Order tab). Keep those mapped rows intact.
+			continue
+		incoming = data.get(child_table)
+		if incoming is None and child_table == config["child_table"]:
+			incoming = data.get("items") or []
 		rows = doc.get(child_table) or []
+		used_rows = set()
 		for index, row_data in enumerate(incoming):
 			row_data = frappe.parse_json(row_data) if isinstance(row_data, str) else row_data
-			if index >= len(rows) or not row_data:
+			if not row_data:
 				continue
+			row_name = row_data.get("name")
+			row = None
+			if doctype == "Sales Order" and child_table == "items":
+				source_detail = row_data.get("custom_source_stock_entry_detail")
+				if source_detail:
+					row = next(
+						(
+							existing
+							for existing in rows
+							if existing.get("custom_source_stock_entry_detail") == source_detail
+							and id(existing) not in used_rows
+						),
+						None,
+					)
+			if row is None:
+				row = next(
+					(
+						existing
+						for existing in rows
+						if row_name and existing.name == row_name and id(existing) not in used_rows
+					),
+					None,
+				)
+			if row is None and index < len(rows) and id(rows[index]) not in used_rows:
+				row = rows[index]
+			if row is None:
+				row = doc.append(child_table, {})
 			for fieldname in child_fields:
 				if fieldname in row_data:
-					rows[index].set(fieldname, row_data.get(fieldname))
+					row.set(fieldname, row_data.get(fieldname))
+			used_rows.add(id(row))
+
+
+def _restore_mapped_sales_order_source_rows(doctype, payload, data):
+	"""Restore source-mapped Sales Order rows if the client payload lost rows."""
+	if doctype != "Sales Order":
+		return payload, data
+
+	source_name = payload.get("custom_source_stock_entries")
+	if not source_name or not frappe.db.exists("Stock Entry", source_name):
+		return payload, data
+
+	from ss_coil.api import create_sales_order_from_stock_entry
+
+	source_mapped_doc = create_sales_order_from_stock_entry(source_name)
+	expected_rows = source_mapped_doc.get("items") or []
+	if len(expected_rows) <= len(payload.get("items") or []):
+		return payload, data
+
+	# Use the server-built mapping as the baseline, then overlay parent fields.
+	# A partial client item list may contain values paired with the wrong source
+	# row, so leave the source item rows intact when its count is incomplete.
+	payload = _strip_local_identity(source_mapped_doc.as_dict())
+	data = dict(data or {})
+	data.pop("items", None)
+	return payload, data
 
 
 def _prepare_mapped_sales_order(doc):
@@ -733,6 +782,7 @@ def insert_mapped_flow_document(doctype, mapped_doc, data=None):
 		frappe.throw("Mapped document is required")
 
 	payload = _strip_local_identity(mapped_doc)
+	payload, data = _restore_mapped_sales_order_source_rows(doctype, payload, data)
 	payload["doctype"] = doctype
 	doc = frappe.get_doc(payload)
 	_overlay_flow_values(doc, doctype, data or {})

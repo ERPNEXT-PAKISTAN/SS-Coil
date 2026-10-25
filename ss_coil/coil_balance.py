@@ -33,13 +33,17 @@ def _register_remainder_tag(doc, tag_no, parent_tag_no, method):
 
 
 def _material_type(processed_width, remaining_width, previous=None):
-	if previous:
+	if previous and frappe.db.exists("Coil Balance Type", previous):
 		return previous
 	if processed_width <= 0:
-		return "Unprocessed"
-	if remaining_width > 0:
-		return "Leftover"
-	return "Fully Processed"
+		status = "Unprocessed"
+	elif remaining_width > 0:
+		status = "Leftover"
+	else:
+		status = "Fully Processed"
+	if frappe.db.exists("DocType", "Coil Balance Type"):
+		return frappe.db.get_value("Coil Balance Type", {"balance_status": status}, "name", order_by="type_name asc") or None
+	return status
 
 
 def _qty_by_width(qty, processed_width, remaining_width, received_width):
@@ -80,17 +84,21 @@ def sync_sales_order_coil_balance_rows(doc, method=None):
 	old_remainder_tags = _existing_remainder_tags(doc, "custom_coil_balance")
 	cut_width_by_item = _sales_order_cut_widths(doc)
 	doc.set("custom_coil_balance", [])
-	for coil in (doc.get("custom_coil_production") or []):
-		received_width = flt(coil.get("width"))
-		received_qty = flt(coil.get("qty")) or flt(coil.get("estimated_wt"))
-		processed_width = cut_width_by_item.get(coil.get("sales_order_item"), 0)
-		if not processed_width and coil.get("remaining_width") not in (None, ""):
-			processed_width = max(received_width - flt(coil.get("remaining_width")), 0)
+	from ss_coil.process_charges import is_process_charge_row
+
+	for item in (doc.items or []):
+		if is_process_charge_row(item):
+			continue
+		received_width = flt(item.get("custom_width"))
+		received_qty = flt(item.get("custom_estimated_wt")) or flt(item.get("qty"))
+		processed_width = cut_width_by_item.get(item.name, 0)
+		if not processed_width and item.get("custom_remaining_width") not in (None, ""):
+			processed_width = max(received_width - flt(item.get("custom_remaining_width")), 0)
 		processed_width = min(processed_width, received_width) if received_width > 0 else processed_width
 		remaining_width = max(received_width - processed_width, 0)
 		produced_qty, remaining_qty = _qty_by_width(received_qty, processed_width, remaining_width, received_width)
-		tags = ", ".join(dict.fromkeys(filter(None, [coil.get("tag_no"), coil.get("sub_tag_no")])))
-		raw_tag_no = coil.get("raw_material_tag_no") or coil.get("tag_no")
+		tags = ", ".join(dict.fromkeys(filter(None, [item.get("custom_tag_no"), item.get("custom_sub_tag_no")])))
+		raw_tag_no = item.get("custom_raw_material_tag_no") or item.get("custom_tag_no")
 		remainder_tag_no = _remainder_tag(raw_tag_no, old_remainder_tags.get(raw_tag_no), tags.split(", ")) if remaining_width > 0 else None
 		doc.append(
 			"custom_coil_balance",
@@ -104,7 +112,7 @@ def sync_sales_order_coil_balance_rows(doc, method=None):
 				"produced_qty": produced_qty,
 				"remaining_width": remaining_width,
 				"remaining_qty": remaining_qty,
-				"remaining_type": _material_type(processed_width, remaining_width, old_types.get(coil.get("raw_material_tag_no") or coil.get("tag_no"))),
+				"remaining_type": _material_type(processed_width, remaining_width, old_types.get(raw_tag_no)),
 				"qty_basis": "Width ratio estimate",
 			},
 		)

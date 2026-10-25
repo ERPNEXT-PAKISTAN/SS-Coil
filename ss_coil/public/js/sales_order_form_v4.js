@@ -12,7 +12,6 @@ frappe.ui.form.on("Sales Order", {
 		});
 		if (typeof bind_ss_coil_entry_trace_formatters === "function") {
 			bind_ss_coil_entry_trace_formatters(frm, "items");
-			bind_ss_coil_entry_trace_formatters(frm, "custom_coil_production");
 		}
 		hide_sales_order_job_sheet_extra_fields(frm);
 		render_sales_order_job_sheet_report(frm);
@@ -253,25 +252,13 @@ function add_sales_order_create_stock_entry_button(frm) {
 							});
 						});
 						frm.refresh_field("items");
-						const prodUpdates = msg.production_updates || {};
-						(frm.doc.custom_coil_production || []).forEach((row) => {
-							const patch = prodUpdates[row.name];
-							if (!patch) return;
-							Object.keys(patch).forEach((fieldname) => {
-								row[fieldname] = patch[fieldname];
-							});
-						});
-						if (Object.keys(prodUpdates).length && frm.fields_dict.custom_coil_production) {
-							frm.refresh_field("custom_coil_production");
-						}
 						const lineCount = Object.keys(itemUpdates).length;
 						const seCount = Object.keys(msg.stock_entry_updates || {}).length;
-						const prodCount = Object.keys(prodUpdates).length;
 						let message = __("Stock Entry links synced");
-						if (lineCount || seCount || prodCount) {
+						if (lineCount || seCount) {
 							message = __(
-								"Coil/process fields synced ({0} Sales Order, {1} Stock Entry, {2} production)",
-								[lineCount, seCount, prodCount]
+								"Coil/process fields synced ({0} Sales Order items, {1} Stock Entry rows)",
+								[lineCount, seCount]
 							);
 						}
 						frappe.show_alert({
@@ -292,24 +279,12 @@ function add_sales_order_create_ss_coil_button(frm) {
 	frm.add_custom_button(
 		__("Create SS Coil"),
 		function () {
-			const production = frm.doc.custom_coil_production || [];
-			if (production.length === 1) {
-				open_ss_coil_from_sales_order(
-					frm.doc.name,
-					production[0].sales_order_item,
-					null,
-					production[0].name
-				);
+			const items = (frm.doc.items || []).filter(
+				(row) => !cint(row.custom_is_process_charge) && !row.custom_process_charge_key
+			);
+			if (items.length === 1) {
+				open_ss_coil_from_sales_order(frm.doc.name, items[0].name);
 				return;
-			}
-			if (!production.length) {
-				const items = (frm.doc.items || []).filter(
-					(row) => !cint(row.custom_is_process_charge) && !row.custom_process_charge_key
-				);
-				if (items.length === 1) {
-					open_ss_coil_from_sales_order(frm.doc.name, items[0].name);
-					return;
-				}
 			}
 			open_sales_order_ss_coil_item_dialog(frm);
 		},
@@ -494,89 +469,6 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 			renderExisting(optionKeys[0]);
 		},
 	});
-}
-
-frappe.ui.form.on("Coil Production Line", {
-	custom_coil_production_add(frm) {
-		render_coil_production_sheet_calculations(frm);
-	},
-	custom_coil_production_remove(frm) {
-		render_coil_production_sheet_calculations(frm);
-	},
-	slitter(frm) {
-		sync_sales_order_process_charge_lines(frm);
-		render_coil_production_sheet_calculations(frm);
-	},
-	leveler(frm) {
-		sync_sales_order_process_charge_lines(frm);
-		render_coil_production_sheet_calculations(frm);
-	},
-	reshearing(frm) {
-		sync_sales_order_process_charge_lines(frm);
-		render_coil_production_sheet_calculations(frm);
-	},
-	estimated_wt(frm) {
-		render_coil_production_sheet_calculations(frm);
-	},
-	qty(frm) {
-		sync_sales_order_process_charge_lines(frm);
-		render_coil_production_sheet_calculations(frm);
-	},
-	finish_good_item(frm, cdt, cdn) {
-		const row = locals[cdt][cdn];
-		if (row.finish_good_item) {
-			frappe.db.get_value("Item", row.finish_good_item, "item_name", (r) => {
-				if (r && r.item_name) {
-					frappe.model.set_value(cdt, cdn, "item_name", r.item_name);
-				}
-			});
-		}
-		sync_sales_order_process_charge_lines(frm);
-		render_coil_production_sheet_calculations(frm);
-	},
-	thickness(frm, cdt, cdn) {
-		set_production_line_dimension(cdt, cdn);
-		render_coil_production_sheet_calculations(frm);
-	},
-	width(frm, cdt, cdn) {
-		set_production_line_dimension(cdt, cdn);
-		render_coil_production_sheet_calculations(frm);
-	},
-	length_c(frm, cdt, cdn) {
-		set_production_line_dimension(cdt, cdn);
-		render_coil_production_sheet_calculations(frm);
-	},
-	length(frm, cdt, cdn) {
-		set_production_line_dimension(cdt, cdn);
-		render_coil_production_sheet_calculations(frm);
-	},
-	form_render(frm, cdt, cdn) {
-		if (is_unsaved_sales_order_context(frm, cdn)) {
-			const grid_row = frm.fields_dict.custom_coil_production?.grid?.grid_rows_by_docname?.[cdn];
-			const wrapper = grid_row?.grid_form?.fields_dict?.cutting_scheme_preview?.$wrapper;
-			if (wrapper) {
-				wrapper.html(
-					`<div class="text-muted">${__(
-						"Save the Sales Order, then use Manage Cutting Scheme on this Mother Coil / Raw row."
-					)}</div>`
-				);
-			}
-			return;
-		}
-		render_production_cutting_scheme_preview(frm, cdt, cdn);
-	},
-	manage_cutting_scheme(frm, cdt, cdn) {
-		open_cutting_scheme_dialog(frm, cdt, cdn, { from_production: true });
-	},
-});
-
-function set_production_line_dimension(cdt, cdn) {
-	const row = locals[cdt][cdn];
-	const parts = [row.thickness, row.width, row.length_c || row.length]
-		.filter((v) => v !== undefined && v !== null && v !== "")
-		.map((v) => String(v).trim())
-		.filter(Boolean);
-	frappe.model.set_value(cdt, cdn, "dimension", parts.join(" x "));
 }
 
 function is_unsaved_sales_order_context(frm, rowName) {

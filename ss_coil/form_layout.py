@@ -19,12 +19,15 @@ LAYOUT_PROPERTIES = {"field_order", "hidden", "button_color"}
 def sync_coil_form_layouts():
 	"""Apply Stock Entry / Sales Order field layout from app fixtures on every install/migrate."""
 	_apply_fixture_property_setters()
+	remove_sales_order_empty_custom_column_breaks()
 	remove_sales_order_item_legacy_columns()
 	_sync_stock_entry_job_purpose_field()
 	_ensure_stock_entry_detail_field_order()
 	ensure_ss_coil_job_sheet_field_order()
 	ensure_ss_coil_cutting_scheme_field_order()
 	ensure_ss_coil_thickness_field_order()
+	ensure_sales_order_other_tab_field_order()
+	ensure_sales_order_customer_section_field_order()
 	ensure_sales_order_job_sheet_field_order()
 	ensure_item_ss_coil_field_order()
 	frappe.clear_cache(doctype="Stock Entry")
@@ -34,6 +37,56 @@ def sync_coil_form_layouts():
 	frappe.clear_cache(doctype="Purchase Receipt Item")
 	frappe.clear_cache(doctype="SS Coil")
 	frappe.clear_cache(doctype="Item")
+
+
+SALES_ORDER_EMPTY_COLUMN_BREAKS = (
+	"custom_column_break_c68bo",
+	"custom_column_break_vy7hm",
+	"custom_column_break_jom2z",
+	"custom_column_break_ooacy",
+)
+
+
+def remove_sales_order_empty_custom_column_breaks():
+	"""Remove the four site-created empty Sales Order columns reported by users."""
+	targets = set(SALES_ORDER_EMPTY_COLUMN_BREAKS)
+	fields = frappe.get_all(
+		"Custom Field",
+		filters={"dt": "Sales Order"},
+		fields=["name", "fieldname", "insert_after"],
+	)
+	by_fieldname = {row.fieldname: row for row in fields}
+	to_delete = [by_fieldname[name] for name in targets if name in by_fieldname]
+	if not to_delete:
+		return
+
+	def resolve_anchor(fieldname):
+		seen = set()
+		while fieldname in targets and fieldname not in seen:
+			seen.add(fieldname)
+			fieldname = (by_fieldname.get(fieldname) or {}).get("insert_after")
+		return fieldname or "customer_section"
+
+	for row in fields:
+		if row.insert_after in targets and row.fieldname not in targets:
+			frappe.db.set_value(
+				"Custom Field",
+				row.name,
+				"insert_after",
+				resolve_anchor(row.insert_after),
+				update_modified=False,
+			)
+
+	for row in to_delete:
+		frappe.delete_doc("Custom Field", row.name, force=True, ignore_permissions=True)
+
+	ps_name = "Sales Order-main-field_order"
+	if frappe.db.exists("Property Setter", ps_name):
+		order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+		cleaned = [fieldname for fieldname in order if fieldname not in targets]
+		if cleaned != order:
+			frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(cleaned), update_modified=False)
+	frappe.clear_cache(doctype="Sales Order")
 
 
 def remove_sales_order_item_legacy_columns():
@@ -75,6 +128,14 @@ def _apply_fixture_property_setters():
 		if record.get("doc_type") not in LAYOUT_DOCTYPES:
 			continue
 		if record.get("property") not in LAYOUT_PROPERTIES:
+			continue
+		# Keep a site's current Sales Order layout across app migrations instead
+		# of resetting its manually arranged columns from this older fixture.
+		if (
+			record.get("doc_type") == "Sales Order"
+			and record.get("property") == "field_order"
+			and frappe.db.exists("Property Setter", record.get("name"))
+		):
 			continue
 
 		args = {
@@ -324,8 +385,75 @@ SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE = (
 )
 
 
-def ensure_sales_order_job_sheet_field_order():
-	"""Job Sheet tab + HTML report only — always last on the form."""
+SALES_ORDER_CUSTOMER_SECTION_FIELD_SEQUENCE = (
+	"customer_section",
+	"column_break0",
+	"naming_series",
+	"customer",
+	"custom_source_stock_entries",
+	"customer_name",
+	"column_break_7",
+	"transaction_date",
+	"transaction_time",
+	"delivery_date",
+	"column_break1",
+	"custom_igp_no",
+	"custom_for_customer",
+	"custom_column_break_rmdpf",
+	"tax_id",
+	"skip_delivery_note",
+	"has_unit_price_items",
+	"amended_from",
+	"title",
+	"custom_column_break_ixxzz",
+	"custom_driver_name",
+	"custom_vehicle_no",
+)
+
+
+def ensure_sales_order_customer_section_field_order():
+	"""Keep the five populated customer-section columns as part of the app layout."""
+	ps_name = "Sales Order-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+
+	meta = frappe.get_meta("Sales Order")
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	section_fields = [
+		fieldname for fieldname in SALES_ORDER_CUSTOMER_SECTION_FIELD_SEQUENCE if meta.get_field(fieldname)
+	]
+	for fieldname in set(section_fields) | {"section_break_zstt"}:
+		while fieldname in order:
+			order.remove(fieldname)
+
+	anchor = "items_section"
+	insert_at = order.index(anchor) if anchor in order else len(order)
+	order[insert_at:insert_at] = section_fields
+	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+	frappe.clear_cache(doctype="Sales Order")
+
+
+def ensure_sales_order_other_tab_field_order():
+	"""Move secondary Sales Order settings into an app-managed Other tab."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	tab_name = "Sales Order-custom_other_tab"
+	if not frappe.db.exists("Custom Field", tab_name):
+		create_custom_fields(
+			{
+				"Sales Order": [
+					{
+						"fieldname": "custom_other_tab",
+						"label": "Other",
+						"fieldtype": "Tab Break",
+						"insert_after": "party_account_currency",
+						"module": "SS Coil",
+					}
+				]
+			},
+			update=True,
+		)
+
 	ps_name = "Sales Order-main-field_order"
 	if not frappe.db.exists("Property Setter", ps_name):
 		return
@@ -333,21 +461,86 @@ def ensure_sales_order_job_sheet_field_order():
 	meta = frappe.get_meta("Sales Order")
 	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
 
-	# Drop any legacy job-sheet fieldnames from the order list
-	legacy = [
-		fn
-		for fn in order
-		if "job_sheet" in (fn or "") and fn not in SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE
+	# Preserve intentional populated columns while moving whole sections into Other.
+	def take_section(start, stop):
+		if start not in order:
+			return []
+		start_at = order.index(start)
+		stop_at = order.index(stop, start_at + 1) if stop in order[start_at + 1 :] else len(order)
+		return [fieldname for fieldname in order[start_at:stop_at] if meta.get_field(fieldname)]
+
+	other_fields = [
+		fieldname
+		for fieldname in ("company", "order_type", "is_subcontracted")
+		if fieldname in order and meta.get_field(fieldname)
 	]
-	for fieldname in list(SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE) + legacy:
+	other_fields += take_section("accounting_dimensions_section", "currency_and_price_list")
+	other_fields += take_section("currency_and_price_list", "sec_warehouse")
+	other_fields += take_section("sec_warehouse", "items_section")
+
+	for fieldname in set(other_fields) | {"custom_other_tab"}:
 		while fieldname in order:
 			order.remove(fieldname)
 
-	tail = [fn for fn in SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE if meta.get_field(fn) and not meta.get_field(fn).hidden]
-	if not tail:
+	if not meta.get_field("custom_other_tab"):
+		frappe.clear_cache(doctype="Sales Order")
+		meta = frappe.get_meta("Sales Order", refresh=True)
+
+	insert_at = order.index("connections_tab") if "connections_tab" in order else len(order)
+	other_fields = [fieldname for fieldname in other_fields if meta.get_field(fieldname)]
+	order[insert_at:insert_at] = ["custom_other_tab", *other_fields]
+	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
+	frappe.clear_cache(doctype="Sales Order")
+
+
+def _remove_empty_sales_order_columns(order, meta):
+	"""Drop column breaks with no visible fields on either side."""
+	break_types = {"Section Break", "Tab Break", "Column Break"}
+	remove = set()
+	for index, fieldname in enumerate(order):
+		field = meta.get_field(fieldname)
+		if not field or field.fieldtype != "Column Break":
+			continue
+
+		left = []
+		for candidate in reversed(order[:index]):
+			candidate_field = meta.get_field(candidate)
+			if candidate_field and candidate_field.fieldtype in break_types:
+				break
+			if candidate_field and not candidate_field.hidden:
+				left.append(candidate_field)
+
+		right = []
+		for candidate in order[index + 1 :]:
+			candidate_field = meta.get_field(candidate)
+			if candidate_field and candidate_field.fieldtype in break_types:
+				break
+			if candidate_field and not candidate_field.hidden:
+				right.append(candidate_field)
+
+		if not left or not right:
+			remove.add(fieldname)
+	return [fieldname for fieldname in order if fieldname not in remove]
+
+
+def ensure_sales_order_job_sheet_field_order():
+	"""Append missing Job Sheet fields without rearranging the saved Sales Order layout."""
+	ps_name = "Sales Order-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
 		return
 
-	order.extend(tail)
+	meta = frappe.get_meta("Sales Order")
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+
+	missing = [
+		fieldname
+		for fieldname in SALES_ORDER_JOB_SHEET_FIELD_SEQUENCE
+		if meta.get_field(fieldname) and not meta.get_field(fieldname).hidden and fieldname not in order
+	]
+	if not missing:
+		return
+
+	order.extend(missing)
 	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
 
 

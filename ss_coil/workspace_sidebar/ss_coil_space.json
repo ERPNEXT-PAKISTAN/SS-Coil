@@ -92,6 +92,18 @@
   {
    "child": 1,
    "collapsible": 1,
+   "icon": "sliders",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Coil Balance Type",
+   "link_to": "Coil Balance Type",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
    "icon": "users",
    "indent": 1,
    "keep_closed": 0,
@@ -232,7 +244,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-22 02:46:02.654213",
+ "modified": "2026-10-25 18:19:59.144145",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",

@@ -28,7 +28,7 @@
   {"fieldname": "produced_qty", "label": "Produced Qty (kg)", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
   {"fieldname": "remaining_width", "label": "Remaining Width", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
   {"fieldname": "remaining_qty", "label": "Remaining Qty (kg)", "fieldtype": "Float", "in_list_view": 1, "read_only": 1, "precision": "3", "allow_on_submit": 1},
-  {"fieldname": "remaining_type", "label": "Remainder Type", "fieldtype": "Select", "options": "Unprocessed\nLeftover\nScrap / Waste\nFully Processed", "in_list_view": 1, "allow_on_submit": 1},
+  {"fieldname": "remaining_type", "label": "Remainder Type", "fieldtype": "Link", "options": "Coil Balance Type", "in_list_view": 1, "allow_on_submit": 1},
   {"fieldname": "qty_basis", "label": "Qty Basis", "fieldtype": "Data", "read_only": 1, "allow_on_submit": 1}
  ],
  "permissions": [],

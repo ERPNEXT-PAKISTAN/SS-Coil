@@ -1,8 +1,4 @@
-"""Coil Production Line child on Sales Order — manufacturing / raw material plan.
-
-Commercial SO `items` stay FG + process charges. Mother coil, tags, dimensions,
-and process flags live on `custom_coil_production` (Coil Production Line).
-"""
+"""Move legacy Coil Production Line data onto the Sales Order Item rows."""
 
 from __future__ import annotations
 
@@ -195,7 +191,12 @@ def matching_production_rows_for_so_item(doc, so_row):
 	rows = get_coil_production_rows(doc)
 	if not rows or not so_row:
 		return []
-	matches = [prod for prod in rows if prod.get("sales_order_item") == so_row.name]
+	so_item_name = so_row.get("name")
+	matches = (
+		[prod for prod in rows if prod.get("sales_order_item") == so_item_name]
+		if so_item_name
+		else []
+	)
 	if matches:
 		return matches
 	detail = so_row.get("custom_source_stock_entry_detail")
@@ -244,30 +245,23 @@ def sync_sales_order_items_and_production(doc, fill_missing=True):
 
 
 def setup_coil_production_fields():
-	"""Ensure Coil Production Line exists and is attached to Sales Order + SS Coil."""
-	_ensure_coil_production_line_doctype()
+	"""Migrate legacy production rows and remove the duplicate Sales Order table."""
 	fields = {
+		"Sales Order Item": [
+			{
+				"fieldname": "custom_finish_good_item",
+				"label": "Finish Good Item",
+				"fieldtype": "Link",
+				"options": "Item",
+				"insert_after": "item_code",
+			},
+		],
 		"Sales Order": [
-			{
-				"fieldname": "custom_coil_production_section",
-				"label": "Coil Production",
-				"fieldtype": "Section Break",
-				"insert_after": "items",
-				"collapsible": 0,
-			},
-			{
-				"fieldname": COIL_PRODUCTION_TABLE,
-				"label": "Coil Production",
-				"fieldtype": "Table",
-				"options": "Coil Production Line",
-				"insert_after": "custom_coil_production_section",
-				"description": "Mother coil, tags, dimensions, and processes. Commercial lines stay in Items.",
-			},
 			{
 				"fieldname": "custom_coil_balance_section",
 				"label": "Coil Balance",
 				"fieldtype": "Section Break",
-				"insert_after": COIL_PRODUCTION_TABLE,
+				"insert_after": "items",
 				"collapsible": 1,
 			},
 			{
@@ -311,11 +305,141 @@ def setup_coil_production_fields():
 	if to_create:
 		create_custom_fields(to_create, update=True)
 
+	# Ensure destination fields exist before moving legacy production rows.
+	migration = migrate_coil_production_rows_to_sales_order_items()
+
+	# Remove any old field records left by sites that installed the former table.
+	for fieldname in ("custom_coil_production", "custom_coil_production_section"):
+		custom_field = f"Sales Order-{fieldname}"
+		if frappe.db.exists("Custom Field", custom_field):
+			frappe.delete_doc("Custom Field", custom_field, force=True, ignore_permissions=True)
+	if frappe.db.exists("Custom Field", "Sales Order-custom_coil_balance_section"):
+		frappe.db.set_value(
+			"Custom Field",
+			"Sales Order-custom_coil_balance_section",
+			"insert_after",
+			"items",
+			update_modified=False,
+		)
+	for setter in frappe.get_all(
+		"Property Setter",
+		filters={"doc_type": "Sales Order", "property": "field_order"},
+		fields=["name", "value"],
+	):
+		order = frappe.parse_json(setter.value or "[]")
+		cleaned = [fieldname for fieldname in order if fieldname not in ("custom_coil_production", "custom_coil_production_section")]
+		if cleaned != order:
+			frappe.db.set_value("Property Setter", setter.name, "value", frappe.as_json(cleaned), update_modified=False)
+
+	# The standard child DocType can already exist on sites that had the earlier
+	# Select version. Keep its live metadata aligned with the app's Link field.
+	if frappe.db.exists("DocField", {"parent": "Coil Balance Row", "fieldname": "remaining_type"}):
+		frappe.db.set_value(
+			"DocField",
+			{"parent": "Coil Balance Row", "fieldname": "remaining_type"},
+			{"fieldtype": "Link", "options": "Coil Balance Type"},
+			update_modified=False,
+		)
+
 	# Prefer native field on SS Coil when migrating later; custom field is fine for now.
 	frappe.clear_cache(doctype="Sales Order")
 	frappe.clear_cache(doctype="SS Coil")
 	frappe.clear_cache(doctype="Coil Production Line")
-	return {"status": "ok"}
+	frappe.clear_cache(doctype="Coil Balance Row")
+	frappe.clear_cache(doctype="Sales Order")
+	return {"status": "ok", "migrated_production_rows": migration.get("migrated_rows", 0)}
+
+
+def migrate_coil_production_rows_to_sales_order_items():
+	"""Copy all legacy Coil Production Line values to their linked SO Item before removal."""
+	if not frappe.db.exists("DocType", "Coil Production Line") or not frappe.db.table_exists("Coil Production Line"):
+		return {"migrated_rows": 0}
+
+	legacy_rows = frappe.get_all(
+		"Coil Production Line",
+		filters={"parenttype": "Sales Order", "parentfield": COIL_PRODUCTION_TABLE},
+		fields=["name", "parent", "sales_order_item", "source_stock_entry_detail", "finish_good_item"],
+	)
+	if not legacy_rows:
+		return {"migrated_rows": 0}
+
+	from ss_coil.process_charges import is_process_charge_row
+
+	item_meta = frappe.get_meta("Sales Order Item")
+	legacy_to_item = {}
+	updates_by_item = {}
+	unmatched = []
+	unmapped = []
+	for legacy in legacy_rows:
+		so_name = legacy.parent
+		if not frappe.db.exists("Sales Order", so_name):
+			unmatched.append(legacy.name)
+			continue
+		order = frappe.get_cached_doc("Sales Order", so_name)
+		items = [row for row in (order.items or []) if not is_process_charge_row(row)]
+		item = next((row for row in items if row.name == legacy.sales_order_item), None)
+		if not item and legacy.source_stock_entry_detail:
+			item = next(
+				(row for row in items if row.get("custom_source_stock_entry_detail") == legacy.source_stock_entry_detail),
+				None,
+			)
+		if not item and legacy.finish_good_item:
+			item = next((row for row in items if row.item_code == legacy.finish_good_item), None)
+		if not item:
+			unmatched.append(legacy.name)
+			continue
+
+		legacy_doc = frappe.get_doc("Coil Production Line", legacy.name)
+		legacy_to_item[legacy.name] = item.name
+		updates = updates_by_item.setdefault(item.name, {})
+		for legacy_field, item_field in PROD_TO_SO_CUSTOM.items():
+			value = legacy_doc.get(legacy_field)
+			if value in (None, ""):
+				continue
+			if not item_meta.has_field(item_field):
+				unmapped.append(f"{legacy.name}:{legacy_field}->{item_field}")
+			elif item.get(item_field) in (None, ""):
+				updates[item_field] = value
+		for legacy_field, item_field in (
+			("finish_good_item", "item_code"),
+			("finish_good_item", "custom_finish_good_item"),
+			("item_name", "item_name"),
+			("qty", "qty"),
+			("ss_coil", "custom_ss_coil"),
+		):
+			value = legacy_doc.get(legacy_field)
+			if value in (None, ""):
+				continue
+			if not item_meta.has_field(item_field):
+				unmapped.append(f"{legacy.name}:{legacy_field}->{item_field}")
+			elif item.get(item_field) in (None, ""):
+				updates[item_field] = value
+
+	if unmatched or unmapped:
+		details = []
+		if unmatched:
+			details.append("unmatched rows: " + ", ".join(unmatched))
+		if unmapped:
+			details.append("item fields missing: " + ", ".join(unmapped))
+		frappe.throw(
+			"Cannot remove Coil Production Line data until all values are safely mapped. " + "; ".join(details)
+		)
+
+	for item_name, values in updates_by_item.items():
+		if values:
+			frappe.db.set_value("Sales Order Item", item_name, values, update_modified=False)
+
+	for legacy_name, item_name in legacy_to_item.items():
+		for ss_coil in frappe.get_all(
+			"SS Coil", filters={"coil_production_line": legacy_name}, fields=["name", "sales_order_item"]
+		):
+			values = {"coil_production_line": None}
+			if not ss_coil.sales_order_item:
+				values["sales_order_item"] = item_name
+			frappe.db.set_value("SS Coil", ss_coil.name, values, update_modified=False)
+		frappe.db.delete("Coil Production Line", {"name": legacy_name})
+
+	return {"migrated_rows": len(legacy_to_item)}
 
 
 def _ensure_coil_production_line_doctype():
@@ -358,7 +482,7 @@ def link_coil_production_to_sales_order_items(doc, method=None):
 		if prod.get("sales_order_item"):
 			match = next((r for r in commercial if r.name == prod.sales_order_item), None)
 			if match:
-				used.add(match.name)
+				used.add(id(match))
 				_mirror_light_trace_to_so_item(match, prod)
 				continue
 			prod.sales_order_item = None
@@ -370,7 +494,7 @@ def link_coil_production_to_sales_order_items(doc, method=None):
 				(
 					r
 					for r in commercial
-					if r.name not in used
+					if id(r) not in used
 					and r.get("custom_source_stock_entry_detail") == detail
 				),
 				None,
@@ -380,14 +504,15 @@ def link_coil_production_to_sales_order_items(doc, method=None):
 				(
 					r
 					for r in commercial
-					if r.name not in used and r.item_code == prod.finish_good_item
+					if id(r) not in used and r.item_code == prod.finish_good_item
 				),
 				None,
 			)
 		if not match:
 			continue
-		prod.sales_order_item = match.name
-		used.add(match.name)
+		if match.name:
+			prod.sales_order_item = match.name
+		used.add(id(match))
 		_mirror_light_trace_to_so_item(match, prod)
 
 
@@ -760,5 +885,5 @@ def backfill_coil_production_from_sales_order_items(sales_order=None):
 
 @frappe.whitelist()
 def setup_coil_production():
-	setup_coil_production_fields()
-	return backfill_coil_production_from_sales_order_items()
+	"""Remove the legacy Sales Order table and migrate any remaining rows."""
+	return setup_coil_production_fields()

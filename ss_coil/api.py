@@ -2506,55 +2506,6 @@ def _stock_entry_detail_line_sync_values(se_row):
 	return updates
 
 
-def _coil_production_line_sync_values(prod):
-	from ss_coil.coil_production import SO_CUSTOM_TO_PROD
-
-	updates = {}
-	for fieldname in (
-		"finish_good_item",
-		"raw_material_item",
-		"item_name",
-		"qty",
-		"sales_order_item",
-		"raw_material_tag_no",
-		"raw_material_batch_no",
-		"stock_source_type",
-		"source_stock_entry",
-		"source_stock_entry_detail",
-	):
-		if not _has_field(prod.doctype, fieldname):
-			continue
-		value = prod.get(fieldname)
-		if value not in (None, ""):
-			updates[fieldname] = value
-		elif fieldname in ("raw_material_item", "raw_material_tag_no", "raw_material_batch_no"):
-			updates[fieldname] = value or ""
-
-	sync_custom = set(COIL_INWARD_SO_FIELDNAMES) | set(PROCESS_SO_FIELDS) | {
-		"custom_raw_material_tag_no",
-		"custom_raw_material_batch_no",
-		"custom_raw_material_item",
-		"custom_tag_no",
-		"custom_entry_no",
-		"custom_source_stock_entry",
-		"custom_source_stock_entry_detail",
-		"custom_stock_source_type",
-	}
-	for custom_field, prod_field in SO_CUSTOM_TO_PROD.items():
-		if custom_field not in sync_custom:
-			continue
-		if prod_field in updates:
-			continue
-		if not _has_field(prod.doctype, prod_field):
-			continue
-		value = prod.get(prod_field)
-		if prod_field in PROCESS_FIELDS:
-			updates[prod_field] = _normalized_process_value(value)
-		elif value is not None:
-			updates[prod_field] = value
-	return updates
-
-
 def _line_sync_native_field(row, custom_field):
 	if getattr(row, "doctype", None) == "Coil Production Line":
 		from ss_coil.coil_production import SO_CUSTOM_TO_PROD
@@ -2664,34 +2615,6 @@ def _sync_tags_between_stock_entry_and_sales_order(se_row, so_row, primary):
 		se_row.custom_tag_no = tag
 	elif se_tag and _has_field("Sales Order Item", "custom_raw_material_tag_no") and not so_raw:
 		so_row.custom_raw_material_tag_no = se_tag
-
-
-def _matching_coil_production_rows(sales_order, se_row, so_row=None):
-	from ss_coil.coil_production import COIL_PRODUCTION_TABLE
-
-	if not _has_field("Sales Order", COIL_PRODUCTION_TABLE):
-		return []
-
-	matches = []
-	se_parent = getattr(se_row, "parent", None)
-	for prod in sales_order.get(COIL_PRODUCTION_TABLE) or []:
-		detail = prod.get("source_stock_entry_detail")
-		if detail:
-			if detail == se_row.name:
-				matches.append(prod)
-			continue
-		if so_row and prod.get("sales_order_item") == so_row.name:
-			matches.append(prod)
-			continue
-		if prod.get("source_stock_entry") == se_parent:
-			matches.append(prod)
-			continue
-		se_item = se_row.get("item_code")
-		if se_item and (
-			prod.get("raw_material_item") == se_item or prod.get("finish_good_item") == se_item
-		):
-			matches.append(prod)
-	return matches
 
 
 def _is_saved_child_name(name):
@@ -5009,9 +4932,7 @@ def create_sales_order_from_stock_entry(source_name):
 	nothing is inserted here; the user reviews/edits and saves it themselves.
 	"""
 	from ss_coil.coil_production import (
-		COIL_PRODUCTION_TABLE,
 		append_commercial_so_item_from_stock_entry_row,
-		append_production_line_from_stock_entry_row,
 	)
 
 	source = frappe.get_doc("Stock Entry", source_name)
@@ -5036,29 +4957,8 @@ def create_sales_order_from_stock_entry(source_name):
 	if source.get("custom_invoice__igp_no") and _has_field("Sales Order", "custom_igp_no"):
 		sales_order.custom_igp_no = source.get("custom_invoice__igp_no")
 
-	use_production = _has_field("Sales Order", COIL_PRODUCTION_TABLE)
-	if use_production:
-		for row in source.items:
-			append_commercial_so_item_from_stock_entry_row(sales_order, row, source.name)
-			append_production_line_from_stock_entry_row(sales_order, row, source.name)
-	else:
-		item_fields = _copyable_fieldnames("Stock Entry Detail", "Sales Order Item")
-		for row in source.items:
-			so_row = sales_order.append("items", {})
-			for fieldname in item_fields:
-				value = row.get(fieldname)
-				if value not in (None, ""):
-					so_row.set(fieldname, value)
-			_apply_finish_good_to_sales_order_row(so_row, row)
-			_apply_stock_entry_row_tags_to_sales_order_item(so_row, row)
-			if not so_row.get("delivery_date"):
-				so_row.delivery_date = sales_order.transaction_date
-			if _has_field("Sales Order Item", "custom_source_stock_entry"):
-				so_row.custom_source_stock_entry = source.name
-			if _has_field("Sales Order Item", "custom_entry_no"):
-				so_row.custom_entry_no = source.name
-			if _has_field("Sales Order Item", "custom_source_stock_entry_detail"):
-				so_row.custom_source_stock_entry_detail = row.name
+	for row in source.items:
+		append_commercial_so_item_from_stock_entry_row(sales_order, row, source.name)
 
 	if _has_field("Sales Order", "custom_source_stock_entries"):
 		sales_order.custom_source_stock_entries = source.name
@@ -5240,69 +5140,6 @@ def _apply_finish_good_to_sales_order_row(so_row, se_row):
 		and frappe.db.exists("Batch", batch_no)
 	):
 		so_row.custom_raw_material_batch_no = batch_no
-
-
-def _apply_finish_good_to_coil_production_row(prod, se_row):
-	"""Set Coil Production Finish Good + Mother Coil from a Stock Entry Detail row."""
-	if not prod or not se_row:
-		return
-
-	finish_good = se_row.get("custom_finish_good_item") if _has_field(se_row.doctype, "custom_finish_good_item") else None
-	raw_item = se_row.get("item_code")
-	if not finish_good:
-		return
-
-	if _has_field(prod.doctype, "finish_good_item"):
-		prod.finish_good_item = finish_good
-
-	fg_name = frappe.db.get_value("Item", finish_good, "item_name") if finish_good else None
-	if fg_name and _has_field(prod.doctype, "item_name"):
-		prod.item_name = fg_name
-
-	if finish_good == raw_item:
-		raw_item = None
-	if _has_field(prod.doctype, "raw_material_item"):
-		prod.raw_material_item = raw_item or ""
-
-	if _has_field(prod.doctype, "stock_source_type"):
-		prod.stock_source_type = STOCK_SOURCE_STOCK_ENTRY
-
-	tag = se_row.get("custom_tag_no") if _has_field(se_row.doctype, "custom_tag_no") else None
-	if tag and _has_field(prod.doctype, "raw_material_tag_no"):
-		prod.raw_material_tag_no = tag
-		if _has_field(prod.doctype, "entry_no"):
-			prod.entry_no = getattr(se_row, "parent", None) or prod.get("source_stock_entry")
-	batch_no = se_row.get("batch_no") or tag
-	if (
-		batch_no
-		and _has_field(prod.doctype, "raw_material_batch_no")
-		and frappe.db.exists("Batch", batch_no)
-	):
-		prod.raw_material_batch_no = batch_no
-
-	qty = se_row.get("qty")
-	if qty not in (None, "") and _has_field(prod.doctype, "qty") and not flt(prod.get("qty")):
-		prod.qty = flt(qty) or 1
-
-
-def _ensure_coil_production_from_stock_entry_row(sales_order, se_row, stock_entry_name, so_row=None):
-	"""Create a Coil Production Line when Sync finds an SE row with no production match."""
-	from ss_coil.coil_production import COIL_PRODUCTION_TABLE, append_production_line_from_stock_entry_row
-
-	if not _has_field("Sales Order", COIL_PRODUCTION_TABLE):
-		return None
-	prod = append_production_line_from_stock_entry_row(sales_order, se_row, stock_entry_name)
-	if not prod:
-		return None
-	if so_row and _has_field(prod.doctype, "sales_order_item"):
-		prod.sales_order_item = so_row.name
-	if not _is_saved_child_name(prod.name):
-		try:
-			prod.db_insert()
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), "SS Coil create Coil Production Line on sync")
-			return prod
-	return prod
 
 
 @frappe.whitelist()
@@ -5997,13 +5834,13 @@ def _ensure_sales_order_items_linked_to_stock_entry(sales_order_doc, stock_entry
 
 
 def _sync_linked_stock_entry_sales_order_lines(stock_entry_name, sales_order_name, primary):
-	"""Two-way coil/process/tag sync between one Stock Entry and one Sales Order.
+	"""Two-way coil/process/tag sync between one Stock Entry and Sales Order Items.
 
 	`primary` is the document the user clicked Sync on:
-	- stock_entry: overwrite Sales Order (+ Coil Production) from SE; fill empty SE fields
-	- sales_order: overwrite Stock Entry from SO; fill empty SO / production fields
+	- stock_entry: overwrite Sales Order Items from SE; fill empty SE fields
+	- sales_order: overwrite Stock Entry from SO; fill empty SO fields
 	"""
-	empty = {"item_updates": {}, "stock_entry_updates": {}, "production_updates": {}}
+	empty = {"item_updates": {}, "stock_entry_updates": {}}
 	if not stock_entry_name or not sales_order_name:
 		return empty
 	if not frappe.db.exists("Stock Entry", stock_entry_name) or not frappe.db.exists("Sales Order", sales_order_name):
@@ -6015,10 +5852,9 @@ def _sync_linked_stock_entry_sales_order_lines(stock_entry_name, sales_order_nam
 
 	item_updates = {}
 	stock_entry_updates = {}
-	production_updates = {}
 	matched_se = set()
 
-	def persist_pair(so_row, se_row, prod_rows):
+	def persist_pair(so_row, se_row):
 		if primary == "stock_entry":
 			if so_row:
 				_apply_stock_entry_row_tags_to_sales_order_item(
@@ -6027,33 +5863,11 @@ def _sync_linked_stock_entry_sales_order_lines(stock_entry_name, sales_order_nam
 				_apply_finish_good_to_sales_order_row(so_row, se_row)
 				_copy_coil_process_fields(se_row, so_row, fill_source_missing=True)
 				_sync_tags_between_stock_entry_and_sales_order(se_row, so_row, primary)
-			prod_rows = list(prod_rows or [])
-			if not prod_rows:
-				prod = _ensure_coil_production_from_stock_entry_row(
-					sales_order, se_row, stock_entry_name, so_row
-				)
-				if prod:
-					prod_rows = [prod]
-			for prod in prod_rows:
-				_apply_finish_good_to_coil_production_row(prod, se_row)
-				_copy_coil_process_fields(se_row, prod, fill_source_missing=True)
-				if so_row and _has_field(prod.doctype, "sales_order_item") and not prod.get("sales_order_item"):
-					prod.sales_order_item = so_row.name
-				if _has_field(prod.doctype, "source_stock_entry"):
-					prod.source_stock_entry = stock_entry_name
-				if _has_field(prod.doctype, "source_stock_entry_detail"):
-					prod.source_stock_entry_detail = se_row.name
 		else:
 			if so_row:
 				_copy_coil_process_fields(so_row, se_row, fill_source_missing=True)
 				_sync_tags_between_stock_entry_and_sales_order(se_row, so_row, primary)
 				_apply_sales_order_finish_good_to_stock_entry_row(so_row, se_row)
-			for prod in prod_rows:
-				if so_row:
-					_copy_coil_process_fields(so_row, prod, fill_source_missing=True)
-				_copy_coil_process_fields(prod, se_row, fill_source_missing=True)
-				if so_row:
-					_copy_coil_process_fields(so_row, se_row, fill_source_missing=False)
 
 		if so_row:
 			so_updates = _sales_order_item_line_sync_values(so_row)
@@ -6072,11 +5886,6 @@ def _sync_linked_stock_entry_sales_order_lines(stock_entry_name, sales_order_nam
 		if _persist_child_updates("Stock Entry Detail", se_row.name, se_values):
 			stock_entry_updates[se_row.name] = se_values
 
-		for prod in prod_rows:
-			prod_values = _coil_production_line_sync_values(prod)
-			if _persist_child_updates(prod.doctype, prod.name, prod_values):
-				production_updates[prod.name] = prod_values
-
 	for so_row in sales_order.items or []:
 		if cint(so_row.get("custom_is_process_charge")) or so_row.get("custom_process_charge_key"):
 			continue
@@ -6086,20 +5895,16 @@ def _sync_linked_stock_entry_sales_order_lines(stock_entry_name, sales_order_nam
 		if not se_row:
 			continue
 		matched_se.add(se_row.name)
-		persist_pair(so_row, se_row, _matching_coil_production_rows(sales_order, se_row, so_row))
+		persist_pair(so_row, se_row)
 
 	for se_row in stock_entry.items or []:
 		if se_row.name in matched_se:
 			continue
-		prod_rows = _matching_coil_production_rows(sales_order, se_row)
-		if not prod_rows:
-			continue
-		persist_pair(None, se_row, prod_rows)
+		continue
 
 	return {
 		"item_updates": item_updates,
 		"stock_entry_updates": stock_entry_updates,
-		"production_updates": production_updates,
 	}
 
 
@@ -6127,7 +5932,6 @@ def sync_sales_order_stock_entry_links(sales_order):
 	)
 	item_updates = {}
 	stock_entry_updates = {}
-	production_updates = {}
 	for stock_entry_name in stock_entry_names:
 		_push_sales_order_header_to_stock_entry(doc, stock_entry_name)
 		result = _sync_linked_stock_entry_sales_order_lines(
@@ -6135,7 +5939,6 @@ def sync_sales_order_stock_entry_links(sales_order):
 		)
 		item_updates.update(result.get("item_updates") or {})
 		stock_entry_updates.update(result.get("stock_entry_updates") or {})
-		production_updates.update(result.get("production_updates") or {})
 
 	response = {}
 	if _has_field("Sales Order", "custom_source_stock_entries"):
@@ -6152,7 +5955,6 @@ def sync_sales_order_stock_entry_links(sales_order):
 
 	response["item_updates"] = item_updates
 	response["stock_entry_updates"] = stock_entry_updates
-	response["production_updates"] = production_updates
 
 	frappe.db.commit()
 	return response
@@ -6186,7 +5988,6 @@ def sync_stock_entry_links_from_source(stock_entry):
 
 	item_updates_by_so = {}
 	stock_entry_updates = {}
-	production_updates_by_so = {}
 	for sales_order_name in sales_order_names:
 		_push_stock_entry_header_to_sales_order(stock_entry, sales_order_name)
 		result = _sync_linked_stock_entry_sales_order_lines(
@@ -6196,9 +5997,6 @@ def sync_stock_entry_links_from_source(stock_entry):
 		if updates:
 			item_updates_by_so[sales_order_name] = updates
 		stock_entry_updates.update(result.get("stock_entry_updates") or {})
-		prod_updates = result.get("production_updates") or {}
-		if prod_updates:
-			production_updates_by_so[sales_order_name] = prod_updates
 
 	frappe.db.commit()
 	return {
@@ -6207,9 +6005,8 @@ def sync_stock_entry_links_from_source(stock_entry):
 		"custom_invoice__igp_no": frappe.db.get_value("Stock Entry", stock_entry, "custom_invoice__igp_no") or "",
 		"item_updates_by_sales_order": item_updates_by_so,
 		"stock_entry_updates": stock_entry_updates,
-		"production_updates_by_sales_order": production_updates_by_so,
 		"sales_orders_updated": list(
-			dict.fromkeys(sales_order_names + list(item_updates_by_so.keys()) + list(production_updates_by_so.keys()))
+			dict.fromkeys(sales_order_names + list(item_updates_by_so.keys()))
 		),
 	}
 

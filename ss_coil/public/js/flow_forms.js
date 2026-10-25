@@ -290,11 +290,13 @@ function flow_update_row_count(state) {
 
 function flow_collect_table(ctx) {
 	const items = [];
-	for (const row of ctx.item_rows || []) {
-		Object.keys(row.controls).forEach((fieldname) => {
-			row.item[fieldname] = row.controls[fieldname].get_value();
+	const rendered_rows = new Map((ctx.item_rows || []).map((row) => [row.item, row]));
+	for (const item of ctx.items || []) {
+		const rendered_row = rendered_rows.get(item);
+		Object.keys((rendered_row && rendered_row.controls) || {}).forEach((fieldname) => {
+			item[fieldname] = rendered_row.controls[fieldname].get_value();
 		});
-		const item_payload = { ...row.item };
+		const item_payload = { ...item };
 		if (item_payload.__islocal) {
 			delete item_payload.name;
 		}

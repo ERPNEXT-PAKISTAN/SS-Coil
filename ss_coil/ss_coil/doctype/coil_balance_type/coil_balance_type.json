@@ -1,0 +1,21 @@
+{
+ "doctype": "DocType",
+ "name": "Coil Balance Type",
+ "module": "SS Coil",
+ "autoname": "field:type_name",
+ "title_field": "type_name",
+ "search_fields": "type_name",
+ "track_changes": 1,
+ "field_order": ["type_name", "balance_status", "description"],
+ "fields": [
+  {"fieldname": "type_name", "label": "Type Name", "fieldtype": "Data", "reqd": 1, "unique": 1, "in_list_view": 1},
+  {"fieldname": "balance_status", "label": "Balance Status", "fieldtype": "Select", "options": "Unprocessed\nLeftover\nScrap / Waste\nFully Processed", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "description", "label": "Description", "fieldtype": "Small Text"}
+ ],
+ "permissions": [
+  {"role": "All", "read": 1, "report": 1},
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1}
+ ],
+ "sort_field": "type_name",
+ "sort_order": "ASC"
+}

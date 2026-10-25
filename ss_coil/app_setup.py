@@ -3,6 +3,7 @@ import frappe
 
 def run_post_install_setup():
 	"""Ensure tag-origin custom fields and form layouts exist after install or migrate."""
+	ensure_coil_balance_types()
 	from ss_coil.api import (
 		setup_length_c_and_length_fields,
 		setup_sales_order_job_sheet_fields,
@@ -44,6 +45,19 @@ def run_post_install_setup():
 	remove_arabic_name_fields()
 	remove_vat_emirate_fields()
 	frappe.db.commit()
+
+
+def ensure_coil_balance_types():
+	"""Seed the default selectable types used by coil balance rows."""
+	if not frappe.db.exists("DocType", "Coil Balance Type"):
+		return
+	for type_name in ("Unprocessed", "Leftover", "Scrap / Waste", "Fully Processed"):
+		if not frappe.db.exists("Coil Balance Type", type_name):
+			frappe.get_doc({
+				"doctype": "Coil Balance Type",
+				"type_name": type_name,
+				"balance_status": type_name,
+			}).insert(ignore_permissions=True)
 
 
 def remove_vat_emirate_fields():
@@ -264,6 +278,7 @@ def sync_sales_contract_terms():
 	"""
 	import json
 	import os
+	import re
 
 	path = os.path.join(frappe.get_app_path("ss_coil"), "fixtures", "terms_and_conditions.json")
 	if not os.path.exists(path):
@@ -276,9 +291,25 @@ def sync_sales_contract_terms():
 	if not record:
 		return
 
+	# Legacy Sales Contract templates looked up mill names on the removed
+	# production table. Read the same value from the Sales Order Item rows.
+	mill_template = '{{ items | map(attribute="custom_mill") | select | unique | join(", ") or custom_job_sheet_mill or "" }}'
+	for key in ("terms",):
+		record[key] = re.sub(
+			r'{% if custom_coil_production %}.*?{% else %}{{ custom_job_sheet_mill or "" }}{% endif %}',
+			mill_template,
+			record.get(key) or "",
+		)
+
 	if frappe.db.exists("Terms and Conditions", "Sales Contract"):
 		updates = {"selling": 1, "disabled": 0}
 		current = frappe.db.get_value("Terms and Conditions", "Sales Contract", "terms")
+		if "custom_coil_production" in (current or ""):
+			updates["terms"] = re.sub(
+				r'{% if custom_coil_production %}.*?{% else %}{{ custom_job_sheet_mill or "" }}{% endif %}',
+				mill_template,
+				current,
+			)
 		if not (current or "").strip() and record.get("terms"):
 			updates["terms"] = record.get("terms")
 		frappe.db.set_value("Terms and Conditions", "Sales Contract", updates, update_modified=False)

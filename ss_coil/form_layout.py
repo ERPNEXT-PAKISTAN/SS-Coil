@@ -30,6 +30,7 @@ def sync_coil_form_layouts():
 	ensure_sales_order_customer_section_field_order()
 	ensure_sales_order_job_sheet_field_order()
 	ensure_item_ss_coil_field_order()
+	ensure_ss_coil_inspection_field_order()
 	frappe.clear_cache(doctype="Stock Entry")
 	frappe.clear_cache(doctype="Stock Entry Detail")
 	frappe.clear_cache(doctype="Sales Order")
@@ -37,6 +38,28 @@ def sync_coil_form_layouts():
 	frappe.clear_cache(doctype="Purchase Receipt Item")
 	frappe.clear_cache(doctype="SS Coil")
 	frappe.clear_cache(doctype="Item")
+
+
+def ensure_ss_coil_inspection_field_order():
+	"""Keep inspection tabs and their fields in the persisted layout after fixture sync."""
+	ps_name = "SS Coil-main-field_order"
+	if not frappe.db.exists("Property Setter", ps_name):
+		return
+
+	definition_path = os.path.join(
+		frappe.get_app_path("ss_coil"), "ss_coil", "doctype", "ss_coil", "ss_coil.json"
+	)
+	with open(definition_path) as definition_file:
+		definition = json.load(definition_file)
+	field_order = definition.get("field_order") or []
+	if "inspection_report_tab" not in field_order:
+		return
+	inspection_fields = field_order[field_order.index("inspection_report_tab"):]
+	meta = frappe.get_meta("SS Coil")
+	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
+	order = [fieldname for fieldname in order if fieldname not in inspection_fields]
+	order.extend(fieldname for fieldname in inspection_fields if meta.get_field(fieldname))
+	frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
 
 
 SALES_ORDER_EMPTY_COLUMN_BREAKS = (

@@ -24,8 +24,9 @@ ss_coil.prints.ACTIONS = {
 		{ id: "tag_print", label: __("Tag Print") },
 		{ id: "coil_detail", label: __("Coil Detail"), format: "SS Coil Detail" },
 		{ id: "job_sheet", label: __("Job Sheet"), format: "SS Coil Job Sheet" },
-		{ id: "inspection_1", label: __("Inspection 1"), format: "SS Coil Inspection 1" },
-		{ id: "inspection_2", label: __("Inspection 2"), format: "SS Coil Inspection 2" },
+		{ id: "inspection_1", label: __("Slitter Insp"), format: "SS Coil Inspection 1" },
+		{ id: "inspection_2", label: __("Leveler Insp"), format: "SS Coil Inspection 2" },
+		{ id: "inspection_3", label: __("Reshearing Insp"), format: "SS Coil Inspection 3" },
 	],
 };
 
@@ -46,7 +47,9 @@ ss_coil.prints.add_form_buttons = function (frm) {
 			frm.remove_custom_button(action.label, __("Print"));
 			frm.remove_custom_button(action.label);
 		}
-		const inspection = action.id === "inspection_1" || action.id === "inspection_2";
+		const inspection_process = { inspection_1: "Slitter", inspection_2: "Leveler", inspection_3: "Reshearing" }[action.id];
+		if (inspection_process && frm.doc.operation !== inspection_process) return;
+		const inspection = action.id.startsWith("inspection_");
 		const button = frm.add_custom_button(
 			action.label,
 			() => ss_coil.prints.open(frm.doctype, frm.doc.name, action.id),
@@ -76,6 +79,27 @@ ss_coil.prints.open = function (doctype, name, action_id) {
 		ss_coil.prints.open_sales_order_job_sheet(name);
 		return;
 	}
+	if (doctype === "SS Coil" && action.id.startsWith("inspection_")) {
+		frappe.model.with_doc(doctype, name, () => {
+			const doc = frappe.get_doc(doctype, name);
+			const tags = [...new Set((doc?.job_output || []).map((row) => row.tag_no).filter(Boolean))];
+			if (!tags.length) {
+				frappe.msgprint(__("Add output tags to Job Output before printing an inspection report."));
+				return;
+			}
+			const dialog = new frappe.ui.Dialog({
+				title: action.label,
+				fields: [{ fieldname: "inspection_tag", label: __("Output Tag No"), fieldtype: "Select", options: tags.join("\n"), reqd: 1 }],
+				primary_action_label: __("Print"),
+				primary_action(values) {
+					dialog.hide();
+					ss_coil.prints.open_printview(doctype, name, action.format, { inspection_tag: values.inspection_tag });
+				},
+			});
+			dialog.show();
+		});
+		return;
+	}
 	ss_coil.prints.open_printview(doctype, name, action.format);
 };
 
@@ -91,6 +115,7 @@ ss_coil.prints.open_printview = function (doctype, name, format, options) {
 			"&no_letterhead=1" +
 			(options.trigger_print ? "&trigger_print=1" : "") +
 			(options.settings ? "&settings=" + encodeURIComponent(options.settings) : "") +
+		(options.inspection_tag ? "&inspection_tag=" + encodeURIComponent(options.inspection_tag) : "") +
 			"&_=" +
 			Date.now()
 	);

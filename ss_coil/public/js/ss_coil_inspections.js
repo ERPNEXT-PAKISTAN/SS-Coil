@@ -15,16 +15,25 @@ ss_coil.inspections.form2_checkpoints = [
 
 ss_coil.inspections.render = function (frm) {
  const panels = [
-  ["custom_inspection_form1", "custom_slitter_inspection_sheet_1", "Inspection", "Head, centre and tail measurements"],
-  ["custom_inspection_form2", "slitter_inspection_sheet_2", "Inspection 2", "Dimensional ranges and surface quality"],
+  ["custom_inspection_form1", "custom_slitter_inspection_sheet_1", "inspection_report_tab", "Slitter", "Head, centre and tail measurements"],
+  ["custom_inspection_form2", "slitter_inspection_sheet_2", "inspection_report_2_tab", "Leveler", "Dimensional ranges and surface quality"],
+  ["custom_reshearing_inspection_form", "reshearing_inspection_sheet", "inspection_report_3_tab", "Reshearing", "Dimensional ranges and surface quality"],
  ];
- const contextKey = `${frm.doc.name}|${frm.doc.order_no || ""}|${frm.doc.sales_order_item || ""}`;
+ const outputTags = [...new Set((frm.doc.job_output || []).map(row => row.tag_no).filter(Boolean))];
+ const inspectionTable = {Slitter: "custom_slitter_inspection_sheet_1", Leveler: "slitter_inspection_sheet_2", Reshearing: "reshearing_inspection_sheet"}[frm.doc.operation];
+ frm.__inspection_active_tags = frm.__inspection_active_tags || {};
+ const inspectionTag = frm.__inspection_active_tags[inspectionTable] || outputTags[0] || "";
+ const outputRow = (frm.doc.job_output || []).find(row => row.tag_no === inspectionTag);
+ const inspectionWidth = outputRow?.width || "";
+ const contextKey = `${frm.doc.name}|${frm.doc.order_no || ""}|${frm.doc.sales_order_item || ""}|${frm.doc.operation || ""}|${inspectionTag}|${inspectionWidth}`;
  if (frm.__inspection_context_key !== contextKey) {
   frm.__inspection_context_key = contextKey;
   frm.__inspection_context = {};
   frappe.call({
    method: "ss_coil.inspection_setup.get_inspection_context",
-   args: frm.is_new() ? {sales_order: frm.doc.order_no, sales_order_item: frm.doc.sales_order_item} : {ss_coil: frm.doc.name},
+   args: frm.is_new()
+    ? {sales_order: frm.doc.order_no, sales_order_item: frm.doc.sales_order_item, operation: frm.doc.operation, inspection_tag: inspectionTag, output_width: inspectionWidth}
+    : {ss_coil: frm.doc.name, inspection_tag: inspectionTag},
    callback: response => {
     if (frm.__inspection_context_key !== contextKey) return;
     frm.__inspection_context = response.message || {};
@@ -172,41 +181,63 @@ ss_coil.inspections.render = function (frm) {
   $('<th class="inspection-row-action"></th>').text(__("Remove")).appendTo(head);
   return $('<tbody></tbody>').appendTo(sheet);
  };
- panels.forEach(([html, table, title, subtitle]) => {
+ panels.forEach(([html, table, tab, process, subtitle]) => {
+  const active = frm.doc.operation === process;
+  frm.toggle_display(tab, active);
+  if (!active) return;
   const wrapper = frm.fields_dict[html]?.$wrapper;
   const df = frappe.meta.get_docfield(frm.doctype, table, frm.doc.name);
   if (!wrapper || !df) return;
+  if (!outputTags.length) {
+   wrapper.empty().append($('<p class="inspection-muted"></p>').text(__("Add output tags to Job Output before recording inspections.")));
+   return;
+  }
   const render = () => {
    // Display eight empty slots without making a saved document dirty on refresh.
    // Materialize all eight child records when the user edits the first cell.
    const savedRows = frm.doc[table] || [];
-   const rows = savedRows.length ? savedRows : Array.from({length: 8}, () => ({}));
+   frm.__inspection_active_tags = frm.__inspection_active_tags || {};
+   const selectedTag = frm.__inspection_active_tags[table] || outputTags[0] || "";
+   const rowsForSelectedTag = () => savedRows.filter(row => row.tag_no === selectedTag ||
+    (!row.tag_no && selectedTag && selectedTag === outputTags[0]));
+   let rows = rowsForSelectedTag();
+   if (!rows.length) rows = Array.from({length: 8}, () => ({tag_no: selectedTag}));
    const materializeRows = () => {
-    if (!(frm.doc[table] || []).length) {
-     for (let index = 0; index < 8; index++) frm.add_child(table);
-     frm.dirty();
+    let currentRows = frm.doc[table] || [];
+    if (selectedTag === outputTags[0]) {
+     currentRows.filter(row => !row.tag_no).forEach(row => { row.tag_no = selectedTag; });
     }
-    return frm.doc[table];
+    if (!currentRows.some(row => row.tag_no === selectedTag)) {
+     for (let index = 0; index < 8; index++) {
+      const row = frm.add_child(table);
+      row.tag_no = selectedTag;
+     }
+    }
+    frm.dirty();
+    return (frm.doc[table] || []).filter(row => row.tag_no === selectedTag);
    };
    const details = frm.__inspection_context || {};
-   const size = [details.thickness, details.width, details.length].map(value => value ?? '').join(' × ');
+   const is_slitter = table === "custom_slitter_inspection_sheet_1";
+   const size = [details.thickness, is_slitter ? (details.cutting_widths || details.width) : details.width,
+    is_slitter ? details.length_c : details.length].map(value => value ?? '').join(' × ');
    const context = [[__("Company"), details.company_name],
     [__("Customer"), details.customer || frm.doc.customer_name || frm.doc.for_customer],
     [__("P/O No."), details.po_no], [__("Specs"), details.specs],
     [__("Size (mm)"), size],
-    [__("Coil/Tag No."), (frm.doc.input_coil || []).map(row => row.tag_no).filter(Boolean).join(", ")],
+    [__("Coil/Tag No."), selectedTag],
     [__("Company Address"), details.company_address], [__("Phone"), details.company_phone],
-    [__("Sales Order"), frm.doc.order_no], [__("Operation"), frm.doc.operation],
+    [__("Sales Order No."), frm.doc.order_no], [__("Operation"), frm.doc.operation],
     [__("J/S No."), frm.doc.name]];
    wrapper.empty().append(style);
    const root = $('<div class="ss-inspection ss-coil-data-entry-dialog ss-coil-de-shell"></div>').appendTo(wrapper);
    const heading = $('<details class="inspection-heading ss-coil-de-parent-block"></details>').appendTo(root);
    frm.__inspection_heading_open = frm.__inspection_heading_open || {};
-   heading.prop('open', !!frm.__inspection_heading_open[table]).on('toggle', () => {
+   heading.prop('open', frm.__inspection_heading_open[table] ?? true).on('toggle', () => {
     frm.__inspection_heading_open[table] = heading.prop('open');
    });
    $('<summary></summary>').text(__(subtitle)).appendTo(heading);
-   const prefix = table === "custom_slitter_inspection_sheet_1" ? "inspection_1_" : "inspection_2_";
+   const prefix = table === "custom_slitter_inspection_sheet_1" ? "inspection_1_"
+    : table === "slitter_inspection_sheet_2" ? "inspection_2_" : "inspection_3_";
    const footerSuffixes = ['remarks', 'inspected_by', 'inspected_date', 'checked_by', 'checked_date'];
    const inspectionFields = frm.meta.fields.filter(field => field.fieldname.startsWith(prefix));
    const isFooter = field => footerSuffixes.includes(field.fieldname.slice(prefix.length));
@@ -218,7 +249,7 @@ ss_coil.inspections.render = function (frm) {
     const tables = $('<div class="inspection-header-tables"></div>').appendTo(heading);
     const orderTable = $('<table class="inspection-details-table"></table>').appendTo(tables);
     const orderBody = $('<tbody></tbody>').appendTo(orderTable);
-    [__("Customer"), __("Specs"), __("Size (mm)"), __("P/O No."), __("J/S No."), __("Coil/Tag No.")].forEach(label => {
+    [__("Customer"), __("Specs"), __("Size (mm)"), __("P/O No."), __("Sales Order No."), __("J/S No."), __("Coil/Tag No.")].forEach(label => {
      const value = context.find(entry => entry[0] === label)?.[1];
      const tr = $('<tr></tr>').appendTo(orderBody);
      $('<th scope="row"></th>').text(label).appendTo(tr);
@@ -230,7 +261,7 @@ ss_coil.inspections.render = function (frm) {
     const groups = $('<tr></tr>').appendTo(head);
     const limits = $('<tr></tr>').appendTo(head);
     const values = $('<tr></tr>').appendTo($('<tbody></tbody>').appendTo(toleranceTable));
-    const toleranceGroups = table === "slitter_inspection_sheet_2" ? [
+    const toleranceGroups = table !== "custom_slitter_inspection_sheet_1" ? [
      ['Thickness (mm)', ['thickness_min', 'thickness_max'], 'Thickness'],
      ['Width (mm)', ['width_min', 'width_max'], 'Width'],
      ['Length (mm)', ['length_min', 'length_max'], 'Length'],
@@ -252,16 +283,32 @@ ss_coil.inspections.render = function (frm) {
       $('<th></th>').text(__(suffixes.length === 2 ? (index === 0 ? 'Min.' : 'Max.') : 'Max.')).css({background, color}).appendTo(limits);
       const field = fieldMap[prefix + suffix];
       const cell = $('<td></td>').appendTo(values);
-      if (field) makeCell(cell, field, frm.doc[field.fieldname], value => frm.set_value(field.fieldname, value));
+      if (field) {
+       const automaticThicknessLimit = ["thickness_min", "thickness_max"].includes(suffix) ? details.tolerances?.[suffix] : null;
+       const fieldForCell = automaticThicknessLimit != null ? {...field, read_only: 1} : field;
+       makeCell(cell, fieldForCell, automaticThicknessLimit ?? frm.doc[field.fieldname], value => frm.set_value(field.fieldname, value));
+      }
      });
     });
    }
    const child = $('<div class="ss-coil-de-items-block"></div>').appendTo(root);
    const toolbar = $('<div class="ss-coil-de-block-title"></div>').appendTo(child);
+   $('<span class="ss-coil-de-block-title-text"></span>').text(`${__("Output Tag")}: ${selectedTag}`).appendTo(toolbar);
+   if (outputTags.length > 1) {
+    const tagPicker = $('<select class="form-control input-xs" style="display:inline-block;width:auto;max-width:240px;margin-right:8px"></select>').appendTo(toolbar);
+    outputTags.forEach(tag => $('<option></option>').val(tag).text(tag).appendTo(tagPicker));
+    tagPicker.val(selectedTag).on('change', () => {
+     frm.__inspection_active_tags[table] = tagPicker.val();
+     ss_coil.inspections.render(frm);
+    });
+   }
    $('<span class="ss-coil-de-block-title-text"></span>').text(__(table === "slitter_inspection_sheet_2" ? "Check Point Measurements" : "Measurement Rows")).appendTo(toolbar)
     .append($('<span class="badge"></span>').text(rows.length));
    if (writable) $('<button type="button" class="btn btn-primary btn-sm"></button>').text(__(table === "slitter_inspection_sheet_2" ? "Add Measurement Column" : "Add Row")).appendTo(toolbar).on('click', () => {
-    materializeRows(); frm.add_child(table); frm.dirty(); frm.refresh_field(table); render();
+    materializeRows();
+    const row = frm.add_child(table);
+    row.tag_no = selectedTag;
+    frm.dirty(); frm.refresh_field(table); render();
    });
    let fields = frappe.meta.get_docfields(df.options).filter(field => !['Section Break', 'Column Break', 'Tab Break', 'HTML', 'Heading', 'Table', 'Table MultiSelect', 'Button'].includes(field.fieldtype) && !field.hidden);
    if (table === "custom_slitter_inspection_sheet_1") {
@@ -332,3 +379,15 @@ ss_coil.inspections.render = function (frm) {
   frappe.model.with_doctype(df.options, render);
  });
 };
+
+frappe.ui.form.on("SS Coil", {
+	operation(frm) {
+		ss_coil.inspections.render(frm);
+	},
+	job_output_add(frm) {
+		ss_coil.inspections.render(frm);
+	},
+	job_output_remove(frm) {
+		ss_coil.inspections.render(frm);
+	},
+});

@@ -42,7 +42,11 @@ def pdf_body_html(jenv, template, print_format, args):
 	_inject_job_sheet_print_html(print_format, args)
 	_inject_sales_contract_context(print_format, args)
 	if print_format and print_format.name in INSPECTION_PRINT_FORMATS:
-		args["inspection_print_html"] = build_inspection_print_html(args["doc"], INSPECTION_PRINT_FORMATS[print_format.name])
+		args["inspection_print_html"] = build_inspection_print_html(
+			args["doc"],
+			INSPECTION_PRINT_FORMATS[print_format.name],
+			tag_no=frappe.form_dict.get("inspection_tag"),
+		)
 
 	# Bypass Print Designer for formats that rely on injected context / custom Jinja.
 	if print_format and print_format.name in (

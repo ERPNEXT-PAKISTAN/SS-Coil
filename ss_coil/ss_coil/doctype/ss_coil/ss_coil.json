@@ -87,6 +87,8 @@
   "job_sheet_report",
   "formula_tab",
   "formulas",
+  "tolerance_tab",
+  "tolerance_table_html",
   "inspection_report_tab",
   "custom_inspection_form1",
   "company_detail",
@@ -127,7 +129,24 @@
   "inspection_2_inspected_by",
   "inspection_2_inspected_date",
   "inspection_2_checked_by",
-  "inspection_2_checked_date"
+  "inspection_2_checked_date",
+  "inspection_report_3_tab",
+  "custom_reshearing_inspection_form",
+  "reshearing_inspection_sheet",
+  "inspection_3_thickness_min",
+  "inspection_3_thickness_max",
+  "inspection_3_width_min",
+  "inspection_3_width_max",
+  "inspection_3_length_min",
+  "inspection_3_length_max",
+  "inspection_3_edge_wave_max",
+  "inspection_3_camber_max",
+  "inspection_3_burr_max",
+  "inspection_3_remarks",
+  "inspection_3_inspected_by",
+  "inspection_3_inspected_date",
+  "inspection_3_checked_by",
+  "inspection_3_checked_date"
  ],
  "fields": [
   {
@@ -487,7 +506,8 @@
   {
    "fieldname": "linked_stock_entries_html",
    "fieldtype": "HTML",
-   "label": "Linked Stock Entries"
+   "label": "Linked Stock Entries",
+   "hidden": 1
   },
   {
    "fieldname": "column_break_pmky",
@@ -546,9 +566,19 @@
    "label": "Formulas"
   },
   {
+   "fieldname": "tolerance_tab",
+   "fieldtype": "Tab Break",
+   "label": "Tolerance"
+  },
+  {
+   "fieldname": "tolerance_table_html",
+   "fieldtype": "HTML",
+   "label": "Process Tolerance"
+  },
+  {
    "fieldname": "inspection_report_tab",
    "fieldtype": "Tab Break",
-   "label": "Inspection Report"
+   "label": "Slitter Insp"
   },
   {
    "fieldname": "company_detail",
@@ -570,12 +600,12 @@
   {
    "fieldname": "inspection_report_2_tab",
    "fieldtype": "Tab Break",
-   "label": "Inspection Report 2"
+   "label": "Leveler Insp"
   },
   {
    "fieldname": "slitter_inspection_sheet_2",
    "fieldtype": "Table",
-   "label": "Slitter Inspection Sheet 2",
+   "label": "Leveler Inspection Sheet",
    "options": "Inspection Measurements 2",
    "hidden": 1
   },
@@ -818,6 +848,113 @@
   },
   {
    "fieldname": "inspection_2_checked_date",
+   "label": "Checked Date",
+   "fieldtype": "Date",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_report_3_tab",
+   "fieldtype": "Tab Break",
+   "label": "Reshearing Insp"
+  },
+  {
+   "fieldname": "custom_reshearing_inspection_form",
+   "fieldtype": "HTML",
+   "label": "Reshearing Inspection Form"
+  },
+  {
+   "fieldname": "reshearing_inspection_sheet",
+   "fieldtype": "Table",
+   "label": "Reshearing Inspection Sheet",
+   "options": "Inspection Measurements 2",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_thickness_min",
+   "label": "Thickness Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_3_thickness_max",
+   "label": "Thickness Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_3_width_min",
+   "label": "Width Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_3_width_max",
+   "label": "Width Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_3_length_min",
+   "label": "Length Min",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_3_length_max",
+   "label": "Length Max",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "precision": "3"
+  },
+  {
+   "fieldname": "inspection_3_edge_wave_max",
+   "label": "Edge Wave Max",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_camber_max",
+   "label": "Camber Max",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_burr_max",
+   "label": "Burr Height Max",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_remarks",
+   "label": "Remarks",
+   "fieldtype": "Small Text",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_inspected_by",
+   "label": "Inspected By",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_inspected_date",
+   "label": "Inspection Date",
+   "fieldtype": "Date",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_checked_by",
+   "label": "Checked By",
+   "fieldtype": "Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "inspection_3_checked_date",
    "label": "Checked Date",
    "fieldtype": "Date",
    "hidden": 1

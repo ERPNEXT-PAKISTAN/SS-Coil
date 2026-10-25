@@ -7,6 +7,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "tag_no",
   "section_break_juxr",
   "thickness_min",
   "thickness_max",
@@ -50,6 +51,12 @@
   "appearance_reject"
  ],
  "fields": [
+  {
+   "fieldname": "tag_no",
+   "fieldtype": "Data",
+   "label": "Output Tag No",
+   "hidden": 1
+  },
   {
    "fieldname": "section_break_juxr",
    "fieldtype": "Section Break"

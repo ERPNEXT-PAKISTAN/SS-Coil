@@ -1,6 +1,7 @@
 """SS Coil Job Sheet — A4 HTML for form preview and print."""
 
 from html import escape
+from numbers import Number
 
 import frappe
 from frappe import _
@@ -52,6 +53,8 @@ JOB_OUTPUT_COLUMNS = (
 def _esc(value):
 	if value in (None, ""):
 		return "—"
+	if isinstance(value, Number) and not isinstance(value, bool):
+		value = f"{flt(value):.2f}"
 	return escape(str(value))
 
 
@@ -64,7 +67,7 @@ def _fmt_date(value):
 def _fmt_float(value):
 	if value in (None, ""):
 		return "—"
-	return escape(str(frappe.format(value, {"fieldtype": "Float"})))
+	return escape(f"{flt(value):.2f}")
 
 
 def _cell(value, align="left"):
@@ -315,6 +318,7 @@ def build_ss_coil_job_sheet_html(doc, for_print=False):
 				<td style="width:28%;text-align:center;vertical-align:middle;padding:0 8px 12px;">
 					<div class="ss-coil-job-sheet-operation" style="{header_title_style}">{_esc(ctx["operation_title"])}</div>
 					<div class="ss-coil-job-sheet-subtitle" style="margin-top:4px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.08em;">Job Sheet</div>
+					<div class="ss-coil-job-sheet-sales-order" style="margin-top:3px;font-size:10px;font-weight:700;color:#334155;">Sales Order: {_esc(ctx["sales_order_no"])}</div>
 				</td>
 				<td style="width:24%;vertical-align:middle;padding:0 0 12px 8px;">&nbsp;</td>
 			</tr>
@@ -410,6 +414,9 @@ def build_ss_coil_job_sheet_html(doc, for_print=False):
 			width: 100%;
 			max-width: 100%;
 			box-sizing: border-box;
+			font-size: 10px !important;
+			line-height: 1.2 !important;
+			padding: 12px 14px !important;
 		}
 		.ss-coil-job-sheet-header-logo-img {
 			height: 24px !important;
@@ -545,6 +552,7 @@ def build_ss_coil_job_sheet_html(doc, for_print=False):
 			.ss-coil-job-sheet-subtitle {
 				font-size: 9px !important;
 			}
+			.ss-coil-job-sheet-sales-order { font-size: 8px !important; }
 			.ss-coil-job-sheet-meta td {
 				padding: 8px !important;
 				font-size: inherit !important;

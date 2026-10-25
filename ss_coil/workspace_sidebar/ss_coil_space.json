@@ -44,18 +44,6 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "layers",
-   "indent": 1,
-   "keep_closed": 0,
-   "label": "SS Coil",
-   "link_to": "SS Coil",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
    "icon": "",
    "indent": 1,
    "keep_closed": 0,
@@ -104,6 +92,18 @@
   {
    "child": 1,
    "collapsible": 1,
+   "icon": "ruler",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Tolerances on Thickness",
+   "link_to": "Tolerances on Thickness",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
    "icon": "users",
    "indent": 1,
    "keep_closed": 0,
@@ -127,6 +127,18 @@
   {
    "child": 1,
    "collapsible": 1,
+   "icon": "package",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Stock Entry",
+   "link_to": "Stock Entry",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
    "icon": "shopping-cart",
    "indent": 1,
    "keep_closed": 0,
@@ -139,11 +151,35 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "package",
+   "icon": "layers",
    "indent": 1,
    "keep_closed": 0,
-   "label": "Stock Entry",
-   "link_to": "Stock Entry",
+   "label": "SS Coil",
+   "link_to": "SS Coil",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "truck",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Delivery Note",
+   "link_to": "Delivery Note",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "receipt",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Sales Invoice",
+   "link_to": "Sales Invoice",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -244,7 +280,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-25 18:19:59.144145",
+ "modified": "2026-10-26 02:46:34.622952",
  "modified_by": "Administrator",
  "module": "SS Coil",
  "name": "SS Coil Space",

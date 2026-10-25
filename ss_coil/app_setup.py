@@ -4,6 +4,7 @@ import frappe
 def run_post_install_setup():
 	"""Ensure tag-origin custom fields and form layouts exist after install or migrate."""
 	ensure_coil_balance_types()
+	seed_international_thickness_tolerance_table()
 	from ss_coil.api import (
 		setup_length_c_and_length_fields,
 		setup_sales_order_job_sheet_fields,
@@ -58,6 +59,73 @@ def ensure_coil_balance_types():
 				"type_name": type_name,
 				"balance_status": type_name,
 			}).insert(ignore_permissions=True)
+
+
+INTERNATIONAL_THICKNESS_TOLERANCES = (
+	(0.00, 0.25, 0.03, 0.03, 0.03, None, None),
+	(0.25, 0.40, 0.04, 0.04, 0.04, None, None),
+	(0.40, 0.60, 0.05, 0.05, 0.05, 0.06, None),
+	(0.60, 0.80, 0.06, 0.06, 0.06, 0.06, 0.07),
+	(0.80, 1.00, 0.06, 0.06, 0.07, 0.08, 0.09),
+	(1.00, 1.25, 0.07, 0.07, 0.08, 0.09, 0.11),
+	(1.25, 1.60, 0.08, 0.09, 0.10, 0.11, 0.13),
+	(1.60, 2.00, 0.10, 0.11, 0.12, 0.13, 0.15),
+	(2.00, 2.50, 0.12, 0.13, 0.14, 0.15, 0.17),
+	(2.50, 3.15, 0.14, 0.15, 0.16, 0.17, 0.20),
+	(3.15, None, 0.16, 0.17, 0.19, 0.20, None),
+)
+
+
+def seed_international_thickness_tolerance_table():
+	"""Install the supplied Slitter thickness-by-width table once, preserving edits."""
+	if not frappe.db.exists("DocType", "Tolerances on Thickness"):
+		return
+	name = frappe.db.get_value("Tolerances on Thickness", {"process_name": "Slitter"}, "name")
+	legacy_name = frappe.db.get_value("Tolerances on Thickness", "International Standard", "name")
+	if not name and legacy_name:
+		frappe.rename_doc("Tolerances on Thickness", legacy_name, "Slitter", force=True)
+		name = "Slitter"
+	if not name:
+		doc = frappe.get_doc({
+			"doctype": "Tolerances on Thickness",
+			"process_name": "Slitter",
+			"disabled": 0,
+		})
+	else:
+		doc = frappe.get_doc("Tolerances on Thickness", name)
+	labels = (
+		"Under 0.25",
+		"0.25 or over to and excl. 0.40",
+		"0.40 or over to and excl. 0.60",
+		"0.60 or over to and excl. 0.80",
+		"0.80 or over to and excl. 1.00",
+		"1.00 or over to and excl. 1.25",
+		"1.25 or over to and excl. 1.60",
+		"1.60 or over to and excl. 2.00",
+		"2.00 or over to and excl. 2.50",
+		"2.50 or over to and excl. 3.15",
+		"3.15 or over",
+	)
+	if not doc.tolerance_details:
+		for index, (thickness_from, thickness_to, under_630, width_630_1000, width_1000_1250, width_1250_1600, width_1600_over) in enumerate(INTERNATIONAL_THICKNESS_TOLERANCES):
+			doc.append("tolerance_details", {
+				"thickness_range": labels[index],
+				"thickness_from": thickness_from,
+				"thickness_to": thickness_to,
+				"tolerance_under_630": under_630,
+				"tolerance_630_1000": width_630_1000,
+				"tolerance_1000_1250": width_1000_1250,
+				"tolerance_1250_1600": width_1250_1600,
+				"tolerance_1600_over": width_1600_over,
+			})
+	else:
+		for row, label in zip(doc.tolerance_details, labels):
+			if not row.thickness_range:
+				row.thickness_range = label
+	if doc.is_new():
+		doc.insert(ignore_permissions=True)
+	else:
+		doc.save(ignore_permissions=True)
 
 
 def remove_vat_emirate_fields():
@@ -449,10 +517,10 @@ def sync_ss_sales_order_print_format():
 
 
 def sync_inspection_print_formats():
-	"""Install both reference-style inspection print formats on every migration."""
+	"""Install all process inspection print formats on every migration."""
 	from pathlib import Path
 	from frappe.modules.import_file import import_file_by_path
-	for form in (1, 2):
+	for form in (1, 2, 3):
 		folder = f"ss_coil_inspection_{form}"
 		path = Path(frappe.get_app_path("ss_coil", "ss_coil", "print_format", folder))
 		import_file_by_path(str(path / f"{folder}.json"), force=True)

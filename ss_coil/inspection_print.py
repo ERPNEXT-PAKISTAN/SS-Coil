@@ -24,7 +24,11 @@ FORM2_GROUPS = (
     ("Appearance OK/NG", tuple(("appearance_" + name, name.title()) for name in
         ("dent", "pimple", "dimple", "bump", "scratch", "rust", "abrasion", "dirty", "stain", "passed", "reject"))),
 )
-PRINT_FORMATS = {"SS Coil Inspection 1": 1, "SS Coil Inspection 2": 2}
+PRINT_FORMATS = {
+    "SS Coil Inspection 1": 1,
+    "SS Coil Inspection 2": 2,
+    "SS Coil Inspection 3": 3,
+}
 
 
 def _esc(value):
@@ -41,17 +45,24 @@ def _date(value):
     return _esc(formatdate(value)) if value else ""
 
 
-def _header(doc, context, form):
+def _header(doc, context, form, tag_no=None):
     prefix = f"inspection_{form}_"
-    title = "Slitter Inspection Sheet" if form == 1 else "Slitter Inspection Sheet Report"
+    title = {1: "Slitter Inspection Sheet", 2: "Leveler Inspection Sheet", 3: "Reshearing Inspection Sheet"}[form]
     logo = context.get("logo_url")
-    logo_html = f'<img class="inspection-logo" src="{_esc(logo)}">' if logo else ""
+    logo_html = f'<img class="inspection-logo" src="{_esc(logo)}" alt="Company logo" style="float:left;width:24px;height:24px;max-width:24px;max-height:24px;object-fit:contain;margin:0 8px 4px 0;">' if logo else ""
     company = f'<table class="inspection-company"><tr><td>{logo_html}<strong>{_esc(context.get("company_name"))}</strong><br>{_esc(context.get("company_address"))}<br>{_esc(context.get("company_phone"))}</td><td class="inspection-title">{title}</td></tr></table>'
-    size = " × ".join(str(context.get(key) if context.get(key) is not None else "") for key in ("thickness", "width", "length"))
-    tags = ", ".join(str(row.get("tag_no")) for row in (doc.get("input_coil") or []) if row.get("tag_no"))
+    if form == 1:
+        output = next((row for row in (doc.get("job_output") or []) if row.get("tag_no") == tag_no), None)
+        width = output.get("width") if output and output.get("width") not in (None, "") else context.get("cutting_widths") or context.get("width")
+        size_values = (context.get("thickness"), width, context.get("length_c"))
+    else:
+        size_values = (context.get("thickness"), context.get("width"), context.get("length"))
+    size = " × ".join(str(value if value is not None else "") for value in size_values)
+    tag_value = tag_no or ""
     labels = (("Customer", context.get("customer") or doc.get("customer_name") or doc.get("for_customer")),
               ("Specs", context.get("specs")), ("Size (mm)", size),
-              ("P/O No.", context.get("po_no")), ("J/S No.", doc.name), ("Coil/Tag No.", tags))
+              ("P/O No.", context.get("po_no")), ("Sales Order No.", context.get("sales_order") or doc.get("order_no")),
+              ("J/S No.", doc.name), ("Coil/Tag No.", tag_value))
     details = '<table class="inspection-details">' + "".join(f'<tr><th>{label}</th><td>{_esc(value)}</td></tr>' for label, value in labels) + '</table>'
     groups = [("Thickness (mm)", ("thickness_min", "thickness_max")), ("Width (mm)", ("width_min", "width_max"))]
     if form == 1:
@@ -62,7 +73,11 @@ def _header(doc, context, form):
     tolerances = f'<table class="inspection-tolerances"><thead><tr><th colspan="{count}">Tolerances</th></tr><tr>'
     tolerances += "".join(f'<th colspan="{len(fields)}">{label}</th>' for label, fields in groups) + '</tr><tr>'
     tolerances += "".join('<th>Min.</th><th>Max.</th>' if len(fields) == 2 else '<th>Max.</th>' for _, fields in groups) + '</tr></thead><tbody><tr>'
-    tolerances += "".join(f'<td>{_value(doc.get(prefix + field))}</td>' for _, fields in groups for field in fields) + '</tr></tbody></table>'
+    rule_values = context.get("tolerances") or {}
+    tolerances += "".join(
+        f'<td>{_value(rule_values.get(field) if field in ("thickness_min", "thickness_max") and rule_values.get(field) is not None else (doc.get(prefix + field) if doc.get(prefix + field) not in (None, "") else rule_values.get(field)))}</td>'
+        for _, fields in groups for field in fields
+    ) + '</tr></tbody></table>'
     return company + f'<table class="inspection-heading"><tr><td style="width:35%">{details}</td><td>{tolerances}</td></tr></table>'
 
 
@@ -102,18 +117,25 @@ def _form2(rows, offset):
     return ''.join(result)
 
 
-def build_inspection_print_html(doc, form=1):
+def build_inspection_print_html(doc, form=1, tag_no=None):
     form = int(form)
-    if form not in (1, 2):
+    if form not in (1, 2, 3):
         frappe.throw("Invalid inspection form")
     if isinstance(doc, str):
         doc = frappe.get_doc("SS Coil", doc)
     doc.check_permission("read")
-    context = get_inspection_context(ss_coil=doc.name)
-    rows = doc.get("custom_slitter_inspection_sheet_1" if form == 1 else "slitter_inspection_sheet_2") or []
+    table = {1: "custom_slitter_inspection_sheet_1", 2: "slitter_inspection_sheet_2", 3: "reshearing_inspection_sheet"}[form]
+    output_tags = [row.get("tag_no") for row in (doc.get("job_output") or []) if row.get("tag_no")]
+    tag_no = tag_no or (output_tags[0] if output_tags else None)
+    context = get_inspection_context(ss_coil=doc.name, inspection_tag=tag_no)
+    rows = [row for row in (doc.get(table) or []) if row.get("tag_no") == tag_no or (not row.get("tag_no") and tag_no and output_tags and tag_no == output_tags[0])]
+    if form == 1 and tag_no:
+        output = next((row for row in (doc.get("job_output") or []) if row.get("tag_no") == tag_no), None)
+        if output and output.get("width") not in (None, ""):
+            context["cutting_widths"] = output.get("width")
     size = 32 if form == 1 else 8
     pages = []
     for offset in range(0, max(len(rows), 1), size):
         measurements = _form1(rows[offset:offset + size], offset) if form == 1 else _form2(rows[offset:offset + size], offset)
-        pages.append('<section class="inspection-print-page">' + _header(doc, context, form) + measurements + _footer(doc, form) + '</section>')
+        pages.append('<section class="inspection-print-page">' + _header(doc, context, form, tag_no) + measurements + _footer(doc, form) + '</section>')
     return ''.join(pages)

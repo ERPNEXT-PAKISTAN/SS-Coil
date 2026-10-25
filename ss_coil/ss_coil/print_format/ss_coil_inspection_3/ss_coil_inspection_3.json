@@ -1,0 +1,11 @@
+{
+ "doctype": "Print Format",
+ "doc_type": "SS Coil",
+ "custom_format": 1,
+ "disabled": 0,
+ "html": "",
+ "module": "SS Coil",
+ "name": "SS Coil Inspection 3",
+ "print_format_type": "Jinja",
+ "standard": "No"
+}

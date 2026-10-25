@@ -1610,7 +1610,7 @@
   "property": "label",
   "property_type": "Data",
   "row_name": null,
-  "value": "Inspection"
+  "value": "Slitter Insp"
  },
  {
   "default_value": null,
@@ -1626,6 +1626,6 @@
   "property": "label",
   "property_type": "Data",
   "row_name": null,
-  "value": "Inspection2"
+  "value": "Leveler Insp"
  }
 ]

@@ -93,6 +93,7 @@ frappe.ui.form.on("SS Coil", {
 	},
 	refresh(frm) {
 		frappe.require(["/assets/ss_coil/css/stock_entry_data_entry.css", "/assets/ss_coil/js/ss_coil_inspections.js"], () => ss_coil.inspections.render(frm));
+		frappe.require("/assets/ss_coil/js/ss_coil_tolerance.js", () => ss_coil.tolerance.render(frm));
 		frm.toggle_display("process_control_enabled", false);
 		frm.toggle_display("elapsed_time", false);
 		frappe.require("/assets/ss_coil/js/ss_coil_prints.js", () => {
@@ -124,6 +125,7 @@ frappe.ui.form.on("SS Coil", {
 		apply_sales_order_item_link_title(frm);
 	},
 	operation(frm) {
+		frappe.require("/assets/ss_coil/js/ss_coil_tolerance.js", () => ss_coil.tolerance.render(frm));
 		sync_process_preview(frm);
 		syncMachineFromSalesOrderOperation(frm);
 		ss_coil.process.syncSoItemDisplayDimension(frm);
@@ -440,31 +442,12 @@ function apply_sales_order_item_link_title(frm) {
 function set_stock_entry_field_description(frm, rows) {
 	const linkedField = frm.fields_dict.linked_stock_entries_html;
 	if (linkedField && linkedField.$wrapper) {
-		const esc = (value) => frappe.utils.escape_html(String(value || ""));
-		const entries = rows && rows.length
-			? rows
-				.map((row) => {
-					const name = esc(row.name);
-					const detail = [row.purpose, row.posting_date].filter(Boolean).map(esc).join(" · ");
-					return `<a class="ss-coil-linked-stock-entry" href="/app/stock-entry/${encodeURIComponent(
-						row.name
-					)}">${name}</a>${detail ? `<span class="text-muted"> (${detail})</span>` : ""}`;
-				})
-				.join('<span class="text-muted"> · </span>')
-			: `<span class="text-muted">${__("No linked Stock Entry found for this Sales Order.")}</span>`;
-		linkedField.$wrapper.html(`<div class="ss-coil-linked-stock-entries">${entries}</div>`);
+		linkedField.$wrapper.empty();
 	}
 
 	const control = frm.fields_dict.stock_entry;
 	if (!control) return;
-	if (!rows || !rows.length) {
-		frm.set_df_property("stock_entry", "description", __("No linked Stock Entry found for this Sales Order."));
-		return;
-	}
-	const summary = rows
-		.map((row) => `${row.purpose || "Stock Entry"}: ${row.name}${row.posting_date ? ` (${row.posting_date})` : ""}`)
-		.join(" | ");
-	frm.set_df_property("stock_entry", "description", __("Linked Stock Entries: {0}", [summary]));
+	frm.set_df_property("stock_entry", "description", "");
 }
 
 function sync_linked_stock_entry_field(frm, skipAutofill = false) {

@@ -1,0 +1,5 @@
+{% if inspection_print_html %}
+{{ inspection_print_html | safe }}
+{% else %}
+{{ build_inspection_print_html(doc, 3) | safe }}
+{% endif %}

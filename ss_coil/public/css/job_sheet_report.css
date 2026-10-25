@@ -33,6 +33,34 @@
 	vertical-align: middle !important;
 }
 
+.ss-coil-job-sheet-root {
+	font-size: 10px !important;
+	line-height: 1.2 !important;
+	padding: 12px 14px !important;
+}
+
+.ss-coil-job-sheet-root section {
+	margin-top: 8px !important;
+}
+
+.ss-coil-job-sheet-root section div {
+	font-size: 9px !important;
+	line-height: 1.2 !important;
+}
+
+.ss-coil-job-sheet-root section table.ss-coil-job-sheet-data th,
+.ss-coil-job-sheet-root section table.ss-coil-job-sheet-data td {
+	padding: 3px 5px !important;
+	font-size: 8px !important;
+	line-height: 1.15 !important;
+}
+
+.ss-coil-job-sheet-root .ss-coil-job-sheet-header-logo-img {
+	height: 20px !important;
+	max-height: 20px !important;
+	max-width: 100px !important;
+}
+
 .form-layout .form-column.ss-coil-job-sheet-full-col,
 .form-layout .frappe-control[data-fieldname="job_sheet_report"],
 .form-layout .frappe-control[data-fieldname="custom_job_sheet_report"] {

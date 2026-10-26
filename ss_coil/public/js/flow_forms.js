@@ -13,8 +13,6 @@ const FLOW_CHILD_GROUPS = [
 			"custom_ref_no",
 			"custom_mill",
 			"mill",
-			"custom_mill_key",
-			"mill_key",
 			"custom_po_no",
 		],
 	},

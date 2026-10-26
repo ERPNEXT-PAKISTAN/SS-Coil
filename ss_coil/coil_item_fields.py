@@ -7,12 +7,6 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 from ss_coil.api import _has_field
 
-# Extra inward fields that exist on Stock Entry Detail but were not always on SO.
-EXTRA_COIL_INWARD_FIELDS = (
-	"custom_mill_key",
-	"custom_for_customer",
-)
-
 TRACE_CHILD_DOCTYPES = (
 	"Stock Entry Detail",
 	"Sales Order Item",
@@ -78,19 +72,8 @@ def setup_coil_item_trace_fields():
 		if rows:
 			fields_by_dt[dt] = rows
 
-	# Sales Order Item: missing Mill Key / For Customer from Stock Entry layout
+	# Sales Order Item: missing For Customer from Stock Entry layout
 	so_extra = []
-	if not _field_exists("Sales Order Item", "custom_mill_key"):
-		so_extra.append(
-			{
-				"fieldname": "custom_mill_key",
-				"label": "Mill Key",
-				"fieldtype": "Data",
-				"insert_after": "custom_js_number"
-				if _field_exists("Sales Order Item", "custom_js_number")
-				else "custom_thickness",
-			}
-		)
 	if not _field_exists("Sales Order Item", "custom_for_customer"):
 		so_extra.append(
 			{
@@ -187,7 +170,6 @@ SALES_ORDER_ITEM_STOCK_ENTRY_COLUMNS = (
 	"custom_finish_good_item",
 	"custom_tag_no",
 	"custom_mill",
-	"custom_mill_key",
 	"custom_ref_no",
 	"custom_thickness",
 	"custom_width",

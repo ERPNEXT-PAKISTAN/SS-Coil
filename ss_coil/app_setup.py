@@ -22,6 +22,7 @@ def run_post_install_setup():
 
 	setup_tag_origin_fields()
 	remove_duplicate_coil_quantity_fields()
+	remove_mill_key_fields()
 	setup_ss_coil_duplicate_override_field()
 	setup_stock_entry_sales_order_link_fields()
 	setup_updatable_stock_entry_sales_order_property_setters()
@@ -116,6 +117,39 @@ def remove_duplicate_coil_quantity_fields():
 		)
 	frappe.clear_cache(doctype="Stock Entry Detail")
 	frappe.clear_cache(doctype="Purchase Receipt Item")
+
+
+def remove_mill_key_fields():
+	"""Remove the obsolete Mill Key field from coil transaction items and layouts."""
+	doctypes = (
+		"Stock Entry Detail",
+		"Purchase Receipt Item",
+		"Sales Order Item",
+		"Delivery Note Item",
+		"Sales Invoice Item",
+		"Purchase Invoice Item",
+	)
+	for doctype in doctypes:
+		custom_field = f"{doctype}-custom_mill_key"
+		if frappe.db.exists("Custom Field", custom_field):
+			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True, force=True)
+
+	for prop in frappe.get_all(
+		"Property Setter", filters={"property": "field_order"}, fields=["name", "doc_type", "value"]
+	):
+		if prop.doc_type not in (*doctypes, "Coil Production Line"):
+			continue
+		try:
+			field_order = frappe.parse_json(prop.value or "[]")
+		except (TypeError, ValueError):
+			continue
+		filtered = [field for field in field_order if field not in {"custom_mill_key", "mill_key"}]
+		if filtered != field_order:
+			frappe.db.set_value(
+				"Property Setter", prop.name, "value", frappe.as_json(filtered), update_modified=False
+			)
+	for doctype in (*doctypes, "Coil Production Line"):
+		frappe.clear_cache(doctype=doctype)
 
 
 def setup_ss_coil_duplicate_override_field():

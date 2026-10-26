@@ -76,7 +76,7 @@ def _meta_field_to_dict(meta, fieldname):
 			"qty": "Qty (kg)",
 			"custom_estimated_wt": "Tag WT",
 			"custom_create_tag_numbers": "Tag",
-		}.get(fieldname, df.label or ("Mill Key" if df.fieldname == "custom_mill_key" else df.label)),
+		}.get(fieldname, df.label),
 		"fieldtype": df.fieldtype,
 		"options": df.options,
 		"reqd": df.reqd,

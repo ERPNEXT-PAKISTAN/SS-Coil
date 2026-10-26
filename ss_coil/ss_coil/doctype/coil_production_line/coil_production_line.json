@@ -36,7 +36,6 @@
   "ref_no",
   "js_number",
   "column_break_dims",
-  "mill_key",
   "po_no",
   "thickness",
   "width",
@@ -248,11 +247,6 @@
    "fieldname": "js_number",
    "fieldtype": "Data",
    "label": "JS Number"
-  },
-  {
-   "fieldname": "mill_key",
-   "fieldtype": "Data",
-   "label": "Mill Key"
   },
   {
    "fieldname": "po_no",

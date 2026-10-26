@@ -148,7 +148,6 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 				row.sales_order,
 				row.dimension,
 				row.mill,
-				row.mill_key,
 				row.location,
 				row.js_number,
 			]

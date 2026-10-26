@@ -762,7 +762,6 @@ const SO_ITEM_COIL_PRESERVE_FIELDS = [
 	"custom_location",
 	"custom_ref_no",
 	"custom_js_number",
-	"custom_mill_key",
 	"custom_po_no",
 	"custom_thickness",
 	"custom_width",

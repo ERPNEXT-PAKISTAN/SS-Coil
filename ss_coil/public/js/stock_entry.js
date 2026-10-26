@@ -380,7 +380,7 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	{ label: "Item", fields: ["item_code", "qty"] },
 	{
 		label: "Identification",
-		fields: ["custom_tag_no", "custom_ref_no", "custom_mill", "custom_mill_key"],
+		fields: ["custom_tag_no", "custom_ref_no", "custom_mill"],
 	},
 	{
 		label: "Dimensions",

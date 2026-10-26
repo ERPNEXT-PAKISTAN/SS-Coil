@@ -21,6 +21,7 @@ def run_post_install_setup():
 	from ss_coil.workspace_sync import sync_ss_coil_workspace
 
 	setup_tag_origin_fields()
+	remove_duplicate_coil_quantity_fields()
 	setup_ss_coil_duplicate_override_field()
 	setup_stock_entry_sales_order_link_fields()
 	setup_updatable_stock_entry_sales_order_property_setters()
@@ -65,6 +66,54 @@ def sync_stock_entry_item_descriptions():
 			frappe.db.set_value(
 				"Custom Field", custom_field, "description", description, update_modified=False
 			)
+	frappe.clear_cache(doctype="Stock Entry Detail")
+	frappe.clear_cache(doctype="Purchase Receipt Item")
+
+
+def remove_duplicate_coil_quantity_fields():
+	"""Keep custom_qty_of_coil as the single coil-count field on inward items."""
+	duplicates = {
+		"Stock Entry Detail": ("custom_qty_of_coils", "custom_no_of_coils"),
+		"Purchase Receipt Item": ("custom_qty_of_coils", "custom_no_of_coils"),
+	}
+
+	for doctype, fieldnames in duplicates.items():
+		if not frappe.db.has_column(doctype, "custom_qty_of_coil"):
+			continue
+		canonical = f"{doctype}-custom_qty_of_coil"
+		if frappe.db.exists("Custom Field", canonical):
+			frappe.db.set_value(
+				"Custom Field", canonical, "insert_after", "custom_comments", update_modified=False
+			)
+		for fieldname in fieldnames:
+			if not frappe.db.has_column(doctype, fieldname):
+				continue
+			# Preserve values from an unused duplicate only where the canonical field is blank.
+			frappe.db.sql(
+				f"""UPDATE `tab{doctype}`
+				SET `custom_qty_of_coil` = `{fieldname}`
+				WHERE (`custom_qty_of_coil` IS NULL OR `custom_qty_of_coil` = 0)
+				AND `{fieldname}` IS NOT NULL"""
+			)
+			custom_field = f"{doctype}-{fieldname}"
+			if frappe.db.exists("Custom Field", custom_field):
+				frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True, force=True)
+
+	# Remove deleted fields from the saved Stock Entry Detail form order.
+	property_setter = "Stock Entry Detail-main-field_order"
+	if frappe.db.exists("Property Setter", property_setter):
+		value = frappe.db.get_value("Property Setter", property_setter, "value")
+		try:
+			field_order = frappe.parse_json(value or "[]")
+		except (TypeError, ValueError):
+			field_order = []
+		field_order = [
+			field for field in field_order
+			if field not in {"custom_qty_of_coils", "custom_no_of_coils"}
+		]
+		frappe.db.set_value(
+			"Property Setter", property_setter, "value", frappe.as_json(field_order), update_modified=False
+		)
 	frappe.clear_cache(doctype="Stock Entry Detail")
 	frappe.clear_cache(doctype="Purchase Receipt Item")
 

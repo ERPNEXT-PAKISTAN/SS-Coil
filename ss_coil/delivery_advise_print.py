@@ -19,7 +19,9 @@ def build_delivery_advise_print_html(doc):
 
 		header = _delivery_advise_header(doc)
 		rows, total_qty, total_weight, total_estimated_wt = _delivery_advise_item_rows(doc)
-		return _render_delivery_advise_html(header, rows, total_qty, total_weight, total_estimated_wt)
+		return _render_delivery_advise_html(
+			header, rows, total_qty, total_weight, total_estimated_wt, doc.doctype
+		)
 	except Exception:
 		frappe.log_error(title="Delivery Advise Print Error")
 		return "<p>Unable to render Delivery Advise print format.</p>"
@@ -123,7 +125,10 @@ def _text(value, default="-"):
 	return str(value)
 
 
-def _render_delivery_advise_html(header, rows, total_qty, total_weight, total_estimated_wt):
+def _render_delivery_advise_html(header, rows, total_qty, total_weight, total_estimated_wt, doctype):
+	qty_heading = "Coil" if doctype == "Stock Entry" else "Qty"
+	weight_heading = "Weight Qty" if doctype == "Stock Entry" else "Weight"
+	estimated_wt_heading = "Tag WT" if doctype == "Stock Entry" else "Estimated WT"
 	item_rows = []
 	for row in rows:
 		item_rows.append(
@@ -184,9 +189,9 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight, total_es
 		+ '<th class="col-compact">Thickness</th>'
 		+ '<th class="col-compact">Width</th>'
 		+ '<th class="col-compact">Length C</th>'
-		+ '<th class="col-compact">Qty</th>'
-		+ '<th class="col-compact">Weight</th>'
-		+ '<th class="col-compact">Estimated WT</th>'
+		+ f'<th class="col-compact">{qty_heading}</th>'
+		+ f'<th class="col-compact">{weight_heading}</th>'
+		+ f'<th class="col-compact">{estimated_wt_heading}</th>'
 		+ '<th class="col-medium">JS No</th>'
 		+ '<th class="col-compact">Condition</th>'
 		+ '<th class="col-wrap">Remarks</th>'

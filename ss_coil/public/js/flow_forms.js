@@ -1552,6 +1552,13 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 						fieldtype: "HTML",
 					},
 					{
+						fieldname: "allow_duplicate_process",
+						label: __("Allow Duplicate SS Coil"),
+						fieldtype: "Check",
+						default: 0,
+						description: __("Leave unchecked to prevent creating another SS Coil for an item/process that already has one."),
+					},
+					{
 						fieldname: "operation",
 						label: __("Operation"),
 						fieldtype: "Select",
@@ -1564,6 +1571,15 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 				primary_action(values) {
 					const row = options.find((o) => o._label === values.production_row) || first;
 					if (!row) return;
+					if (row.process_statuses && row.process_statuses[values.operation] && !values.allow_duplicate_process) {
+						frappe.msgprint(
+							__("This item already has an SS Coil entry for {0}: {1}.", [
+								values.operation,
+								row.process_statuses[values.operation].ss_coil || row.process_statuses[values.operation].status,
+							])
+						);
+						return;
+					}
 					frappe.call({
 						method: "ss_coil.api.create_ss_coil_from_sales_order",
 						args: {
@@ -1571,6 +1587,7 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 							sales_order_item: row.sales_order_item,
 							operation: values.operation,
 							coil_production_line: row.coil_production_line || null,
+							allow_duplicate_process: values.allow_duplicate_process ? 1 : 0,
 						},
 						freeze: true,
 						freeze_message: __("Creating SS Coil..."),
@@ -1585,6 +1602,9 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 
 			function apply_row(label) {
 				const row = options.find((o) => o._label === label) || first;
+				const statuses = row.process_statuses || {};
+				const allowDuplicate = Boolean(dialog.get_value("allow_duplicate_process"));
+				const available = allowDuplicate ? row._processes : row._processes.filter((process) => !statuses[process]);
 				const details = dialog.fields_dict.item_details;
 				if (details && details.$wrapper) {
 					details.$wrapper.html(
@@ -1599,16 +1619,23 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 							)}: ${frappe.utils.escape_html(row.dimension || "-")} | ${__("Tag")}: ${frappe.utils.escape_html(
 								row.tag_no || "-"
 							)}</div>
+							<div style="margin-top:6px"><b>${__("Process status")}:</b> ${row._processes.map((process) => {
+								const status = statuses[process];
+								return `${frappe.utils.escape_html(process)}: ${status ? `${frappe.utils.escape_html(status.status)} (${frappe.utils.escape_html(status.ss_coil)})` : __("Not created")}`;
+							}).join(" · ")}</div>
+							${allowDuplicate ? `<div style="margin-top:6px;color:#b45309"><b>${__("Duplicate creation is enabled.")}</b> ${__("This may create a second process entry for this item.")}</div>` : ""}
 						</div>`
 					);
 				}
 				const op = dialog.fields_dict.operation;
-				op.df.options = row._processes.join("\n");
+				op.df.options = (available.length ? available : [__("All processes already created")]).join("\n");
 				op.refresh();
-				op.set_value(row._processes[0] || "");
+				op.set_value(available[0] || __("All processes already created"));
+				dialog.get_primary_btn().prop("disabled", !available.length);
 			}
 
 			dialog.fields_dict.production_row.df.onchange = () => apply_row(dialog.get_value("production_row"));
+			dialog.fields_dict.allow_duplicate_process.df.onchange = () => apply_row(dialog.get_value("production_row"));
 			dialog.show();
 			apply_row(first._label);
 		},

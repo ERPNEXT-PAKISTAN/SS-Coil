@@ -21,6 +21,7 @@ def run_post_install_setup():
 	from ss_coil.workspace_sync import sync_ss_coil_workspace
 
 	setup_tag_origin_fields()
+	setup_ss_coil_duplicate_override_field()
 	setup_stock_entry_sales_order_link_fields()
 	setup_updatable_stock_entry_sales_order_property_setters()
 	setup_coil_item_trace_fields()
@@ -46,6 +47,27 @@ def run_post_install_setup():
 	remove_arabic_name_fields()
 	remove_vat_emirate_fields()
 	frappe.db.commit()
+
+
+def setup_ss_coil_duplicate_override_field():
+	"""Add the explicit, opt-in override for a repeated SS Coil process entry."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	create_custom_fields(
+		{
+			"SS Coil": [
+				{
+					"fieldname": "allow_duplicate_process",
+					"label": "Allow Duplicate Process Entry",
+					"fieldtype": "Check",
+					"default": "0",
+					"insert_after": "sales_order_item",
+					"description": "Explicitly allow another SS Coil for this Sales Order item and process.",
+				}
+			]
+		},
+		update=True,
+	)
 
 
 def ensure_coil_balance_types():

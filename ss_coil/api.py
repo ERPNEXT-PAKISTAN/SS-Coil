@@ -13,6 +13,7 @@ import re
 from io import BytesIO
 
 import frappe
+from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.utils import cint, flt, now_datetime, nowdate, strip_html_tags
 from barcode import Code128
@@ -3148,8 +3149,8 @@ def _build_sales_order_item_operation_rows(sales_order_item):
 
 	ss_coils = frappe.get_all(
 		"SS Coil",
-		filters={"sales_order_item": sales_order_item},
-		fields=["name", "operation", "order_status", "machine", "modified"],
+		filters={"sales_order_item": sales_order_item, "docstatus": ["<", 2]},
+		fields=["name", "operation", "order_status", "machine", "modified", "docstatus"],
 		order_by="modified desc",
 	)
 	by_operation = {}
@@ -3165,6 +3166,7 @@ def _build_sales_order_item_operation_rows(sales_order_item):
 			continue
 		label = PROCESS_LABELS[key]
 		match = by_operation.get(label.lower())
+		matching_entries = [row for row in ss_coils if (row.operation or "").strip().lower() == label.lower()]
 		rows.append(
 			{
 				"process_key": key,
@@ -3172,6 +3174,8 @@ def _build_sales_order_item_operation_rows(sales_order_item):
 				"planned": _clean_text(planned) or label,
 				"line_status": (match.order_status if match else "Not Started"),
 				"ss_coil": match.name if match else None,
+				"ss_coil_count": len(matching_entries),
+				"duplicate_entries": len(matching_entries) > 1,
 				"machine": match.machine if match else (_clean_text(planned) or None),
 				"source": source_label,
 			}
@@ -5663,24 +5667,35 @@ def get_sales_order_ss_coil_create_options(source_name):
 				existing = frappe.get_all(
 					"SS Coil",
 					filters={"coil_production_line": row.name},
-					fields=["name", "operation", "order_status"],
+					fields=["name", "operation", "order_status", "docstatus"],
 					order_by="modified desc",
 				)
 			elif so_item_name:
 				existing = frappe.get_all(
 					"SS Coil",
 					filters={"sales_order_item": so_item_name},
-					fields=["name", "operation", "order_status"],
+					fields=["name", "operation", "order_status", "docstatus"],
 					order_by="modified desc",
 				)
 			else:
 				existing = frappe.get_all(
 					"SS Coil",
 					filters={"order_no": source.name},
-					fields=["name", "operation", "order_status"],
+					fields=["name", "operation", "order_status", "docstatus"],
 					order_by="modified desc",
 					limit=20,
 				)
+			process_statuses = {
+				process: next(
+					(
+						{"status": existing_row.order_status or "Not Started", "ss_coil": existing_row.name}
+						for existing_row in existing
+						if existing_row.operation == process and existing_row.docstatus < 2
+					),
+					None,
+				)
+				for process in processes
+			}
 			options.append(
 				{
 					"coil_production_line": row.name,
@@ -5699,6 +5714,7 @@ def get_sales_order_ss_coil_create_options(source_name):
 					"processes": processes,
 					"operations": processes,
 					"existing_ss_coils": existing,
+					"process_statuses": process_statuses,
 				}
 			)
 		if options:
@@ -5713,9 +5729,20 @@ def get_sales_order_ss_coil_create_options(source_name):
 		existing = frappe.get_all(
 			"SS Coil",
 			filters={"sales_order_item": row.name},
-			fields=["name", "operation", "order_status"],
+			fields=["name", "operation", "order_status", "docstatus"],
 			order_by="modified desc",
 		)
+		process_statuses = {
+			process: next(
+				(
+					{"status": existing_row.order_status or "Not Started", "ss_coil": existing_row.name}
+					for existing_row in existing
+					if existing_row.operation == process and existing_row.docstatus < 2
+				),
+				None,
+			)
+			for process in processes
+		}
 		options.append(
 			{
 				"coil_production_line": None,
@@ -5729,6 +5756,7 @@ def get_sales_order_ss_coil_create_options(source_name):
 				"processes": processes,
 				"operations": processes,
 				"existing_ss_coils": existing,
+				"process_statuses": process_statuses,
 			}
 		)
 	return options
@@ -5736,7 +5764,11 @@ def get_sales_order_ss_coil_create_options(source_name):
 
 @frappe.whitelist()
 def create_ss_coil_from_sales_order(
-	source_name, sales_order_item=None, operation=None, coil_production_line=None
+	source_name,
+	sales_order_item=None,
+	operation=None,
+	coil_production_line=None,
+	allow_duplicate_process=0,
 ):
 	"""Build a new (unsaved) SS Coil from a Sales Order production row.
 
@@ -5799,7 +5831,27 @@ def create_ss_coil_from_sales_order(
 	ss_coil.order_received_date = source.transaction_date
 	ss_coil.sc_date = nowdate()
 	ss_coil.order_status = "Not Started"
+	ss_coil.allow_duplicate_process = 1 if cint(allow_duplicate_process) else 0
 	op_link, machine = _operation_and_machine_from_sales_order_item(proxy, operation)
+	if so_item and op_link and not ss_coil.allow_duplicate_process:
+		duplicate_filters = {
+			"sales_order_item": so_item.name,
+			"operation": op_link,
+			"docstatus": ["<", 2],
+		}
+		if prod and _has_field("SS Coil", "coil_production_line"):
+			duplicate_filters["coil_production_line"] = prod.name
+		existing_entry = frappe.get_all(
+			"SS Coil", filters=duplicate_filters, fields=["name", "order_status"], limit=1
+		)
+		if existing_entry:
+			frappe.throw(
+				_("An SS Coil entry for {0} already exists for this Sales Order item: {1} ({2}). Open the existing entry.").format(
+					op_link,
+					frappe.utils.get_link_to_form("Sales Order Item", so_item.name),
+					frappe.utils.get_link_to_form("SS Coil", existing_entry[0].name),
+				)
+			)
 	if operation:
 		process_key = _process_key_for_operation(operation, proxy)
 		configured = _get_enabled_processes_from_row(proxy, custom=True)

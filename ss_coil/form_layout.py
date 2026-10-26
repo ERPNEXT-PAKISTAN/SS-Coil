@@ -17,7 +17,7 @@ LAYOUT_PROPERTIES = {"field_order", "hidden", "button_color"}
 
 @frappe.whitelist()
 def sync_coil_form_layouts():
-	"""Apply Stock Entry / Sales Order field layout from app fixtures on every install/migrate."""
+	"""Sync app-owned layouts while preserving layouts customized on this site."""
 	_apply_fixture_property_setters()
 	remove_sales_order_empty_custom_column_breaks()
 	remove_sales_order_item_legacy_columns()
@@ -152,10 +152,10 @@ def _apply_fixture_property_setters():
 			continue
 		if record.get("property") not in LAYOUT_PROPERTIES:
 			continue
-		# Keep a site's current Sales Order layout across app migrations instead
-		# of resetting its manually arranged columns from this older fixture.
+		# Keep manually arranged Sales Order and Stock Entry layouts across app
+		# migrations instead of resetting them from an older fixture.
 		if (
-			record.get("doc_type") == "Sales Order"
+			record.get("doc_type") in {"Sales Order", "Stock Entry"}
 			and record.get("property") == "field_order"
 			and frappe.db.exists("Property Setter", record.get("name"))
 		):

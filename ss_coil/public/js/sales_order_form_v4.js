@@ -284,13 +284,6 @@ function add_sales_order_create_ss_coil_button(frm) {
 	frm.add_custom_button(
 		__("Create SS Coil"),
 		function () {
-			const items = (frm.doc.items || []).filter(
-				(row) => !cint(row.custom_is_process_charge) && !row.custom_process_charge_key
-			);
-			if (items.length === 1) {
-				open_ss_coil_from_sales_order(frm.doc.name, items[0].name);
-				return;
-			}
 			open_sales_order_ss_coil_item_dialog(frm);
 		},
 		__("Create")
@@ -329,7 +322,13 @@ function add_sales_order_delivery_by_tag_button(frm) {
 	);
 }
 
-function open_ss_coil_from_sales_order(sales_order, sales_order_item, operation, coil_production_line) {
+function open_ss_coil_from_sales_order(
+	sales_order,
+	sales_order_item,
+	operation,
+	coil_production_line,
+	allow_duplicate_process = false
+) {
 	frappe.call({
 		method: "ss_coil.api.create_ss_coil_from_sales_order",
 		args: {
@@ -337,6 +336,7 @@ function open_ss_coil_from_sales_order(sales_order, sales_order_item, operation,
 			sales_order_item,
 			operation,
 			coil_production_line: coil_production_line || null,
+			allow_duplicate_process: allow_duplicate_process ? 1 : 0,
 		},
 		freeze: true,
 		freeze_message: __("Preparing SS Coil..."),
@@ -391,6 +391,13 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 					label: __("Item Details"),
 				},
 				{
+					fieldname: "allow_duplicate_process",
+					label: __("Allow Duplicate SS Coil"),
+					fieldtype: "Check",
+					default: 0,
+					description: __("Unchecked by default. Enable only when you intentionally need another entry for this item and process."),
+				},
+				{
 					fieldname: "operation",
 					label: __("Operation"),
 					fieldtype: "Select",
@@ -408,15 +415,26 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 				fields,
 				primary_action_label: __("Create"),
 				primary_action(values) {
-					dialog.hide();
 					const row =
 						options.find((entry) => entry._label === values.production_row) ||
 						options[0];
+					const existingProcess = (row.process_statuses || {})[values.operation];
+					if (existingProcess && !values.allow_duplicate_process) {
+						frappe.msgprint(
+							__("This item already has an SS Coil entry for {0}: {1}.", [
+								values.operation,
+								existingProcess.ss_coil || existingProcess.status,
+							])
+						);
+						return;
+					}
+					dialog.hide();
 					open_ss_coil_from_sales_order(
 						frm.doc.name,
 						row.sales_order_item,
 						values.operation,
-						row.coil_production_line
+						row.coil_production_line,
+						values.allow_duplicate_process
 					);
 				},
 			});
@@ -425,10 +443,14 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 			const detailsField = dialog.fields_dict.item_details;
 			const operationField = dialog.fields_dict.operation;
 			const existingField = dialog.fields_dict.existing_html;
+			const allowDuplicateField = dialog.fields_dict.allow_duplicate_process;
 
 			function renderExisting(optionKey) {
 				const row = options.find((entry) => entry._label === optionKey) || options[0];
 				const processes = row.processes || row.operations || ["Slitter"];
+				const statuses = row.process_statuses || {};
+				const allowDuplicate = Boolean(allowDuplicateField.get_value());
+				const available = allowDuplicate ? processes : processes.filter((process) => !statuses[process]);
 				detailsField.$wrapper.html(
 					`<div style="font-size:12px;color:#334155;line-height:1.6;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
 						<div><b>${frappe.utils.escape_html(row.item_code || "-")}</b> — ${frappe.utils.escape_html(
@@ -441,9 +463,10 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 						)}</div>
 					</div>`
 				);
-				operationField.df.options = processes.join("\n");
-				operationField.set_value(processes[0]);
+				operationField.df.options = (available.length ? available : [__("All processes already created")]).join("\n");
+				operationField.set_value(available[0] || __("All processes already created"));
 				operationField.refresh();
+				dialog.get_primary_btn().prop("disabled", !available.length);
 
 				const existing = row.existing_ss_coils || [];
 				if (!existing.length) {
@@ -469,6 +492,7 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 			}
 
 			itemField.df.onchange = () => renderExisting(itemField.get_value());
+			allowDuplicateField.df.onchange = () => renderExisting(itemField.get_value());
 			dialog.show();
 			itemField.set_value(optionKeys[0]);
 			renderExisting(optionKeys[0]);
@@ -2328,7 +2352,11 @@ function build_sales_order_planning_operations_html(items) {
 					<td>${escape_html(op.operation || "-")}</td>
 					<td>${escape_html(op.planned || "-")}</td>
 					<td>${statusPill(op.line_status || "-", ssCoilStatusTone(op.line_status))}</td>
-					<td>${op.ss_coil ? docLink("ss-coil", op.ss_coil, "dark") : "-"}</td>
+					<td>${op.ss_coil ? docLink("ss-coil", op.ss_coil, "dark") : "-"}${
+						op.duplicate_entries
+							? `<br><span class="indicator-pill red">${__("Duplicate entries")}: ${op.ss_coil_count}</span>`
+							: ""
+					}</td>
 					<td>${escape_html(op.machine || "-")}</td>
 					<td>${escape_html(op.source || "-")}</td>
 				</tr>`);
@@ -2348,7 +2376,7 @@ function build_sales_order_planning_operations_html(items) {
 					<th>Operation</th>
 					<th>Planned (SO / Coil SO)</th>
 					<th>SS Coil Status</th>
-					<th>SS Coil</th>
+					<th>SS Coil / Duplicate Check</th>
 					<th>Machine</th>
 					<th>Source</th>
 				</tr>

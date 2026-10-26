@@ -21,13 +21,6 @@ SS_COIL_OPERATION_NAME_SUFFIXES = {
 # workflow.
 SS_COIL_LOCKED_STATUSES = ("Completed", "Closed")
 
-# order_status values that DON'T block a new document from being created for
-# the same Sales Order Item + Operation + tag - see _block_duplicate_active_entry.
-# "Stopped" deliberately still blocks: a stopped entry should be reopened
-# (Resume, in the flow banner) rather than re-created from scratch.
-SS_COIL_NON_BLOCKING_STATUSES = ("Completed", "Closed")
-
-
 class SSCoil(Document):
 	def autoname(self):
 		suffix = SS_COIL_OPERATION_NAME_SUFFIXES.get(self.operation, "SL")
@@ -42,38 +35,31 @@ class SSCoil(Document):
 		self._block_duplicate_active_entry()
 
 	def _block_duplicate_active_entry(self):
-		# Prevents the same Sales Order Item + Operation + coil tag from being
-		# started twice (either by hand, picking the same Sales Order Item
-		# again, or by re-running Create Next Process). create_next_ss_coil_entry
-		# already skips (not errors) when it finds one of these, since that's
-		# an automated chain call; this is the hard-stop for manual creation.
+		# One SS Coil entry is allowed per production row and operation. This
+		# also blocks re-creating an entry after it is completed; reopen the
+		# existing document for corrections or continuation.
 		if not self.is_new():
+			return
+		if self.get("allow_duplicate_process"):
 			return
 		if not self.sales_order_item or not self.operation:
 			return
-		tag_no = None
-		if self.input_coil:
-			tag_no = self.input_coil[0].get("tag_no")
-		if not tag_no:
-			return
-
+		if self.coil_production_line:
+			context_filter = "ifnull(parent.coil_production_line, '') = %(coil_production_line)s"
+			context = {"coil_production_line": self.coil_production_line}
+		else:
+			context_filter = "ifnull(parent.sales_order_item, '') = %(sales_order_item)s"
+			context = {"sales_order_item": self.sales_order_item}
 		existing = frappe.db.sql(
-			"""
+			f"""
 			select parent.name, parent.order_status
-			from `tabCoil Input` child
-			inner join `tabSS Coil` parent on parent.name = child.parent
-			where child.tag_no = %(tag_no)s
-				and ifnull(parent.sales_order_item, '') = %(sales_order_item)s
+			from `tabSS Coil` parent
+			where {context_filter}
 				and ifnull(parent.operation, '') = %(operation)s
-				and ifnull(parent.order_status, '') not in %(non_blocking)s
+				and parent.docstatus < 2
 			limit 1
 			""",
-			{
-				"tag_no": tag_no,
-				"sales_order_item": self.sales_order_item,
-				"operation": self.operation,
-				"non_blocking": SS_COIL_NON_BLOCKING_STATUSES,
-			},
+			{**context, "operation": self.operation},
 			as_dict=True,
 		)
 		if not existing:
@@ -82,9 +68,8 @@ class SSCoil(Document):
 		row = existing[0]
 		frappe.throw(
 			_(
-				"An active {0} entry already exists for this Sales Order Item: {1} (status: {2}). "
-				"Open it and use Resume/Stop from its Process Flow instead of creating a new one, "
-				"or complete/close it first."
+				"An SS Coil entry for {0} already exists for this Sales Order Item: {1} (status: {2}). "
+				"Open the existing entry. A Sales Order item can have only one SS Coil entry per process."
 			).format(self.operation, frappe.utils.get_link_to_form("SS Coil", row.name), row.order_status)
 		)
 

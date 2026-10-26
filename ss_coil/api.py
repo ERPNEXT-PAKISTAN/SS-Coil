@@ -212,7 +212,7 @@ def setup_length_c_and_length_fields():
 				"default": DEFAULT_LENGTH_C,
 				"insert_after": "custom_js_number",
 				"allow_on_submit": 1,
-				"description": "Shown in dimension (e.g. letter C). Not used for numeric length calculations.",
+				"description": "Length of Coil which is unknown",
 			}
 		)
 		doc.insert(ignore_permissions=True)
@@ -230,7 +230,13 @@ def setup_length_c_and_length_fields():
 		(
 			"Stock Entry Detail",
 			"custom_length_c",
-			{"fieldtype": "Data", "label": "Length C", "precision": "", "default": DEFAULT_LENGTH_C},
+			{
+				"fieldtype": "Data",
+				"label": "Length C",
+				"precision": "",
+				"default": DEFAULT_LENGTH_C,
+				"description": "Length of Coil which is unknown",
+			},
 		),
 		("Stock Entry Detail", "custom_length", {"fieldtype": "Float", "label": "Length"}),
 	]:
@@ -6468,11 +6474,7 @@ def setup_tag_origin_fields():
 				"in_list_view": 1,
 				"allow_on_submit": 1,
 				"depends_on": "eval:parent.purpose == 'Material Receipt'",
-				"description": (
-					"Customer-ordered finish good (e.g. FG Slitter / FG Leveler / FG Reshearing). "
-					"When Create Sales Order runs, this becomes the Sales Order item and the "
-					"received mother coil stays linked as Raw Material Item + Tag."
-				),
+				"description": "",
 			},
 		],
 	}
@@ -6485,7 +6487,7 @@ def setup_tag_origin_fields():
 
 	for doctype, description in {
 		"Purchase Receipt Item": "Assigned automatically at material inward. Carried forward on downstream documents.",
-		"Stock Entry Detail": "Assigned automatically at Material Receipt inward. Carried forward on downstream documents.",
+		"Stock Entry Detail": "",
 		"Sales Order Item": "Child tag from SS Coil production. Parent tag is stored in Raw Material Tag No.",
 	}.items():
 		fieldname = f"{doctype}-custom_tag_no"

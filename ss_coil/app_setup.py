@@ -28,6 +28,7 @@ def run_post_install_setup():
 	setup_coil_manufacture_fields()
 	setup_coil_production_fields()
 	setup_length_c_and_length_fields()
+	sync_stock_entry_item_descriptions()
 	setup_ss_coil_machine_operation_link()
 	setup_sales_order_job_sheet_fields()
 	ensure_process_charge_items()
@@ -47,6 +48,25 @@ def run_post_install_setup():
 	remove_arabic_name_fields()
 	remove_vat_emirate_fields()
 	frappe.db.commit()
+
+
+def sync_stock_entry_item_descriptions():
+	"""Keep inward coil field help text aligned with the SS Coil app wording."""
+	descriptions = {
+		("Stock Entry Detail", "custom_finish_good_item"): "",
+		("Purchase Receipt Item", "custom_finish_good_item"): "",
+		("Stock Entry Detail", "custom_tag_no"): "",
+		("Stock Entry Detail", "custom_length_c"): "Length of Coil which is unknown",
+		("Purchase Receipt Item", "custom_length_c"): "Length of Coil which is unknown",
+	}
+	for (doctype, fieldname), description in descriptions.items():
+		custom_field = f"{doctype}-{fieldname}"
+		if frappe.db.exists("Custom Field", custom_field):
+			frappe.db.set_value(
+				"Custom Field", custom_field, "description", description, update_modified=False
+			)
+	frappe.clear_cache(doctype="Stock Entry Detail")
+	frappe.clear_cache(doctype="Purchase Receipt Item")
 
 
 def setup_ss_coil_duplicate_override_field():

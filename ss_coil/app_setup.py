@@ -23,6 +23,7 @@ def run_post_install_setup():
 	setup_tag_origin_fields()
 	remove_duplicate_coil_quantity_fields()
 	remove_mill_key_fields()
+	sync_saved_stock_entry_layouts()
 	setup_ss_coil_duplicate_override_field()
 	setup_stock_entry_sales_order_link_fields()
 	setup_updatable_stock_entry_sales_order_property_setters()
@@ -150,6 +151,25 @@ def remove_mill_key_fields():
 			)
 	for doctype in (*doctypes, "Coil Production Line"):
 		frappe.clear_cache(doctype=doctype)
+
+
+def sync_saved_stock_entry_layouts():
+	"""Reapply the app-owned Stock Entry and item layouts after fixture sync."""
+	import json
+
+	fixture_path = frappe.get_app_path("ss_coil", "fixtures", "property_setter.json")
+	with open(fixture_path, encoding="utf-8") as fixture_file:
+		property_setters = json.load(fixture_file)
+
+	for name in ("Stock Entry-main-field_order", "Stock Entry Detail-main-field_order"):
+		row = next((item for item in property_setters if item.get("name") == name), None)
+		if not row or not frappe.db.exists("Property Setter", name):
+			continue
+		frappe.db.set_value(
+			"Property Setter", name, "value", row["value"], update_modified=False
+		)
+	frappe.clear_cache(doctype="Stock Entry")
+	frappe.clear_cache(doctype="Stock Entry Detail")
 
 
 def setup_ss_coil_duplicate_override_field():

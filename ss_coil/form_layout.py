@@ -22,7 +22,6 @@ def sync_coil_form_layouts():
 	remove_sales_order_empty_custom_column_breaks()
 	remove_sales_order_item_legacy_columns()
 	_sync_stock_entry_job_purpose_field()
-	_ensure_stock_entry_detail_field_order()
 	ensure_ss_coil_job_sheet_field_order()
 	ensure_ss_coil_cutting_scheme_field_order()
 	ensure_ss_coil_thickness_field_order()
@@ -152,10 +151,10 @@ def _apply_fixture_property_setters():
 			continue
 		if record.get("property") not in LAYOUT_PROPERTIES:
 			continue
-		# Keep manually arranged Sales Order and Stock Entry layouts across app
-		# migrations instead of resetting them from an older fixture.
+		# Keep manually arranged parent and child Stock Entry layouts, plus the
+		# Sales Order layout, across app migrations.
 		if (
-			record.get("doc_type") in {"Sales Order", "Stock Entry"}
+			record.get("doc_type") in {"Sales Order", "Stock Entry", "Stock Entry Detail"}
 			and record.get("property") == "field_order"
 			and frappe.db.exists("Property Setter", record.get("name"))
 		):
@@ -210,45 +209,6 @@ def _sync_stock_entry_job_purpose_field():
 		field_spec,
 		update_modified=False,
 	)
-
-
-def _ensure_stock_entry_detail_field_order():
-	ps_name = "Stock Entry Detail-main-field_order"
-	if not frappe.db.exists("Property Setter", ps_name):
-		return
-
-	order = json.loads(frappe.db.get_value("Property Setter", ps_name, "value") or "[]")
-	changed = False
-
-	if "custom_create_tag_no" not in order and "custom_tag_no" in order:
-		order.insert(order.index("custom_tag_no") + 1, "custom_create_tag_no")
-		changed = True
-
-	if "custom_finish_good_item" not in order:
-		anchor = "item_name" if "item_name" in order else "item_code"
-		if anchor in order:
-			order.insert(order.index(anchor) + 1, "custom_finish_good_item")
-			changed = True
-
-	process_fields = (
-		"custom_section_break_gbgwe",
-		"custom_slitter",
-		"custom_column_break_kidd0",
-		"custom_leveler",
-		"custom_column_break_ehrzk",
-		"custom_reshearing",
-	)
-	if "custom_qty_of_coil" in order:
-		insert_at = order.index("custom_qty_of_coil") + 1
-		for fieldname in process_fields:
-			if fieldname in order:
-				continue
-			order.insert(insert_at, fieldname)
-			insert_at += 1
-			changed = True
-
-	if changed:
-		frappe.db.set_value("Property Setter", ps_name, "value", json.dumps(order), update_modified=False)
 
 
 # Machine / cutting / signature fields belong on the Details tab.

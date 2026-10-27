@@ -3151,27 +3151,8 @@ function cutting_scheme_dimension_part(value) {
 	return String(value).trim();
 }
 
-function cutting_scheme_row_dimension(group, row) {
-	const t = cutting_scheme_dimension_part(group.thickness);
-	const w = cutting_scheme_dimension_part(row?.width ?? group.width);
-	const pk = group.process_key || "slitter";
-	if (pk === "slitter") {
-		const lc = group.length_c || "C";
-		return [t, w, lc].filter((p) => p !== "").join(" × ");
-	}
-	const len = cutting_scheme_dimension_part(row?.length ?? group.length);
-	return [t, w, len].filter((p) => p !== "").join(" × ");
-}
-
-function cutting_scheme_process_dimension(group) {
-	const row_list = group.rows || [];
-	return (
-		(row_list.length ? cutting_scheme_row_dimension(group, row_list[0]) : "") ||
-		cutting_scheme_row_dimension(group, {}) ||
-		group.dimension ||
-		group.dimension_numeric ||
-		""
-	);
+function cutting_scheme_main_item_dimension(group) {
+	return group.main_item_dimension || group.dimension || group.dimension_numeric || "";
 }
 
 function build_cutting_scheme_process_table_html(group) {
@@ -3259,6 +3240,9 @@ function group_cutting_scheme_report_by_item(groups) {
 		if (!entry.meta.dimension_numeric && group.dimension_numeric) {
 			entry.meta.dimension_numeric = group.dimension_numeric;
 		}
+		if (!entry.meta.main_item_dimension && group.main_item_dimension) {
+			entry.meta.main_item_dimension = group.main_item_dimension;
+		}
 		if (!entry.meta.thickness && group.thickness) {
 			entry.meta.thickness = group.thickness;
 		}
@@ -3287,19 +3271,12 @@ function build_cutting_scheme_report_html(groups) {
 
 	return group_cutting_scheme_report_by_item(groups)
 		.map(({ meta, processes }) => {
+			const mainItemDim = cutting_scheme_main_item_dimension(meta);
 			const process_chips = processes
 				.map((p) => {
 					const label = p.process_label || SS_COIL_CUTTING_PROCESS_LABELS[p.process_key] || p.process_key;
-					const dim = cutting_scheme_process_dimension(p);
 					return `<div style="margin:0 0 8px;padding:8px 10px;background:rgba(15,23,42,.28);border:1px solid rgba(255,255,255,.12);border-radius:10px;">
 						<div style="display:inline-block;background:#334155;color:#f8fafc;font-size:10px;font-weight:800;padding:3px 9px;border-radius:6px;letter-spacing:.02em;">${escape_html(label)}</div>
-						${
-							dim
-								? `<div style="margin-top:6px;font-size:12px;font-weight:700;color:#e2e8f0;line-height:1.35;">
-							<span style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:800;margin-right:6px;">${__("Dim")}</span>${escape_html(dim)}
-						</div>`
-								: ""
-						}
 					</div>`;
 				})
 				.join("");
@@ -3310,15 +3287,17 @@ function build_cutting_scheme_report_html(groups) {
 					<div style="display:flex; gap:0; align-items:stretch; flex-wrap:wrap;">
 						<div style="flex:0 0 240px; background:linear-gradient(180deg,#203549 0%,#314e68 100%); color:#f7fbff; padding:14px 16px;">
 							<div style="font-size:10px; text-transform:uppercase; letter-spacing:.1em; opacity:.72;">Cutting Item</div>
-							<div style="font-size:17px; font-weight:800; margin-top:6px;line-height:1.3;">${escape_html(meta.item_label || meta.sales_order_item)}</div>
+							<div style="font-size:14px; font-weight:800; margin-top:6px;line-height:1.3;">${escape_html(meta.item_label || meta.sales_order_item)}</div>
 							<div style="margin-top:10px; display:grid; gap:6px; font-size:11px; color:#d9e7f4;">
 								<div><strong>Qty:</strong> ${meta.qty || "-"}</div>
-								<div><strong>Tag:</strong> ${escape_html(meta.tag_no || "-")}</div>
+								<div><strong>Tag:</strong> <span style="font-size:13px;font-weight:800;color:#fff;">${escape_html(meta.tag_no || "-")}</span></div>
+								${meta.sales_order_item ? `<button type="button" class="btn btn-xs btn-light ss-coil-cutting-scheme-action" data-sales-order-item="${escape_html(meta.sales_order_item)}" style="justify-self:start;margin-top:4px;font-weight:700;">${__("Cutting Scheme")}</button>` : ""}
 							</div>
 							<div style="margin-top:12px;">
 								<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.75;margin-bottom:8px;">${__(
 									"Processes",
 								)}</div>
+								${mainItemDim ? `<div style="margin:0 0 8px;padding:7px 9px;background:rgba(15,23,42,.28);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#f8fafc;font-size:12px;font-weight:700;"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:800;margin-right:6px;">DIM</span>${escape_html(mainItemDim)}</div>` : ""}
 								${process_chips}
 							</div>
 						</div>
@@ -3686,6 +3665,14 @@ function render_coil_production_sheet_calculations(frm) {
 function render_cutting_scheme_report(frm) {
 	const html_field = frm.fields_dict.custom_cutting_scheme_report;
 	if (!html_field) return;
+	html_field.$wrapper
+		.off("click.ssCoilCuttingScheme", ".ss-coil-cutting-scheme-action")
+		.on("click.ssCoilCuttingScheme", ".ss-coil-cutting-scheme-action", function () {
+			const salesOrderItem = $(this).attr("data-sales-order-item");
+			if (salesOrderItem) {
+				open_cutting_scheme_dialog(frm, "Sales Order Item", salesOrderItem);
+			}
+		});
 	if (frm.is_new && frm.is_new()) {
 		html_field.$wrapper.empty();
 		return;

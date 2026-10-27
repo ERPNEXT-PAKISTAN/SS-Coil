@@ -49,7 +49,7 @@ def run_post_install_setup():
 	sync_ss_coil_workspace()
 	remove_arabic_name_fields()
 	remove_vat_emirate_fields()
-	sync_saved_stock_entry_layouts()
+	sync_saved_form_layouts()
 	frappe.db.commit()
 
 
@@ -153,15 +153,19 @@ def remove_mill_key_fields():
 		frappe.clear_cache(doctype=doctype)
 
 
-def sync_saved_stock_entry_layouts():
-	"""Reapply the app-owned Stock Entry and item layouts after fixture sync."""
+def sync_saved_form_layouts():
+	"""Reapply app-owned parent and child form layouts after all migration setup."""
 	import json
 
 	fixture_path = frappe.get_app_path("ss_coil", "fixtures", "property_setter.json")
 	with open(fixture_path, encoding="utf-8") as fixture_file:
 		property_setters = json.load(fixture_file)
 
-	for name in ("Stock Entry-main-field_order", "Stock Entry Detail-main-field_order"):
+	for name in (
+		"Stock Entry-main-field_order",
+		"Stock Entry Detail-main-field_order",
+		"Sales Order-main-field_order",
+	):
 		row = next((item for item in property_setters if item.get("name") == name), None)
 		if not row or not frappe.db.exists("Property Setter", name):
 			continue
@@ -170,6 +174,7 @@ def sync_saved_stock_entry_layouts():
 		)
 	frappe.clear_cache(doctype="Stock Entry")
 	frappe.clear_cache(doctype="Stock Entry Detail")
+	frappe.clear_cache(doctype="Sales Order")
 
 
 def setup_ss_coil_duplicate_override_field():

@@ -23,7 +23,6 @@ def run_post_install_setup():
 	setup_tag_origin_fields()
 	remove_duplicate_coil_quantity_fields()
 	remove_mill_key_fields()
-	sync_saved_stock_entry_layouts()
 	setup_ss_coil_duplicate_override_field()
 	setup_stock_entry_sales_order_link_fields()
 	setup_updatable_stock_entry_sales_order_property_setters()
@@ -50,6 +49,7 @@ def run_post_install_setup():
 	sync_ss_coil_workspace()
 	remove_arabic_name_fields()
 	remove_vat_emirate_fields()
+	sync_saved_stock_entry_layouts()
 	frappe.db.commit()
 
 

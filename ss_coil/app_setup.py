@@ -49,6 +49,8 @@ def run_post_install_setup():
 	sync_ss_coil_workspace()
 	remove_arabic_name_fields()
 	remove_vat_emirate_fields()
+	remove_empty_sales_order_duplicate_tabs()
+	allow_sales_order_fields_after_submit()
 	sync_saved_form_layouts()
 	frappe.db.commit()
 
@@ -154,7 +156,7 @@ def remove_mill_key_fields():
 
 
 def sync_saved_form_layouts():
-	"""Reapply app-owned parent and child form layouts after all migration setup."""
+	"""Reapply app-owned Stock Entry and Sales Order layouts after migration setup."""
 	import json
 
 	fixture_path = frappe.get_app_path("ss_coil", "fixtures", "property_setter.json")
@@ -165,6 +167,7 @@ def sync_saved_form_layouts():
 		"Stock Entry-main-field_order",
 		"Stock Entry Detail-main-field_order",
 		"Sales Order-main-field_order",
+		"Sales Order Item-main-field_order",
 	):
 		row = next((item for item in property_setters if item.get("name") == name), None)
 		if not row or not frappe.db.exists("Property Setter", name):
@@ -174,6 +177,58 @@ def sync_saved_form_layouts():
 		)
 	frappe.clear_cache(doctype="Stock Entry")
 	frappe.clear_cache(doctype="Stock Entry Detail")
+	frappe.clear_cache(doctype="Sales Order")
+	frappe.clear_cache(doctype="Sales Order Item")
+
+
+def remove_empty_sales_order_duplicate_tabs():
+	"""Delete the empty legacy Other and Job Sheet tabs from Sales Order."""
+	import json
+
+	property_setter = "Sales Order-main-field_order"
+	order = []
+	if frappe.db.exists("Property Setter", property_setter):
+		order = json.loads(frappe.db.get_value("Property Setter", property_setter, "value") or "[]")
+
+	remove = set()
+	for fieldname in ("custom_other", "custom_job_sheet"):
+		name = f"Sales Order-{fieldname}"
+		if not frappe.db.exists("Custom Field", name):
+			continue
+		field = frappe.get_doc("Custom Field", name)
+		if field.fieldtype != "Tab Break":
+			continue
+		if fieldname == "custom_other" and fieldname in order and order.index(fieldname) == len(order) - 1:
+			remove.add(fieldname)
+		elif (
+			fieldname == "custom_job_sheet"
+			and field.hidden
+			and fieldname in order
+			and order.index(fieldname) + 1 < len(order)
+			and order[order.index(fieldname) + 1] == "custom_dashboard"
+		):
+			remove.add(fieldname)
+
+	if "custom_job_sheet" in remove and frappe.db.exists("Custom Field", "Sales Order-custom_dashboard"):
+		frappe.db.set_value(
+			"Custom Field", "Sales Order-custom_dashboard", "insert_after", "connections_tab", update_modified=False
+		)
+	for fieldname in remove:
+		frappe.delete_doc("Custom Field", f"Sales Order-{fieldname}", ignore_permissions=True, force=True)
+	if order and remove:
+		order = [fieldname for fieldname in order if fieldname not in remove]
+		frappe.db.set_value(
+			"Property Setter", property_setter, "value", json.dumps(order), update_modified=False
+		)
+	frappe.clear_cache(doctype="Sales Order")
+
+
+def allow_sales_order_fields_after_submit():
+	"""Allow the requested Sales Order fields to be edited after submission."""
+	for fieldname in ("custom_for_customer", "custom_igp_no"):
+		name = f"Sales Order-{fieldname}"
+		if frappe.db.exists("Custom Field", name):
+			frappe.db.set_value("Custom Field", name, "allow_on_submit", 1, update_modified=False)
 	frappe.clear_cache(doctype="Sales Order")
 
 

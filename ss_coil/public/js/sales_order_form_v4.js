@@ -3243,6 +3243,9 @@ function group_cutting_scheme_report_by_item(groups) {
 		if (!entry.meta.main_item_dimension && group.main_item_dimension) {
 			entry.meta.main_item_dimension = group.main_item_dimension;
 		}
+		if (entry.meta.main_item_remaining_width == null && group.main_item_remaining_width != null) {
+			entry.meta.main_item_remaining_width = group.main_item_remaining_width;
+		}
 		if (!entry.meta.thickness && group.thickness) {
 			entry.meta.thickness = group.thickness;
 		}
@@ -3272,14 +3275,6 @@ function build_cutting_scheme_report_html(groups) {
 	return group_cutting_scheme_report_by_item(groups)
 		.map(({ meta, processes }) => {
 			const mainItemDim = cutting_scheme_main_item_dimension(meta);
-			const process_chips = processes
-				.map((p) => {
-					const label = p.process_label || SS_COIL_CUTTING_PROCESS_LABELS[p.process_key] || p.process_key;
-					return `<div style="margin:0 0 8px;padding:8px 10px;background:rgba(15,23,42,.28);border:1px solid rgba(255,255,255,.12);border-radius:10px;">
-						<div style="display:inline-block;background:#334155;color:#f8fafc;font-size:10px;font-weight:800;padding:3px 9px;border-radius:6px;letter-spacing:.02em;">${escape_html(label)}</div>
-					</div>`;
-				})
-				.join("");
 			const process_tables = processes.map((p) => build_cutting_scheme_process_table_html(p)).join("");
 
 			return `
@@ -3294,11 +3289,8 @@ function build_cutting_scheme_report_html(groups) {
 								${meta.sales_order_item ? `<button type="button" class="btn btn-xs btn-light ss-coil-cutting-scheme-action" data-sales-order-item="${escape_html(meta.sales_order_item)}" style="justify-self:start;margin-top:4px;font-weight:700;">${__("Cutting Scheme")}</button>` : ""}
 							</div>
 							<div style="margin-top:12px;">
-								<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.75;margin-bottom:8px;">${__(
-									"Processes",
-								)}</div>
 								${mainItemDim ? `<div style="margin:0 0 8px;padding:7px 9px;background:rgba(15,23,42,.28);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#f8fafc;font-size:12px;font-weight:700;"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:800;margin-right:6px;">DIM</span>${escape_html(mainItemDim)}</div>` : ""}
-								${process_chips}
+								<div style="margin:0 0 8px;padding:7px 9px;background:rgba(15,23,42,.28);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#f8fafc;font-size:12px;font-weight:700;"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:800;margin-right:6px;">${__("Remaining Width")}</span>${meta.main_item_remaining_width != null && meta.main_item_remaining_width !== "" ? escape_html(format_number(meta.main_item_remaining_width)) : "-"}</div>
 							</div>
 						</div>
 						<div style="flex:1; min-width:420px; padding:12px 12px 8px;">

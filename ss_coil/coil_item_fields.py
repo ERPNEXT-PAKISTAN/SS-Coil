@@ -308,8 +308,16 @@ def apply_ss_coil_trace_to_sales_order_item(ss_coil_doc):
 	entry_no = ss_coil_doc.name
 
 	values = {}
+	# Keep the Stock Entry parent tag as the Sales Order's Tag No.  The SS Coil
+	# output tags are children and belong in the sub/child tag fields; replacing
+	# custom_tag_no with the first output tag loses the parent identity in the
+	# Sales Order row.
 	if primary_tag and _has_field("Sales Order Item", "custom_tag_no"):
-		values["custom_tag_no"] = primary_tag
+		raw_material_tag = frappe.db.get_value(
+			"Sales Order Item", so_item, "custom_raw_material_tag_no"
+		) if _has_field("Sales Order Item", "custom_raw_material_tag_no") else None
+		if not raw_material_tag:
+			values["custom_tag_no"] = primary_tag
 	if sub_tag_text:
 		if _has_field("Sales Order Item", "custom_sub_tag_no"):
 			values["custom_sub_tag_no"] = sub_tag_text

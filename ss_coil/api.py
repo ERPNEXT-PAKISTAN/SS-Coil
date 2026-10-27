@@ -8614,6 +8614,16 @@ def get_sales_order_cutting_scheme_report(sales_order):
 		) or "slitter"
 		seen.add((plan.sales_order_item, process_key))
 		fields = _report_group_item_fields(item, prod)
+		scheme_rows = [row.as_dict() for row in doc.cutting_scheme]
+		if process_key == "slitter":
+			parent_width = flt(item.get("custom_width"))
+			used_width = sum(
+				flt(row.get("total_width"))
+				if row.get("total_width") not in (None, "")
+				else _scheme_row_total_width(row, "slitter")
+				for row in scheme_rows
+			)
+			fields["main_item_remaining_width"] = flt(parent_width - used_width, 6)
 		result.append(
 			{
 				"plan_name": plan.name,
@@ -8623,7 +8633,7 @@ def get_sales_order_cutting_scheme_report(sales_order):
 				"process_label": _label_for_process(process_key),
 				**fields,
 				"item_label": fields.get("item_label") or plan.sales_order_item,
-				"rows": [row.as_dict() for row in doc.cutting_scheme],
+				"rows": scheme_rows,
 			}
 		)
 
@@ -8639,6 +8649,8 @@ def get_sales_order_cutting_scheme_report(sales_order):
 						continue
 					seen.add((soi, process_key))
 					fields = _report_group_item_fields(item, prod)
+					if process_key == "slitter":
+						fields["main_item_remaining_width"] = flt(item.get("custom_width"), 6)
 					result.append(
 						{
 							"plan_name": None,
@@ -8657,13 +8669,16 @@ def get_sales_order_cutting_scheme_report(sales_order):
 				for process_key in _processes_for_so_item_row(so_item):
 					if (item_name, process_key) in seen:
 						continue
+					fields = _report_group_item_fields(item)
+					if process_key == "slitter":
+						fields["main_item_remaining_width"] = flt(item.get("custom_width"), 6)
 					result.append(
 						{
 							"plan_name": None,
 							"sales_order_item": item_name,
 							"process_key": process_key,
 							"process_label": _label_for_process(process_key),
-							**_report_group_item_fields(item),
+							**fields,
 							"item_label": item.get("item_name") or item.get("item_code") or item_name,
 							"rows": [],
 						}

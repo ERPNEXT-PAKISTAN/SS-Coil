@@ -2429,14 +2429,37 @@ function render_sales_order_status_ribbon(frm, data) {
 	const delivery_notes = unique_docs(data.delivery_note_items, "delivery_note");
 	const invoices = unique_docs(data.sales_invoice_items, "sales_invoice");
 	const esc = (value) => frappe.utils.escape_html(String(value ?? ""));
-	const card = (label, value, detail, color, route, records) => {
-		const links = (records || []).slice(0, 3).map((record) =>
-			`<a href="/app/${route}/${encodeURIComponent(record.name)}" style="color:${color};font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;">${esc(record.name)}</a>`,
-		).join('<span style="color:#cbd5e1;padding:0 5px;">·</span>');
-		return `<div style="min-width:0;padding:12px 14px;border:1px solid ${color}33;border-left:4px solid ${color};border-radius:10px;background:#fff;box-shadow:0 2px 8px #0f172a0a;">
-			<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span style="font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#64748b;">${esc(label)}</span><span style="font-size:10px;font-weight:800;color:${color};background:${color}14;border-radius:999px;padding:3px 8px;">${esc(value)}</span></div>
+	const tag_by_no = new Map((data.tag_trace || []).filter((tag) => tag.tag_no).map((tag) => [tag.tag_no, { ...tag, registry: tag.registry || {} }]));
+	const roots = new Set();
+	(data.tag_tree || []).forEach((group) => {
+		if (group.root_tag_no) roots.add(group.root_tag_no);
+		flatten_so_tag_hierarchy(group.hierarchy).forEach((node) => {
+			if (node.tag_no) tag_by_no.set(node.tag_no, { ...(tag_by_no.get(node.tag_no) || {}), ...node });
+		});
+	});
+	const tag_rows = [...tag_by_no.values()].map((tag) => {
+		const registry = tag.registry || tag;
+		return {
+			...tag,
+			status: registry.status || tag.status || "Active",
+			parent_tag_no: registry.parent_tag_no || tag.parent_tag_no || "",
+			root_tag_no: registry.root_tag_no || tag.root_tag_no || tag.tag_no,
+			item_name: registry.item_name || registry.item_code || tag.item_name || tag.item_code || "",
+			current: [registry.current_doctype || tag.current_doctype, registry.current_docname || tag.current_docname].filter(Boolean).join(" / ") || "-",
+		};
+	});
+	const root_count = Math.min(roots.size, tag_rows.length);
+	const child_count = Math.max(tag_rows.length - root_count, 0);
+	const card = (label, value, detail, color, kind, records) => {
+		const routes = { stock_entries: "stock-entry", ss_coils: "ss-coil", delivery_notes: "delivery-note", invoices: "sales-invoice" };
+		const links = routes[kind] ? (records || []).slice(0, 3).map((record) =>
+			`<a href="/app/${routes[kind]}/${encodeURIComponent(record.name)}" style="color:${color};font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;">${esc(record.name)}</a>`,
+		).join('<span style="color:#cbd5e1;padding:0 5px;">·</span>') : "";
+		return `<div style="min-width:0;padding:13px 14px;border:1px solid ${color}44;border-top:4px solid ${color};border-radius:11px;background:linear-gradient(145deg,${color}18,#fff 75%);box-shadow:0 3px 12px #0f172a12;">
+			<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span style="font-size:11px;font-weight:850;letter-spacing:.055em;text-transform:uppercase;color:${color};">${esc(label)}</span><span style="font-size:12px;font-weight:850;color:#fff;background:${color};border-radius:999px;padding:4px 10px;min-width:24px;text-align:center;">${esc(value)}</span></div>
 			<div style="margin-top:6px;font-size:12px;font-weight:650;color:#334155;">${esc(detail)}</div>
 			${links ? `<div style="display:flex;flex-wrap:wrap;align-items:center;margin-top:6px;">${links}</div>` : ""}
+			<button type="button" data-status-popup="${kind}" style="margin-top:9px;padding:5px 9px;border:1px solid ${color}55;border-radius:7px;background:#fff;color:${color};font-size:11px;font-weight:750;cursor:pointer;">${__("View all")} (${esc(value)}) →</button>
 		</div>`;
 	};
 	const purpose_counts = {};
@@ -2446,12 +2469,12 @@ function render_sales_order_status_ribbon(frm, data) {
 		: Object.keys(purpose_counts).length
 		? Object.entries(purpose_counts).map(([purpose, count]) => `${purpose}: ${count}`).join(" · ")
 		: __("No linked entries");
-	const submitted_coils = ss_coils.filter((doc) => Number(doc.docstatus) === 1).length;
-	const draft_coils = ss_coils.filter((doc) => Number(doc.docstatus) === 0).length;
+	const coil_status_counts = {};
+	ss_coils.forEach((doc) => { const status = doc.order_status || __("Not Started"); coil_status_counts[status] = (coil_status_counts[status] || 0) + 1; });
 	const coil_detail = data.loading
 		? __("Loading linked documents…")
 		: ss_coils.length
-		? `${submitted_coils} ${__("submitted")} · ${draft_coils} ${__("draft")}`
+		? Object.entries(coil_status_counts).map(([status, count]) => `${status}: ${count}`).join(" · ")
 		: __("No SS Coil records yet");
 	const delivery_detail = data.loading
 		? __("Loading delivery status…")
@@ -2460,13 +2483,15 @@ function render_sales_order_status_ribbon(frm, data) {
 		? __("Loading billing status…")
 		: `${format_number(data.per_billed || 0)}% ${__("billed")} · ${__("Billing")}: ${data.billing_status || __("Pending")}`;
 	const count_or_loading = (count) => data.loading ? "…" : count;
+	const tag_detail = data.loading ? __("Loading tag hierarchy…") : `${root_count} ${__("parent/root")} · ${child_count} ${__("child tags")}`;
 	const html = `<div id="ss-coil-so-status-ribbon" style="padding:10px 4px 12px;">
 		<div style="display:flex;align-items:center;gap:8px;margin:0 0 9px 2px;color:#16324f;font-size:13px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span><span style="color:#64748b;font-size:11px;font-weight:600;">${esc(data.status || frm.doc.status || "")}</span></div>
-		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;">
-			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock-entry", stock_entries)}
-			${card(__("SS Coil Production"), count_or_loading(ss_coils.length), coil_detail, "#0891b2", "ss-coil", ss_coils)}
-			${card(__("Delivery Notes"), count_or_loading(delivery_notes.length), delivery_detail, "#16a34a", "delivery-note", delivery_notes)}
-			${card(__("Sales Invoices"), count_or_loading(invoices.length), invoice_detail, "#ea580c", "sales-invoice", invoices)}
+		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;">
+			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock_entries", stock_entries)}
+			${card(__("SS Coil Production"), count_or_loading(ss_coils.length), coil_detail, "#0891b2", "ss_coils", ss_coils)}
+			${card(__("Delivery Notes"), count_or_loading(delivery_notes.length), delivery_detail, "#16a34a", "delivery_notes", delivery_notes)}
+			${card(__("Sales Invoices"), count_or_loading(invoices.length), invoice_detail, "#ea580c", "invoices", invoices)}
+			${card(__("Tag Hierarchy"), count_or_loading(tag_rows.length), tag_detail, "#db2777", "tags", tag_rows)}
 		</div>
 	</div>`;
 	const $layout = frm.layout?.wrapper;
@@ -2479,6 +2504,37 @@ function render_sales_order_status_ribbon(frm, data) {
 		else $layout.append($ribbon);
 	}
 	$ribbon.html(html).show();
+	$ribbon.off("click.ss_coil_status", "[data-status-popup]").on("click.ss_coil_status", "[data-status-popup]", function () {
+		const kind = $(this).attr("data-status-popup");
+		const configs = {
+			stock_entries: { title: __("Linked Stock Entries"), route: "stock-entry", rows: stock_entries.map((d) => ({ name: d.name, status: [__("Draft"), __("Submitted"), __("Cancelled")][Number(d.docstatus)] || __("Unknown"), date: d.posting_date, detail: d.purpose || "-" })) },
+			ss_coils: { title: __("SS Coil Production Status"), route: "ss-coil", rows: ss_coils.map((d) => ({ name: d.name, status: d.order_status || __("Not Started"), date: d.sc_date, detail: [d.operation, d.machine, d.sales_order_item].filter(Boolean).join(" · ") || "-" })) },
+			delivery_notes: { title: __("Linked Delivery Notes"), route: "delivery-note", rows: delivery_notes.map((d) => ({ name: d.name, status: d.status || "-", date: d.posting_date, detail: d.item_name || d.item_code || "-" })) },
+			invoices: { title: __("Linked Sales Invoices"), route: "sales-invoice", rows: invoices.map((d) => ({ name: d.name, status: d.status || "-", date: d.posting_date, detail: `${d.item_name || d.item_code || "-"} · ${__("Outstanding")}: ${format_number(d.outstanding_amount)}` })) },
+			tags: { title: __("Parent and Child Tags"), route: null, rows: tag_rows.map((d) => ({ name: d.tag_no, type: roots.has(d.tag_no) ? __("Parent / Root") : __("Child"), status: d.status, parent: d.parent_tag_no || "-", root: d.root_tag_no || "-", detail: d.item_name || "-", current: d.current || "-" })) },
+		};
+		if (configs[kind]) open_sales_order_status_popup(configs[kind]);
+	});
+}
+
+function open_sales_order_status_popup(config) {
+	const rows = config.rows || [];
+	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
+	const columns = config.route
+		? [["name", __("Document")], ["status", __("Status")], ["date", __("Date")], ["detail", __("Details")]]
+		: [["name", __("Tag")], ["type", __("Type")], ["status", __("Status")], ["parent", __("Parent Tag")], ["root", __("Root Tag")], ["detail", __("Item")], ["current", __("Current Location")]];
+	const body = rows.length
+		? rows.map((row) => `<tr>${columns.map(([key]) => {
+			const text = esc(row[key]);
+			if (key === "name" && config.route) return `<td><a href="/app/${config.route}/${encodeURIComponent(row.name)}" target="_blank" style="font-weight:750;">${text}</a></td>`;
+			if (key === "status") return `<td><span style="display:inline-block;padding:3px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:750;">${text}</span></td>`;
+			return `<td>${text}</td>`;
+		}).join("")}</tr>`).join("")
+		: `<tr><td colspan="${columns.length}" style="padding:24px;text-align:center;color:#64748b;">${__("No linked records found.")}</td></tr>`;
+	const html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#475569;font-size:12px;"><b>${rows.length} ${__("records")}</b><span>${__("Status and linked details")}</span></div><div style="max-height:65vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;"><table class="table table-bordered" style="margin:0;background:#fff;min-width:760px;"><thead style="position:sticky;top:0;background:#eff6ff;z-index:1;"><tr>${columns.map(([, label]) => `<th>${esc(label)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
+	const dialog = new frappe.ui.Dialog({ title: config.title, size: "extra-large", fields: [{ fieldtype: "HTML", fieldname: "records" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
+	dialog.fields_dict.records.$wrapper.html(html);
+	dialog.show();
 }
 
 function render_sales_order_dashboard(frm) {

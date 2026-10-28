@@ -7838,6 +7838,7 @@ def get_sales_order_detail_dashboard(sales_order):
 		fields=[
 			"name",
 			"docstatus",
+			"sc_date",
 			"machine",
 			"operation",
 			"order_status",
@@ -7879,7 +7880,7 @@ def get_sales_order_detail_dashboard(sales_order):
 	stock_entries = frappe.get_all(
 		"Stock Entry",
 		filters={"name": ["in", list(stock_entry_filter_values)]} if stock_entry_filter_values else {"name": ["in", [""]]},
-		fields=["name", "purpose", "posting_date", "custom_customer", "custom_for_customer"],
+		fields=["name", "purpose", "posting_date", "docstatus", "custom_customer", "custom_for_customer"],
 		order_by="posting_date desc",
 	)
 	stock_entry_items = (

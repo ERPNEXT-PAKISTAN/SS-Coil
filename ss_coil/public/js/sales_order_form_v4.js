@@ -2499,7 +2499,7 @@ function render_sales_order_status_ribbon(frm, data) {
 		<div style="margin-top:4px;font-size:10px;line-height:1.3;font-weight:650;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${format_number(data.per_delivered || 0)}% ${__("delivered")} · ${format_number(data.per_billed || 0)}% ${__("billed")}</div>
 	</div>`;
 	const html = `<div id="ss-coil-so-status-ribbon" style="padding:5px 4px 8px;">
-		<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span><span style="color:#64748b;font-size:10px;font-weight:600;">${esc(order_status)}</span></div>
+		<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span></div>
 		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">
 			${sales_order_card}
 			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock_entries", stock_entries)}

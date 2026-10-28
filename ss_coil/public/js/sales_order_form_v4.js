@@ -1327,9 +1327,9 @@ const SS_COIL_CUTTING_PROCESS_LABELS = {
 function cutting_scheme_dialog_table_fields() {
 	/** Single schema for all tabs — visibility/widths are toggled per process. */
 	return [
-		{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, read_only: 1, columns: 1 },
-		{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 2 },
-		{ fieldname: "length", fieldtype: "Float", label: "Length", in_list_view: 1, columns: 2 },
+		{ fieldname: "seq", fieldtype: "Float", label: "SEQ", in_list_view: 1, hidden: 1, read_only: 1, columns: 1 },
+		{ fieldname: "width", fieldtype: "Float", label: "Width", in_list_view: 1, reqd: 1, columns: 1 },
+		{ fieldname: "length", fieldtype: "Float", label: "Length", in_list_view: 1, columns: 1 },
 		{ fieldname: "lengthcut", fieldtype: "Float", label: "LengthCut", in_list_view: 1, columns: 1 },
 		{ fieldname: "strip", fieldtype: "Float", label: __("Strip"), in_list_view: 1, columns: 1 },
 		{ fieldname: "total_sheets", fieldtype: "Float", label: __("Sheets"), in_list_view: 1, columns: 1 },
@@ -1382,6 +1382,7 @@ function cutting_scheme_process_column_map(process_key, is_last) {
 
 function cutting_scheme_hidden_fields_for_process(process_key, is_last) {
 	const hide = new Set();
+	hide.add("seq");
 	if (process_key === "slitter") {
 		hide.add("length");
 		hide.add("total_sheets");
@@ -1417,6 +1418,110 @@ function ensure_cutting_scheme_dialog_grid_styles() {
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname="seq"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="seq"] {
+			display: none !important;
+		}
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname],
+		.ss-coil-scheme-grid .grid-row [data-fieldname] {
+			box-sizing: border-box;
+			flex: 0 0 125px !important;
+			width: 125px !important;
+			min-width: 125px !important;
+			max-width: 125px !important;
+		}
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname="width"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="width"] {
+			flex-basis: 180px !important;
+			width: 180px !important;
+			min-width: 180px !important;
+			max-width: 180px !important;
+		}
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname="length"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="length"],
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname="lengthcut"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="lengthcut"],
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname="total_width"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="total_width"] {
+			flex-basis: 150px !important;
+			width: 150px !important;
+			min-width: 150px !important;
+			max-width: 150px !important;
+		}
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname="knife"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"],
+		.ss-coil-scheme-grid .grid-heading-row [data-fieldname="carry_forward"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] {
+			flex-basis: 100px !important;
+			width: 100px !important;
+			min-width: 100px !important;
+			max-width: 100px !important;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"] .static-area,
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] .static-area {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			height: 100%;
+			min-height: 32px;
+			padding: 0 !important;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"] .static-area input[type="checkbox"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] .static-area input[type="checkbox"] {
+			position: static;
+			float: none;
+			display: inline-block;
+			appearance: auto !important;
+			-webkit-appearance: checkbox !important;
+			width: 20px !important;
+			height: 20px !important;
+			margin: 0 !important;
+			vertical-align: middle;
+			opacity: 1;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname] .form-control {
+			box-sizing: border-box;
+			width: 100% !important;
+			min-width: 0 !important;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] {
+			text-align: center;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"] .field-area .checkbox,
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] .field-area .checkbox {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			height: 100%;
+			min-height: 32px;
+			margin: 0;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"] .field-area .checkbox label,
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] .field-area .checkbox label {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			height: 100%;
+			width: 100%;
+			margin: 0;
+			padding: 0;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"] .field-area .checkbox .label-area,
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] .field-area .checkbox .label-area {
+			display: none !important;
+		}
+		.ss-coil-scheme-grid .grid-row [data-fieldname="knife"] .field-area input[type="checkbox"],
+		.ss-coil-scheme-grid .grid-row [data-fieldname="carry_forward"] .field-area input[type="checkbox"] {
+			position: static;
+			float: none;
+			display: block;
+			appearance: auto !important;
+			-webkit-appearance: checkbox !important;
+			width: 20px;
+			height: 20px;
+			margin: 0;
+		}
 	`;
 	let style = document.getElementById("ss-coil-scheme-grid-style");
 	if (!style) {
@@ -1445,12 +1550,72 @@ function reset_cutting_scheme_grid_columns(grid) {
 	grid.filter_row = null;
 }
 
+function apply_cutting_scheme_grid_cell_dimensions(grid) {
+	if (!grid?.wrapper) return;
+	const checkbox_selector = [
+		'[data-fieldname="knife"] input[type="checkbox"]',
+		'[data-fieldname="carry_forward"] input[type="checkbox"]',
+	].join(", ");
+	const enable_static_checkboxes = () => {
+		grid.wrapper.find(checkbox_selector).each(function () {
+			$(this).prop("disabled", false);
+			if ($(this).closest(".static-area").length) {
+				this.checked = this.classList.contains("disabled-selected");
+			}
+		});
+	};
+	enable_static_checkboxes();
+	if (!grid.__ss_coil_checkbox_observer) {
+		grid.__ss_coil_checkbox_observer = new MutationObserver(enable_static_checkboxes);
+		grid.__ss_coil_checkbox_observer.observe(grid.wrapper.get(0), { childList: true, subtree: true });
+	}
+	if (!grid.__ss_coil_checkbox_events) {
+		grid.__ss_coil_checkbox_events = true;
+		grid.wrapper.on("click.ss_coil_checkbox", checkbox_selector, function (event) {
+			// Frappe's row click handler otherwise opens/closes the whole row
+			// when a checkbox in the read-only display cell is clicked.
+			event.stopPropagation();
+		});
+		grid.wrapper.on("change.ss_coil_checkbox", checkbox_selector, function () {
+			const fieldname = $(this).closest("[data-fieldname]").attr("data-fieldname");
+			const row_name = $(this).closest(".grid-row").attr("data-name");
+			const row = grid.grid_rows_by_docname?.[row_name]?.doc;
+			if (!row || !["knife", "carry_forward"].includes(fieldname)) return;
+			row[fieldname] = this.checked ? 1 : 0;
+			this.classList.toggle("disabled-selected", this.checked);
+			this.classList.toggle("disabled-deselected", !this.checked);
+		});
+	}
+	const widths = {
+		width: 180,
+		length: 150,
+		lengthcut: 150,
+		total_width: 150,
+		knife: 100,
+		carry_forward: 100,
+	};
+	grid.wrapper.find(".grid-heading-row [data-fieldname], .grid-row [data-fieldname]").each(function () {
+		const fieldname = this.dataset.fieldname;
+		if (fieldname === "seq") {
+			$(this).hide();
+			return;
+		}
+		const width = widths[fieldname] || 125;
+		this.style.setProperty("box-sizing", "border-box");
+		this.style.setProperty("flex", `0 0 ${width}px`, "important");
+		this.style.setProperty("width", `${width}px`, "important");
+		this.style.setProperty("min-width", `${width}px`, "important");
+		this.style.setProperty("max-width", `${width}px`, "important");
+	});
+}
+
 function apply_cutting_scheme_grid_process_mode(grid, process_key, processes) {
 	if (!grid || !grid.wrapper) {
 		return;
 	}
 	ensure_cutting_scheme_dialog_grid_styles();
 	grid.wrapper.addClass("ss-coil-scheme-grid");
+	grid.__ss_coil_process_key = process_key;
 
 	const process_list = processes || [];
 	const is_last =
@@ -1509,6 +1674,7 @@ function apply_cutting_scheme_grid_process_mode(grid, process_key, processes) {
 		grid.setup_visible_columns();
 		grid.refresh();
 	}
+	apply_cutting_scheme_grid_cell_dimensions(grid);
 }
 
 function default_cutting_scheme_row_for_process(so_item_row, process_key) {
@@ -1984,6 +2150,7 @@ function bind_cutting_scheme_dialog_events(dialog) {
 		}
 		field.grid.wrapper.find(".grid-body, .grid-heading-row").css("overflow-x", "visible");
 		field.grid.wrapper.find(".grid-add-row, .grid-remove-rows").css("display", "");
+		field.grid.__ss_coil_dialog = dialog;
 
 		field.grid.wrapper.off(".ss_coil_cutting_dialog");
 		field.grid.wrapper.on(
@@ -2255,6 +2422,47 @@ function format_number(value) {
 	return num % 1 === 0 ? String(parseInt(num, 10)) : num.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
+function render_sales_order_status_ribbon(frm, data) {
+	const unique_docs = (rows, key) => [...new Map((rows || []).filter((row) => row[key]).map((row) => [row[key], { ...row, name: row[key] }])).values()];
+	const stock_entries = unique_docs(data.stock_entries, "name");
+	const ss_coils = unique_docs(data.ss_coil_docs, "name");
+	const delivery_notes = unique_docs(data.delivery_note_items, "delivery_note");
+	const invoices = unique_docs(data.sales_invoice_items, "sales_invoice");
+	const esc = (value) => frappe.utils.escape_html(String(value ?? ""));
+	const card = (label, value, detail, color, route, records) => {
+		const links = (records || []).slice(0, 3).map((record) =>
+			`<a href="/app/${route}/${encodeURIComponent(record.name)}" style="color:${color};font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;">${esc(record.name)}</a>`,
+		).join('<span style="color:#cbd5e1;padding:0 5px;">·</span>');
+		return `<div style="min-width:0;padding:12px 14px;border:1px solid ${color}33;border-left:4px solid ${color};border-radius:10px;background:#fff;box-shadow:0 2px 8px #0f172a0a;">
+			<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span style="font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#64748b;">${esc(label)}</span><span style="font-size:10px;font-weight:800;color:${color};background:${color}14;border-radius:999px;padding:3px 8px;">${esc(value)}</span></div>
+			<div style="margin-top:6px;font-size:12px;font-weight:650;color:#334155;">${esc(detail)}</div>
+			${links ? `<div style="display:flex;flex-wrap:wrap;align-items:center;margin-top:6px;">${links}</div>` : ""}
+		</div>`;
+	};
+	const purpose_counts = {};
+	stock_entries.forEach((entry) => { const purpose = entry.purpose || __("Other"); purpose_counts[purpose] = (purpose_counts[purpose] || 0) + 1; });
+	const stock_detail = Object.keys(purpose_counts).length
+		? Object.entries(purpose_counts).map(([purpose, count]) => `${purpose}: ${count}`).join(" · ")
+		: __("No linked entries");
+	const submitted_coils = ss_coils.filter((doc) => Number(doc.docstatus) === 1).length;
+	const draft_coils = ss_coils.filter((doc) => Number(doc.docstatus) === 0).length;
+	const coil_detail = ss_coils.length
+		? `${submitted_coils} ${__("submitted")} · ${draft_coils} ${__("draft")}`
+		: __("No SS Coil records yet");
+	const delivery_detail = `${format_number(data.per_delivered || 0)}% ${__("delivered")}`;
+	const invoice_detail = `${format_number(data.per_billed || 0)}% ${__("billed")} · ${__("Billing")}: ${data.billing_status || __("Pending")}`;
+	const html = `<div id="ss-coil-so-status-ribbon" style="padding:10px 4px 12px;">
+		<div style="display:flex;align-items:center;gap:8px;margin:0 0 9px 2px;color:#16324f;font-size:13px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span><span style="color:#64748b;font-size:11px;font-weight:600;">${esc(data.status || frm.doc.status || "")}</span></div>
+		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;">
+			${card(__("Stock Entries"), stock_entries.length, stock_detail, "#7c3aed", "stock-entry", stock_entries)}
+			${card(__("SS Coil Production"), ss_coils.length, coil_detail, "#0891b2", "ss-coil", ss_coils)}
+			${card(__("Delivery Notes"), delivery_notes.length, delivery_detail, "#16a34a", "delivery-note", delivery_notes)}
+			${card(__("Sales Invoices"), invoices.length, invoice_detail, "#ea580c", "sales-invoice", invoices)}
+		</div>
+	</div>`;
+	frm.dashboard?.set_headline(html, "blue", true);
+}
+
 function render_sales_order_dashboard(frm) {
 	const html_field = frm.fields_dict.custom_detail_status || frm.fields_dict.detail_status;
 	if (!html_field) return;
@@ -2274,6 +2482,8 @@ function render_sales_order_dashboard(frm) {
 		},
 		callback: function (r) {
 			const data = r.message || {};
+			if (frm.doc.name !== data.sales_order) return;
+			render_sales_order_status_ribbon(frm, data);
 			frappe.call({
 				method: "ss_coil.api.get_sales_order_cutting_scheme_report",
 				args: {

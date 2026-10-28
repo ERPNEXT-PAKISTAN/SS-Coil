@@ -1,0 +1,20 @@
+{
+ "doctype": "DocType",
+ "name": "Inspection Report Signoff",
+ "module": "SS Coil",
+ "istable": 1,
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": ["tag_no", "remarks", "inspected_by", "inspected_date", "checked_by", "checked_date"],
+ "fields": [
+  {"fieldname": "tag_no", "label": "Output Tag No", "fieldtype": "Data", "hidden": 1},
+  {"fieldname": "remarks", "label": "Remarks", "fieldtype": "Small Text"},
+  {"fieldname": "inspected_by", "label": "Inspected By", "fieldtype": "Link", "options": "Employee"},
+  {"fieldname": "inspected_date", "label": "Inspection Date", "fieldtype": "Date"},
+  {"fieldname": "checked_by", "label": "Checked By", "fieldtype": "Link", "options": "Employee"},
+  {"fieldname": "checked_date", "label": "Check Date", "fieldtype": "Date"}
+ ],
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

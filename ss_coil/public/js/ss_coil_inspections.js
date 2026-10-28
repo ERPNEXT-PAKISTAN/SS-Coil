@@ -57,6 +57,9 @@ ss_coil.inspections.render = function (frm) {
  .ss-inspection .inspection-heading-fields label{font-size:11px;font-weight:600;margin:0 0 2px;display:block}
  .ss-inspection .inspection-heading-fields .inspection-cell{border:1px solid var(--border-color);border-radius:3px;height:26px}
  .ss-inspection .ss-coil-de-items-block>.ss-coil-de-block-title{margin:0;padding:4px 8px;border-bottom:1px solid var(--border-color);line-height:20px}
+ .ss-inspection .inspection-output-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid var(--border-color);background:var(--subtle-fg)}
+ .ss-inspection .inspection-output-tab{border:1px solid var(--border-color);border-radius:4px;background:var(--fg-color);color:var(--text-color);padding:4px 10px;font-size:12px;cursor:pointer}
+ .ss-inspection .inspection-output-tab.active{border-color:var(--primary);background:var(--primary);color:#fff;font-weight:600}
  .ss-inspection .inspection-scroll.ss-coil-de-table-wrap{overflow:auto;max-height:520px;border:0;border-radius:0;margin:0}
  .ss-inspection table.ss-coil-de-table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;background:var(--fg-color)}
  .ss-inspection .ss-coil-de-table th,.ss-inspection .ss-coil-de-table td{border-right:1px solid var(--border-color);border-bottom:1px solid var(--border-color);padding:0}
@@ -79,6 +82,13 @@ ss_coil.inspections.render = function (frm) {
  .ss-inspection .inspection-column-number{display:inline-block;line-height:23px;vertical-align:middle}
  .ss-inspection .inspection-column-remove{display:inline-block;width:18px;margin-left:4px;vertical-align:middle}
  .ss-inspection .inspection-footer{border-top:1px solid var(--border-color)}
+ .ss-inspection .inspection-footer{grid-template-columns:minmax(220px,2fr) repeat(4,minmax(130px,1fr));align-items:start}
+ .ss-inspection .inspection-footer>div{display:flex;flex-direction:column;min-width:0;align-self:start}
+ .ss-inspection .inspection-footer>div>label{min-height:17px;line-height:17px}
+ .ss-inspection .inspection-footer .frappe-control,.ss-inspection .inspection-footer .form-group{width:100%;min-width:0;margin:0!important;padding:0!important}
+ .ss-inspection .inspection-footer .frappe-control .control-input{width:100%;max-width:none}
+ .ss-inspection .inspection-footer .frappe-control input.form-control{height:26px;min-height:26px}
+ .ss-inspection .inspection-footer textarea.inspection-cell{height:52px;resize:vertical}
  .ss-inspection .inspection-checkpoint-scroll.ss-coil-de-table-wrap{max-height:none}
  .ss-inspection .inspection-header-tables{display:grid;grid-template-columns:minmax(240px,1fr) minmax(560px,2fr);gap:0;overflow-x:auto;border-top:1px solid var(--border-color)}
  .ss-inspection .inspection-details-table th,.ss-inspection .inspection-details-table td{border:1px solid var(--border-color);padding:3px 6px;font-size:11px;text-align:left}
@@ -103,13 +113,25 @@ ss_coil.inspections.render = function (frm) {
  // Plain HTML inputs keep the worksheet compact, without form labels in every cell.
  const makeCell = (parent, field, value, save) => {
   let input;
-  if (field.fieldtype === "Select") {
+  if (field.fieldtype === "Link") {
+   let control;
+   control = frappe.ui.form.make_control({
+    parent: parent[0], only_input: true,
+    df: {...field, only_input: true, label: ""}, render_input: true,
+   });
+   control.$wrapper.find(".tooltip-content").remove();
+   control.set_value(value || "").then(() => {
+    control.df.change = () => save(control.get_value());
+   });
+   control.$input.prop('disabled', !writable || !!field.read_only);
+   return;
+  } else if (field.fieldtype === "Select") {
    input = $('<select></select>');
    const options = Array.isArray(field.options) ? field.options : (field.options || "").split("\n");
    options.forEach(option => $('<option></option>').val(option).text(option).appendTo(input));
   } else {
    const type = field.fieldtype === "Date" ? "date" : ["Float", "Int", "Currency", "Percent"].includes(field.fieldtype) ? "number" : "text";
-   input = $('<input>').attr('type', type);
+   input = field.fieldtype === "Small Text" ? $('<textarea rows="2"></textarea>') : $('<input>').attr('type', type);
    if (type === "number") input.attr('step', field.fieldtype === "Int" ? "1" : "any");
   }
   input.addClass('inspection-cell').attr('aria-label', __(field.label || field.fieldname))
@@ -218,7 +240,7 @@ ss_coil.inspections.render = function (frm) {
    };
    const details = frm.__inspection_context || {};
    const is_slitter = table === "custom_slitter_inspection_sheet_1";
-   const size = [details.thickness, is_slitter ? (details.cutting_widths || details.width) : details.width,
+   const size = [details.thickness, details.output_width || details.width,
     is_slitter ? details.length_c : details.length].map(value => value ?? '').join(' × ');
    const context = [[__("Company"), details.company_name],
     [__("Customer"), details.customer || frm.doc.customer_name || frm.doc.for_customer],
@@ -238,9 +260,17 @@ ss_coil.inspections.render = function (frm) {
    $('<summary></summary>').text(__(subtitle)).appendTo(heading);
    const prefix = table === "custom_slitter_inspection_sheet_1" ? "inspection_1_"
     : table === "slitter_inspection_sheet_2" ? "inspection_2_" : "inspection_3_";
-   const footerSuffixes = ['remarks', 'inspected_by', 'inspected_date', 'checked_by', 'checked_date'];
    const inspectionFields = frm.meta.fields.filter(field => field.fieldname.startsWith(prefix));
-   const isFooter = field => footerSuffixes.includes(field.fieldname.slice(prefix.length));
+   const signoffTable = {"custom_slitter_inspection_sheet_1": "inspection_1_signoffs",
+    "slitter_inspection_sheet_2": "inspection_2_signoffs", "reshearing_inspection_sheet": "inspection_3_signoffs"}[table];
+   const signoffFields = [
+    {fieldname: "remarks", label: __("Remarks"), fieldtype: "Small Text"},
+    {fieldname: "inspected_by", label: __("Inspected By"), fieldtype: "Link", options: "Employee"},
+    {fieldname: "inspected_date", label: __("Inspection Date"), fieldtype: "Date"},
+    {fieldname: "checked_by", label: __("Checked By"), fieldtype: "Link", options: "Employee"},
+    {fieldname: "checked_date", label: __("Check Date"), fieldtype: "Date"},
+   ];
+   const currentSignoff = (frm.doc[signoffTable] || []).find(row => row.tag_no === selectedTag) || {};
    {
     const companyLine = $('<div class="inspection-company-line"></div>').appendTo(heading);
     context.filter(([label]) => [__("Company"), __("Company Address"), __("Phone")].includes(label)).forEach(([label, value]) => {
@@ -273,6 +303,14 @@ ss_coil.inspections.render = function (frm) {
      ['Weight (kg)', ['weight_min', 'weight_max'], 'Weight'],
      ['Burr Height (mm)', ['burr_max'], 'Burr'],
     ];
+   const selectedWidth = details.output_width || outputRow?.width;
+   const widthToleranceRow = (frm.doc.cutting_detail || []).find(row =>
+    selectedWidth != null && selectedWidth !== "" && row.width != null && row.width !== "" && Number(row.width) === Number(selectedWidth)
+   );
+   const widthTolerances = {
+    width_min: widthToleranceRow?.tolerance_minus,
+    width_max: widthToleranceRow?.tolerance_plus,
+   };
     $('<th class="inspection-tolerance-title"></th>').attr('colspan', toleranceGroups.reduce((count, group) => count + group[1].length, 0))
      .text(__("Tolerances")).appendTo(titleRow);
     const fieldMap = Object.fromEntries(inspectionFields.map(field => [field.fieldname, field]));
@@ -284,24 +322,32 @@ ss_coil.inspections.render = function (frm) {
       const field = fieldMap[prefix + suffix];
       const cell = $('<td></td>').appendTo(values);
       if (field) {
-       const automaticThicknessLimit = ["thickness_min", "thickness_max"].includes(suffix) ? details.tolerances?.[suffix] : null;
-       const fieldForCell = automaticThicknessLimit != null ? {...field, read_only: 1} : field;
-       makeCell(cell, fieldForCell, automaticThicknessLimit ?? frm.doc[field.fieldname], value => frm.set_value(field.fieldname, value));
+       const automaticLimit = ["thickness_min", "thickness_max"].includes(suffix) ? details.tolerances?.[suffix]
+        : ["width_min", "width_max"].includes(suffix) ? widthTolerances[suffix] : null;
+       const isWidthLimit = ["width_min", "width_max"].includes(suffix);
+       const hasAutomaticLimit = (automaticLimit != null && automaticLimit !== "") || (isWidthLimit && !!widthToleranceRow);
+       const fieldForCell = hasAutomaticLimit ? {...field, read_only: 1} : field;
+       const cellValue = hasAutomaticLimit ? (automaticLimit ?? "") : frm.doc[field.fieldname];
+       makeCell(cell, fieldForCell, cellValue, value => frm.set_value(field.fieldname, value));
       }
      });
     });
    }
    const child = $('<div class="ss-coil-de-items-block"></div>').appendTo(root);
-   const toolbar = $('<div class="ss-coil-de-block-title"></div>').appendTo(child);
-   $('<span class="ss-coil-de-block-title-text"></span>').text(`${__("Output Tag")}: ${selectedTag}`).appendTo(toolbar);
    if (outputTags.length > 1) {
-    const tagPicker = $('<select class="form-control input-xs" style="display:inline-block;width:auto;max-width:240px;margin-right:8px"></select>').appendTo(toolbar);
-    outputTags.forEach(tag => $('<option></option>').val(tag).text(tag).appendTo(tagPicker));
-    tagPicker.val(selectedTag).on('change', () => {
-     frm.__inspection_active_tags[table] = tagPicker.val();
-     ss_coil.inspections.render(frm);
+    const outputTabs = $('<div class="inspection-output-tabs" role="tablist"></div>').prependTo(root);
+    outputTags.forEach(tag => {
+     const active = tag === selectedTag;
+     $('<button type="button" role="tab" class="inspection-output-tab"></button>')
+      .text(tag).toggleClass('active', active).attr('aria-selected', active ? 'true' : 'false')
+      .appendTo(outputTabs).on('click', () => {
+       frm.__inspection_active_tags[table] = tag;
+       ss_coil.inspections.render(frm);
+      });
     });
    }
+   const toolbar = $('<div class="ss-coil-de-block-title"></div>').appendTo(child);
+   $('<span class="ss-coil-de-block-title-text"></span>').text(`${__("Output Tag")}: ${selectedTag}`).appendTo(toolbar);
    $('<span class="ss-coil-de-block-title-text"></span>').text(__(table === "slitter_inspection_sheet_2" ? "Check Point Measurements" : "Measurement Rows")).appendTo(toolbar)
     .append($('<span class="badge"></span>').text(rows.length));
    if (writable) $('<button type="button" class="btn btn-primary btn-sm"></button>').text(__(table === "slitter_inspection_sheet_2" ? "Add Measurement Column" : "Add Row")).appendTo(toolbar).on('click', () => {
@@ -369,10 +415,24 @@ ss_coil.inspections.render = function (frm) {
     });
    }
    const footer = $('<div class="inspection-footer inspection-heading-fields"></div>').appendTo(child);
-   inspectionFields.filter(isFooter).forEach(field => {
+   signoffFields.forEach(field => {
     const cell = $('<div></div>').appendTo(footer);
     $('<label></label>').text(__(field.label)).appendTo(cell);
-    makeCell(cell, field, frm.doc[field.fieldname], value => frm.set_value(field.fieldname, value));
+    const savedValue = currentSignoff[field.fieldname];
+    const defaultValue = field.fieldtype === "Date" ? (savedValue || frappe.datetime.get_today()) : savedValue;
+    makeCell(cell, field, defaultValue, value => {
+     let signoff = (frm.doc[signoffTable] || []).find(row => row.tag_no === selectedTag);
+     if (!signoff) {
+      signoff = frm.add_child(signoffTable);
+      signoff.tag_no = selectedTag;
+      signoff.inspected_date = frappe.datetime.get_today();
+      signoff.checked_date = frappe.datetime.get_today();
+     } else {
+      if (!signoff.inspected_date) signoff.inspected_date = frappe.datetime.get_today();
+      if (!signoff.checked_date) signoff.checked_date = frappe.datetime.get_today();
+     }
+     return frappe.model.set_value(signoff.doctype, signoff.name, field.fieldname, value).then(() => frm.dirty());
+    });
    });
    $('<p class="inspection-muted"></p>').text(writable ? __("Enter measurements in the rows above, then Save the document.") : __("This inspection is read only.")).appendTo(child);
   };

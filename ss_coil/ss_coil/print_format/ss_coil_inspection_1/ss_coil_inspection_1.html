@@ -26,8 +26,4 @@
 .inspection-print-page tr { page-break-inside:avoid; }
 @media screen { .print-format { width:210mm; max-width:210mm; padding:7mm!important; } }
 </style>
-{% if inspection_print_html %}
-{{ inspection_print_html | safe }}
-{% else %}
-{% include "ss_coil/ss_coil/print_format/ss_coil_inspection_1/ss_coil_inspection_1_fallback.html" %}
-{% endif %}
+{{ build_inspection_print_html(doc, 1, frappe.form_dict.get("inspection_tag")) | safe }}

@@ -31,7 +31,55 @@ def sync_inspection_fields():
         frappe.db.sql("""UPDATE `tabInspection Measurement`
             SET parentfield = 'custom_slitter_inspection_sheet_1'
             WHERE parenttype = 'SS Coil' AND parentfield = 'custom_measurements'""")
+    migrate_legacy_inspection_signoffs()
     frappe.clear_cache(doctype='SS Coil')
+
+
+def migrate_legacy_inspection_signoffs():
+    """Copy the former process-wide signoff fields into each output's report once."""
+    configs = (
+        (1, 'inspection_1_signoffs'),
+        (2, 'inspection_2_signoffs'),
+        (3, 'inspection_3_signoffs'),
+    )
+    for ss_coil in frappe.get_all('SS Coil', pluck='name'):
+        doc = frappe.get_doc('SS Coil', ss_coil)
+        outputs = [row for row in (doc.get('job_output') or []) if row.get('tag_no')]
+        if not outputs:
+            continue
+        for form, parentfield in configs:
+            prefix = f'inspection_{form}_'
+            values = {
+                'remarks': doc.get(prefix + 'remarks'),
+                'inspected_by': _employee_id(doc.get(prefix + 'inspected_by')),
+                'inspected_date': doc.get(prefix + 'inspected_date'),
+                'checked_by': _employee_id(doc.get(prefix + 'checked_by')),
+                'checked_date': doc.get(prefix + 'checked_date'),
+            }
+            if not any(value not in (None, '') for value in values.values()):
+                continue
+            next_idx = len(doc.get(parentfield) or []) + 1
+            for output in outputs:
+                if frappe.db.exists('Inspection Report Signoff', {
+                    'parent': doc.name, 'parenttype': 'SS Coil', 'parentfield': parentfield,
+                    'tag_no': output.tag_no,
+                }):
+                    continue
+                frappe.get_doc({
+                    'doctype': 'Inspection Report Signoff', 'parent': doc.name,
+                    'parenttype': 'SS Coil', 'parentfield': parentfield,
+                    'idx': next_idx, 'tag_no': output.tag_no,
+                    **values,
+                }).insert(ignore_permissions=True)
+                next_idx += 1
+
+
+def _employee_id(value):
+    if not value:
+        return None
+    if frappe.db.exists('Employee', value):
+        return value
+    return frappe.db.get_value('Employee', {'employee_name': value}, 'name')
 
 
 @frappe.whitelist()
@@ -76,6 +124,7 @@ def get_inspection_context(ss_coil=None, sales_order=None, sales_order_item=None
         context['cutting_widths'] = ' / '.join(str(width) for width in cutting_widths)
     selected_width = (output_row.get('width') if output_row else None) or output_width or context.get('width')
     context['inspection_width'] = selected_width
+    context['output_width'] = selected_width
     if context.get('thickness') not in (None, '') and selected_width not in (None, ''):
         tolerance = _get_thickness_tolerance(context['thickness'], selected_width, operation or 'Slitter')
         if tolerance:

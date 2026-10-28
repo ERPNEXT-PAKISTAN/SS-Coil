@@ -2441,23 +2441,32 @@ function render_sales_order_status_ribbon(frm, data) {
 	};
 	const purpose_counts = {};
 	stock_entries.forEach((entry) => { const purpose = entry.purpose || __("Other"); purpose_counts[purpose] = (purpose_counts[purpose] || 0) + 1; });
-	const stock_detail = Object.keys(purpose_counts).length
+	const stock_detail = data.loading
+		? __("Loading linked documents…")
+		: Object.keys(purpose_counts).length
 		? Object.entries(purpose_counts).map(([purpose, count]) => `${purpose}: ${count}`).join(" · ")
 		: __("No linked entries");
 	const submitted_coils = ss_coils.filter((doc) => Number(doc.docstatus) === 1).length;
 	const draft_coils = ss_coils.filter((doc) => Number(doc.docstatus) === 0).length;
-	const coil_detail = ss_coils.length
+	const coil_detail = data.loading
+		? __("Loading linked documents…")
+		: ss_coils.length
 		? `${submitted_coils} ${__("submitted")} · ${draft_coils} ${__("draft")}`
 		: __("No SS Coil records yet");
-	const delivery_detail = `${format_number(data.per_delivered || 0)}% ${__("delivered")}`;
-	const invoice_detail = `${format_number(data.per_billed || 0)}% ${__("billed")} · ${__("Billing")}: ${data.billing_status || __("Pending")}`;
+	const delivery_detail = data.loading
+		? __("Loading delivery status…")
+		: `${format_number(data.per_delivered || 0)}% ${__("delivered")}`;
+	const invoice_detail = data.loading
+		? __("Loading billing status…")
+		: `${format_number(data.per_billed || 0)}% ${__("billed")} · ${__("Billing")}: ${data.billing_status || __("Pending")}`;
+	const count_or_loading = (count) => data.loading ? "…" : count;
 	const html = `<div id="ss-coil-so-status-ribbon" style="padding:10px 4px 12px;">
 		<div style="display:flex;align-items:center;gap:8px;margin:0 0 9px 2px;color:#16324f;font-size:13px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span><span style="color:#64748b;font-size:11px;font-weight:600;">${esc(data.status || frm.doc.status || "")}</span></div>
 		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;">
-			${card(__("Stock Entries"), stock_entries.length, stock_detail, "#7c3aed", "stock-entry", stock_entries)}
-			${card(__("SS Coil Production"), ss_coils.length, coil_detail, "#0891b2", "ss-coil", ss_coils)}
-			${card(__("Delivery Notes"), delivery_notes.length, delivery_detail, "#16a34a", "delivery-note", delivery_notes)}
-			${card(__("Sales Invoices"), invoices.length, invoice_detail, "#ea580c", "sales-invoice", invoices)}
+			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock-entry", stock_entries)}
+			${card(__("SS Coil Production"), count_or_loading(ss_coils.length), coil_detail, "#0891b2", "ss-coil", ss_coils)}
+			${card(__("Delivery Notes"), count_or_loading(delivery_notes.length), delivery_detail, "#16a34a", "delivery-note", delivery_notes)}
+			${card(__("Sales Invoices"), count_or_loading(invoices.length), invoice_detail, "#ea580c", "sales-invoice", invoices)}
 		</div>
 	</div>`;
 	frm.dashboard?.set_headline(html, "blue", true);
@@ -2465,15 +2474,18 @@ function render_sales_order_status_ribbon(frm, data) {
 
 function render_sales_order_dashboard(frm) {
 	const html_field = frm.fields_dict.custom_detail_status || frm.fields_dict.detail_status;
-	if (!html_field) return;
 	if (frm.is_new && frm.is_new()) {
-		html_field.$wrapper.empty();
+		html_field?.$wrapper?.empty();
+		frm.dashboard?.clear_headline();
 		return;
 	}
 	if (!frm.doc.name || String(frm.doc.name).startsWith("new-sales-order-")) {
-		html_field.$wrapper.empty();
+		html_field?.$wrapper?.empty();
 		return;
 	}
+	// Put the ribbon in place immediately; the comprehensive dashboard API can
+	// take longer because it also builds tag trace and financial detail data.
+	render_sales_order_status_ribbon(frm, { status: frm.doc.status, loading: true });
 
 	frappe.call({
 		method: "ss_coil.api.get_sales_order_detail_dashboard",
@@ -2484,6 +2496,7 @@ function render_sales_order_dashboard(frm) {
 			const data = r.message || {};
 			if (frm.doc.name !== data.sales_order) return;
 			render_sales_order_status_ribbon(frm, data);
+			if (!html_field) return;
 			frappe.call({
 				method: "ss_coil.api.get_sales_order_cutting_scheme_report",
 				args: {
@@ -2495,6 +2508,9 @@ function render_sales_order_dashboard(frm) {
 					);
 				},
 			});
+		},
+		error: () => {
+			render_sales_order_status_ribbon(frm, { status: frm.doc.status, loading: false });
 		},
 	});
 }

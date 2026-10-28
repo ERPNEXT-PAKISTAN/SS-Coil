@@ -2451,15 +2451,19 @@ function render_sales_order_status_ribbon(frm, data) {
 	const root_count = Math.min(roots.size, tag_rows.length);
 	const child_count = Math.max(tag_rows.length - root_count, 0);
 	const card = (label, value, detail, color, kind, records) => {
-		const routes = { stock_entries: "stock-entry", ss_coils: "ss-coil", delivery_notes: "delivery-note", invoices: "sales-invoice" };
-		const links = routes[kind] ? (records || []).slice(0, 3).map((record) =>
-			`<a href="/app/${routes[kind]}/${encodeURIComponent(record.name)}" style="color:${color};font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;">${esc(record.name)}</a>`,
+		const cards = {
+			stock_entries: ["Stock Entry", "stock-entry"], ss_coils: ["SS Coil", "ss-coil"],
+			delivery_notes: ["Delivery Note", "delivery-note"], invoices: ["Sales Invoice", "sales-invoice"],
+			tags: ["Tag Registry", "tag-registry"],
+		};
+		const [doctype, route] = cards[kind] || [label, ""];
+		const links = route && kind !== "tags" ? (records || []).slice(0, 2).map((record) =>
+			`<a href="/app/${route}/${encodeURIComponent(record.name)}" style="color:${color};font-size:10px;font-weight:750;text-decoration:none;white-space:nowrap;">${esc(record.name)}</a>`,
 		).join('<span style="color:#cbd5e1;padding:0 5px;">·</span>') : "";
-		return `<div style="min-width:0;padding:13px 14px;border:1px solid ${color}44;border-top:4px solid ${color};border-radius:11px;background:linear-gradient(145deg,${color}18,#fff 75%);box-shadow:0 3px 12px #0f172a12;">
-			<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span style="font-size:11px;font-weight:850;letter-spacing:.055em;text-transform:uppercase;color:${color};">${esc(label)}</span><span style="font-size:12px;font-weight:850;color:#fff;background:${color};border-radius:999px;padding:4px 10px;min-width:24px;text-align:center;">${esc(value)}</span></div>
-			<div style="margin-top:6px;font-size:12px;font-weight:650;color:#334155;">${esc(detail)}</div>
-			${links ? `<div style="display:flex;flex-wrap:wrap;align-items:center;margin-top:6px;">${links}</div>` : ""}
-			<button type="button" data-status-popup="${kind}" style="margin-top:9px;padding:5px 9px;border:1px solid ${color}55;border-radius:7px;background:#fff;color:${color};font-size:11px;font-weight:750;cursor:pointer;">${__("View all")} (${esc(value)}) →</button>
+		return `<div style="min-width:0;padding:8px 10px;border:1px solid ${color}44;border-top:3px solid ${color};border-radius:10px;background:linear-gradient(145deg,${color}18,#fff 75%);box-shadow:0 2px 8px #0f172a10;">
+			<div style="display:flex;align-items:center;justify-content:space-between;gap:7px;"><a href="/app/${route}/view/list" style="font-size:10px;font-weight:850;letter-spacing:.045em;text-transform:uppercase;color:${color};text-decoration:none;">${esc(label)} ↗</a><button type="button" data-status-popup="${kind}" aria-label="${__("View all")} ${esc(label)}" title="${__("View all")} ${esc(label)}" style="display:flex;align-items:center;gap:4px;border:0;border-radius:999px;background:${color};color:#fff;padding:3px 8px 3px 4px;font-size:9px;font-weight:800;cursor:pointer;"><span style="display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;color:${color};font-size:11px;font-weight:900;">${esc(value)}</span>${__("View all")}</button></div>
+			<div title="${esc(detail)}" style="margin-top:4px;font-size:10px;line-height:1.3;font-weight:650;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(detail)}</div>
+			${links ? `<div style="display:flex;flex-wrap:nowrap;align-items:center;gap:2px;margin-top:4px;overflow:hidden;">${links}</div>` : ""}
 		</div>`;
 	};
 	const purpose_counts = {};
@@ -2484,9 +2488,9 @@ function render_sales_order_status_ribbon(frm, data) {
 		: `${format_number(data.per_billed || 0)}% ${__("billed")} · ${__("Billing")}: ${data.billing_status || __("Pending")}`;
 	const count_or_loading = (count) => data.loading ? "…" : count;
 	const tag_detail = data.loading ? __("Loading tag hierarchy…") : `${root_count} ${__("parent/root")} · ${child_count} ${__("child tags")}`;
-	const html = `<div id="ss-coil-so-status-ribbon" style="padding:10px 4px 12px;">
-		<div style="display:flex;align-items:center;gap:8px;margin:0 0 9px 2px;color:#16324f;font-size:13px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span><span style="color:#64748b;font-size:11px;font-weight:600;">${esc(data.status || frm.doc.status || "")}</span></div>
-		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;">
+	const html = `<div id="ss-coil-so-status-ribbon" style="padding:5px 4px 8px;">
+		<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span><span style="color:#64748b;font-size:10px;font-weight:600;">${esc(data.status || frm.doc.status || "")}</span></div>
+		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">
 			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock_entries", stock_entries)}
 			${card(__("SS Coil Production"), count_or_loading(ss_coils.length), coil_detail, "#0891b2", "ss_coils", ss_coils)}
 			${card(__("Delivery Notes"), count_or_loading(delivery_notes.length), delivery_detail, "#16a34a", "delivery_notes", delivery_notes)}
@@ -2511,7 +2515,7 @@ function render_sales_order_status_ribbon(frm, data) {
 			ss_coils: { title: __("SS Coil Production Status"), route: "ss-coil", rows: ss_coils.map((d) => ({ name: d.name, status: d.order_status || __("Not Started"), date: d.sc_date, detail: [d.operation, d.machine, d.sales_order_item].filter(Boolean).join(" · ") || "-" })) },
 			delivery_notes: { title: __("Linked Delivery Notes"), route: "delivery-note", rows: delivery_notes.map((d) => ({ name: d.name, status: d.status || "-", date: d.posting_date, detail: d.item_name || d.item_code || "-" })) },
 			invoices: { title: __("Linked Sales Invoices"), route: "sales-invoice", rows: invoices.map((d) => ({ name: d.name, status: d.status || "-", date: d.posting_date, detail: `${d.item_name || d.item_code || "-"} · ${__("Outstanding")}: ${format_number(d.outstanding_amount)}` })) },
-			tags: { title: __("Parent and Child Tags"), route: null, rows: tag_rows.map((d) => ({ name: d.tag_no, type: roots.has(d.tag_no) ? __("Parent / Root") : __("Child"), status: d.status, parent: d.parent_tag_no || "-", root: d.root_tag_no || "-", detail: d.item_name || "-", current: d.current || "-" })) },
+			tags: { title: __("Parent and Child Tags"), route: null, tag_groups: data.tag_tree || [], rows: tag_rows.map((d) => ({ name: d.tag_no, type: roots.has(d.tag_no) ? __("Parent / Root") : __("Child"), status: d.status, parent: d.parent_tag_no || "-", root: d.root_tag_no || "-", detail: d.item_name || "-", current: d.current || "-" })) },
 		};
 		if (configs[kind]) open_sales_order_status_popup(configs[kind]);
 	});
@@ -2520,6 +2524,55 @@ function render_sales_order_status_ribbon(frm, data) {
 function open_sales_order_status_popup(config) {
 	const rows = config.rows || [];
 	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
+	if (config.tag_groups) {
+		const groups = config.tag_groups.map((group) => {
+			if (group.hierarchy?.tag_no) return group.hierarchy;
+			return {
+				tag_no: group.root_tag_no || group.root_trace?.tag_no || "-",
+				status: group.root_trace?.registry?.status || "Active",
+				item_name: group.root_trace?.registry?.item_name || "",
+				children: (group.children || []).map((child) => ({
+					tag_no: child.tag_no,
+					status: child.registry?.status || "Produced",
+					item_name: child.registry?.item_name || "",
+					parent_tag_no: group.root_tag_no,
+					children: [],
+				})),
+			};
+		});
+		const render_node = (node, query = "", depth = 0) => {
+			if (!node?.tag_no) return "";
+			const children = (node.children || []).map((child) => render_node(child, query, depth + 1)).filter(Boolean);
+			const item = node.item_name || node.item_code || "";
+			const current = [node.current_doctype, node.current_docname].filter(Boolean).join(" / ");
+			const search_text = [node.tag_no, item, node.status, current, node.parent_tag_no].join(" ").toLowerCase();
+			if (query && !search_text.includes(query) && !children.length) return "";
+			const accent = depth === 0 ? "#1d4ed8" : depth === 1 ? "#0891b2" : "#7c3aed";
+			return `<div style="min-width:225px;max-width:300px;display:flex;flex-direction:column;align-items:center;">
+				<details open style="width:100%;border:1px solid ${accent}55;border-top:3px solid ${accent};border-radius:12px;background:#fff;box-shadow:0 4px 12px #0f172a12;overflow:hidden;">
+					<summary style="list-style:none;cursor:pointer;padding:9px 11px;background:linear-gradient(135deg,${accent}18,#fff);display:flex;align-items:center;justify-content:space-between;gap:8px;">
+						<span style="font-size:12px;font-weight:850;color:${accent};overflow-wrap:anywhere;">${esc(node.tag_no)}</span>
+						<span style="font-size:9px;font-weight:800;color:${accent};border:1px solid ${accent}55;border-radius:999px;padding:3px 7px;white-space:nowrap;">${esc(node.status || "Active")}</span>
+					</summary>
+					<div style="padding:8px 10px;color:#475569;font-size:10px;line-height:1.45;">
+						${item ? `<div><b>${__("Item")}:</b> ${esc(item)}</div>` : ""}
+						${node.parent_tag_no ? `<div><b>${__("Parent")}:</b> ${esc(node.parent_tag_no)}</div>` : depth === 0 ? `<div><b>${__("Type")}:</b> ${__("Parent / Root")}</div>` : ""}
+						${current ? `<div style="margin-top:3px;"><b>${__("Current")}:</b> ${esc(current)}</div>` : ""}
+					</div>
+					${children.length ? `<div style="display:flex;justify-content:center;color:${accent};font-size:18px;font-weight:900;line-height:1;padding:2px 0 7px;">↓</div><div style="display:flex;align-items:flex-start;justify-content:center;gap:12px;border-top:1px solid #dbe5ef;padding:12px 10px 10px;overflow:visible;">${children.join("")}</div>` : ""}
+				</details>
+			</div>`;
+		};
+		const chart_html = (query = "") => groups.map((root) => render_node(root, query)).filter(Boolean).join('<div style="height:1px;background:#e2e8f0;margin:14px 0;"></div>') || `<div style="padding:28px;text-align:center;color:#64748b;">${__("No tag hierarchy found.")}</div>`;
+		const html = `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;"><b style="color:#334155;">${rows.length} ${__("tags")} · ${groups.length} ${__("parent groups")}</b><input type="search" class="form-control input-sm ss-coil-tag-tree-search" placeholder="${__("Search tag, item, or status…")}" style="max-width:300px;"></div><div style="max-height:68vh;overflow:auto;padding:8px;border:1px solid #dbe5ef;border-radius:12px;background:linear-gradient(180deg,#f8fbff,#fff);"><div class="ss-coil-tag-tree-chart" style="display:grid;gap:14px;min-width:max-content;">${chart_html()}</div></div>`;
+		const dialog = new frappe.ui.Dialog({ title: config.title, size: "extra-large", fields: [{ fieldtype: "HTML", fieldname: "records" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
+		dialog.fields_dict.records.$wrapper.html(html);
+		dialog.fields_dict.records.$wrapper.on("input.ss_coil_tag_tree", ".ss-coil-tag-tree-search", function () {
+			dialog.fields_dict.records.$wrapper.find(".ss-coil-tag-tree-chart").html(chart_html(String(this.value || "").trim().toLowerCase()));
+		});
+		dialog.show();
+		return;
+	}
 	const columns = config.route
 		? [["name", __("Document")], ["status", __("Status")], ["date", __("Date")], ["detail", __("Details")]]
 		: [["name", __("Tag")], ["type", __("Type")], ["status", __("Status")], ["parent", __("Parent Tag")], ["root", __("Root Tag")], ["detail", __("Item")], ["current", __("Current Location")]];

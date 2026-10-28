@@ -2469,18 +2469,28 @@ function render_sales_order_status_ribbon(frm, data) {
 			${card(__("Sales Invoices"), count_or_loading(invoices.length), invoice_detail, "#ea580c", "sales-invoice", invoices)}
 		</div>
 	</div>`;
-	frm.dashboard?.set_headline(html, "blue", true);
+	const $layout = frm.layout?.wrapper;
+	if (!$layout?.length) return;
+	let $ribbon = $layout.children(".ss-coil-order-progress-ribbon");
+	if (!$ribbon.length) {
+		$ribbon = $('<div class="ss-coil-order-progress-ribbon"></div>');
+		const $page = $layout.children(".form-page").first();
+		if ($page.length) $ribbon.insertBefore($page);
+		else $layout.append($ribbon);
+	}
+	$ribbon.html(html).show();
 }
 
 function render_sales_order_dashboard(frm) {
 	const html_field = frm.fields_dict.custom_detail_status || frm.fields_dict.detail_status;
 	if (frm.is_new && frm.is_new()) {
 		html_field?.$wrapper?.empty();
-		frm.dashboard?.clear_headline();
+		frm.layout?.wrapper?.children(".ss-coil-order-progress-ribbon").remove();
 		return;
 	}
 	if (!frm.doc.name || String(frm.doc.name).startsWith("new-sales-order-")) {
 		html_field?.$wrapper?.empty();
+		frm.layout?.wrapper?.children(".ss-coil-order-progress-ribbon").remove();
 		return;
 	}
 	// Put the ribbon in place immediately; the comprehensive dashboard API can

@@ -2493,15 +2493,29 @@ function render_sales_order_status_ribbon(frm, data) {
 		: /to deliver|deliver/i.test(order_status) ? "#d97706"
 		: /closed|complete|to bill/i.test(order_status) ? "#16a34a"
 		: /draft/i.test(order_status) ? "#64748b" : "#2563eb";
-	const sales_order_card = `<div style="min-width:0;padding:8px 10px;border:1px solid ${order_status_color}44;border-top:3px solid ${order_status_color};border-radius:10px;background:linear-gradient(145deg,${order_status_color}18,#fff 75%);box-shadow:0 2px 8px #0f172a10;">
-		<div style="display:flex;align-items:center;justify-content:space-between;gap:7px;"><a href="/app/sales-order/${encodeURIComponent(frm.doc.name)}" style="font-size:10px;font-weight:850;letter-spacing:.045em;text-transform:uppercase;color:${order_status_color};text-decoration:none;">${__("Sales Order")} ↗</a><span style="font-size:9px;font-weight:800;color:${order_status_color};">${frm.doc.docstatus === 1 ? __("Submitted") : frm.doc.docstatus === 2 ? __("Cancelled") : __("Draft")}</span></div>
-		<div title="${esc(order_status)}" style="margin-top:5px;font-size:12px;line-height:1.25;font-weight:850;color:${order_status_color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(order_status)}</div>
-		<div style="margin-top:4px;font-size:10px;line-height:1.3;font-weight:650;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${format_number(data.per_delivered || 0)}% ${__("delivered")} · ${format_number(data.per_billed || 0)}% ${__("billed")}</div>
-	</div>`;
+	const delivery_percent = flt(data.per_delivered);
+	const billed_percent = flt(data.per_billed);
+	const production_complete = ss_coils.length > 0 && ss_coils.every((doc) => /complete|closed/i.test(doc.order_status || ""));
+	const production_started = ss_coils.some((doc) => /process|partial|complete/i.test(doc.order_status || ""));
+	const progress_steps = [
+		{ label: __("Sales Order"), value: order_status, state: frm.doc.docstatus === 2 ? "cancelled" : frm.doc.docstatus === 1 ? "done" : "active" },
+		{ label: __("Production"), value: data.loading ? __("Loading…") : production_complete ? __("Completed") : production_started ? __("In Progress") : __("Not Started"), state: production_complete ? "done" : production_started ? "active" : "waiting" },
+		{ label: __("Delivery"), value: data.loading ? __("Loading…") : `${format_number(delivery_percent)}%`, state: delivery_percent >= 100 ? "done" : delivery_percent > 0 ? "active" : "waiting" },
+		{ label: __("Billing"), value: data.loading ? __("Loading…") : `${format_number(billed_percent)}%`, state: billed_percent >= 100 ? "done" : billed_percent > 0 ? "active" : "waiting" },
+	];
+	const progress_colors = { done: "#15803d", active: "#2563eb", waiting: "#94a3b8", cancelled: "#dc2626" };
+	const progress_html = progress_steps.map((step, index) => {
+		const color = progress_colors[step.state];
+		const marker = step.state === "done" ? "✓" : step.state === "cancelled" ? "!" : index + 1;
+		return `${index ? `<span aria-hidden="true" style="color:#94a3b8;font-size:16px;font-weight:900;padding:0 2px;">➜</span>` : ""}<div style="display:flex;align-items:center;gap:7px;flex:1 1 155px;min-width:0;padding:6px 9px;border:1px solid ${color}33;border-radius:9px;background:linear-gradient(110deg,${color}12,#fff 80%);">
+			<span style="display:grid;place-items:center;flex:0 0 23px;width:23px;height:23px;border-radius:50%;background:${color};color:#fff;font-size:11px;font-weight:900;">${marker}</span>
+			<span style="min-width:0;display:flex;flex-direction:column;line-height:1.2;"><b style="font-size:9px;letter-spacing:.045em;text-transform:uppercase;color:#64748b;">${esc(step.label)}</b><span title="${esc(step.value)}" style="font-size:10px;font-weight:800;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(step.value)}</span></span>
+		</div>`;
+	}).join("");
 	const html = `<div id="ss-coil-so-status-ribbon" style="padding:5px 4px 8px;">
 		<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span></div>
+		<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:0 0 7px;">${progress_html}</div>
 		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">
-			${sales_order_card}
 			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock_entries", stock_entries)}
 			${card(__("SS Coil Production"), count_or_loading(ss_coils.length), coil_detail, "#0891b2", "ss_coils", ss_coils)}
 			${card(__("Delivery Notes"), count_or_loading(delivery_notes.length), delivery_detail, "#16a34a", "delivery_notes", delivery_notes)}

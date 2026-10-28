@@ -49,26 +49,44 @@ function render_linked_workflow_ribbon_html(frm, context, data, local_status, ri
 	const percent_delivered = flt(data.per_delivered);
 	const percent_billed = flt(data.per_billed);
 	const complete = (value) => /complete|closed|submitted/i.test(value || "");
+	const process_statuses = new Map();
+	ss_coils.forEach((doc) => {
+		const process = doc.operation || __("Other Process");
+		const status = doc.order_status || __("Not Started");
+		if (!process_statuses.has(process)) process_statuses.set(process, new Map());
+		const counts = process_statuses.get(process);
+		counts.set(status, (counts.get(status) || 0) + 1);
+	});
+	const process_summary = data.loading
+		? __("Loading process statuses…")
+		: process_statuses.size
+			? [...process_statuses.entries()].map(([process, statuses]) => `${process}: ${[...statuses.entries()].map(([status, count]) => count > 1 ? `${status} ×${count}` : status).join(", ")}`).join(" · ")
+			: __("No process entries yet");
+	const process_complete = ss_coils.length > 0 && ss_coils.every((doc) => complete(doc.order_status));
+	const process_started = ss_coils.some((doc) => /process|partial|complete/i.test(doc.order_status || ""));
 	const steps = context.doctype === "Stock Entry"
 		? [
 			{ label: __("Sales Order"), value: sales_order_status, done: data.status && !data.loading },
 			{ label: __("Stock Entry"), value: local_status, done: Number(frm.doc.docstatus) === 1 },
-			{ label: __("SS Coil"), value: data.loading ? __("Loading…") : ss_coils.length ? `${ss_coils.length} ${__("records")}` : __("Not Started"), done: ss_coils.length > 0 && ss_coils.every((doc) => complete(doc.order_status)) },
+			{ label: __("SS Coil by Process"), value: process_summary, done: process_complete },
 			{ label: __("Delivery"), value: data.loading ? __("Loading…") : `${percent_delivered}%`, done: percent_delivered >= 100 },
 			{ label: __("Billing"), value: data.loading ? __("Loading…") : `${percent_billed}%`, done: percent_billed >= 100 },
 		]
 		: [
 			{ label: __("Sales Order"), value: sales_order_status, done: data.status && !data.loading },
-			{ label: __("SS Coil"), value: local_status, done: complete(local_status) },
+			{ label: __("All Order Processes"), value: process_summary, done: process_complete, active: process_started },
 			{ label: __("Stock Entry"), value: data.loading ? __("Loading…") : `${stock_entries.length} ${__("records")}`, done: stock_entries.some((doc) => Number(doc.docstatus) === 1) },
 			{ label: __("Delivery"), value: data.loading ? __("Loading…") : `${percent_delivered}%`, done: percent_delivered >= 100 },
 			{ label: __("Billing"), value: data.loading ? __("Loading…") : `${percent_billed}%`, done: percent_billed >= 100 },
 		];
-	const steps_html = steps.map((step, index) => `${index ? `<span style="color:#94a3b8;font-size:14px;font-weight:900;">➜</span>` : ""}<div style="display:flex;align-items:center;gap:6px;flex:1 1 140px;min-width:0;padding:5px 7px;border:1px solid ${step.done ? "#86efac" : "#dbe5ef"};border-radius:8px;background:${step.done ? "#f0fdf4" : "#f8fafc"};"><span style="display:grid;place-items:center;flex:0 0 21px;width:21px;height:21px;border-radius:50%;background:${step.done ? "#16a34a" : "#94a3b8"};color:white;font-size:10px;font-weight:900;">${step.done ? "✓" : index + 1}</span><span style="min-width:0;display:flex;flex-direction:column;line-height:1.15;"><b style="font-size:9px;color:#64748b;text-transform:uppercase;">${esc(step.label)}</b><span title="${esc(step.value)}" style="font-size:10px;font-weight:750;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(step.value)}</span></span></div>`).join("");
+	const steps_html = steps.map((step, index) => {
+		const color = step.done ? "#16a34a" : step.active ? "#2563eb" : "#94a3b8";
+		return `${index ? `<span aria-hidden="true" style="color:#94a3b8;font-size:14px;font-weight:900;">➜</span>` : ""}<div style="display:flex;align-items:center;gap:6px;flex:1 1 140px;min-width:0;padding:5px 7px;border:1px solid ${step.done ? "#86efac" : step.active ? "#93c5fd" : "#dbe5ef"};border-radius:8px;background:${step.done ? "#f0fdf4" : step.active ? "#eff6ff" : "#f8fafc"};"><span style="display:grid;place-items:center;flex:0 0 21px;width:21px;height:21px;border-radius:50%;background:${color};color:white;font-size:10px;font-weight:900;">${step.done ? "✓" : index + 1}</span><span style="min-width:0;display:flex;flex-direction:column;line-height:1.15;"><b style="font-size:9px;color:#64748b;text-transform:uppercase;">${esc(step.label)}</b><span title="${esc(step.value)}" style="font-size:10px;font-weight:750;color:${color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(step.value)}</span></span></div>`;
+	}).join("");
 	const route_map = { stock_entries: [__("Stock Entries"), "stock-entry", stock_entries], ss_coils: [__("SS Coil Records"), "ss-coil", ss_coils], delivery_notes: [__("Delivery Notes"), "delivery-note", delivery_notes], invoices: [__("Sales Invoices"), "sales-invoice", invoices], tags: [__("Tag Hierarchy"), "tag-registry", tag_rows.map((tag) => ({ ...tag, name: tag.tag_no }))] };
 	const detail_map = {
 		stock_entries: stock_entries.map((d) => d.purpose || __("Stock movement")).filter(Boolean),
-		ss_coils: ss_coils.map((d) => d.order_status || __("Not Started")),
+		ss_coils: context.doctype === "SS Coil" ? [`${__("This Entry")}: ${local_status}`, process_summary] : [process_summary],
 		delivery_notes: [data.loading ? __("Loading delivery status…") : `${percent_delivered}% ${__("delivered")}`],
 		invoices: [data.loading ? __("Loading billing status…") : `${percent_billed}% ${__("billed")}`],
 		tags: [`${tag_rows.length} ${__("parent and child tags")}`],

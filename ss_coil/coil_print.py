@@ -572,22 +572,26 @@ def _render_tag_block(title, rows):
 
 
 def render_ss_coil_detail_html(context):
+	dashboard = context.get("dashboard")
+	top_panels = [
+		'<table class="top-panels"><tr>'
+		f'<td class="top-panel">{_render_ss_coil_document_details(context.get("header_columns") or [])}</td>'
+	]
+	if dashboard:
+		top_panels.append(f'<td class="top-panel">{_render_ss_coil_summary(dashboard.get("summary") or {}, dashboard.get("status_flow") or {})}</td>')
+	top_panels.append('</tr></table>')
 	parts = [
 		_render_ss_coil_styles(),
 		'<div class="ss-coil-print"><div class="page-body">',
 		_render_ss_coil_header(context),
-		_render_ss_coil_document_details(context.get("header_columns") or []),
+		"".join(top_panels),
 	]
 
-	dashboard = context.get("dashboard")
 	if dashboard:
-		parts.append(_render_ss_coil_dashboard(dashboard))
+		parts.append(_render_ss_coil_dashboard(dashboard, include_summary=False))
 
 	for section in context.get("sections") or []:
 		parts.append(_render_ss_coil_section_table(section))
-
-	if context.get("root_tag_hierarchy"):
-		parts.append(_render_ss_coil_tag_table("Complete Tag Hierarchy", context["root_tag_hierarchy"]))
 
 	parts.append(
 		f'<div class="footer-note">Generated on {_esc(frappe.utils.now_datetime().strftime("%Y-%m-%d %H:%M"))}</div>'
@@ -659,8 +663,21 @@ def _render_ss_coil_styles():
 		margin-top: 1px;
 	}
 	.ss-coil-print .doc-details {
-		margin: 3px 0 6px;
+		margin: 0 0 4px;
 	}
+	.ss-coil-print .top-panels {
+		width: 100%;
+		table-layout: fixed;
+		border-collapse: collapse;
+		margin: 3px 0 5px;
+	}
+	.ss-coil-print .top-panel {
+		width: 50%;
+		vertical-align: top;
+		padding: 0 8px 0 0;
+	}
+	.ss-coil-print .top-panel + .top-panel { padding: 0 0 0 8px; }
+	.ss-coil-print .top-panel .summary-lines { margin: 0; }
 	.ss-coil-print .doc-details-title {
 		font-size: 9px;
 		font-weight: 700;
@@ -684,11 +701,19 @@ def _render_ss_coil_styles():
 		color: #000;
 		word-break: break-word;
 	}
+	.ss-coil-print .detail-left,
+	.ss-coil-print .detail-center,
+	.ss-coil-print .detail-right {
+		display: table-cell;
+		width: 33.33%;
+		vertical-align: top;
+		word-break: break-word;
+	}
 	.ss-coil-print .detail-left { text-align: left; padding-right: 6px; }
 	.ss-coil-print .detail-center { text-align: center; padding: 0 3px; }
 	.ss-coil-print .detail-right { text-align: right; padding-left: 6px; }
-	.ss-coil-print .lbl { font-weight: 600; color: #000; }
-	.ss-coil-print .val { font-weight: 700; color: #000; }
+	.ss-coil-print .lbl { font-weight: 700; color: #334e68; }
+	.ss-coil-print .val { font-weight: 400; color: #000; }
 	.ss-coil-print .section-heading {
 		font-size: 9px;
 		font-weight: 700;
@@ -884,11 +909,7 @@ def _render_ss_coil_summary_row(items):
 	return "".join(rows)
 
 
-def _render_ss_coil_dashboard(dashboard):
-	summary = dashboard.get("summary") or {}
-	status_flow = dashboard.get("status_flow") or {}
-	checklist = dashboard.get("process_checklist") or []
-
+def _render_ss_coil_summary(summary, status_flow):
 	summary_items = [
 		("Input Rows", summary.get("input_count")),
 		("Output Rows", summary.get("output_count")),
@@ -908,12 +929,21 @@ def _render_ss_coil_dashboard(dashboard):
 		("Current Process", status_flow.get("current_process")),
 		("Next Process", status_flow.get("next_process")),
 	]
-
-	parts = [
-		'<div class="section-heading">Summary</div>',
+	return (
+		'<div class="section-heading">Summary</div>'
 		f'<div class="summary-lines">{_render_ss_coil_summary_row(summary_items)}'
-		f'{_render_ss_coil_summary_row(flow_items)}</div>',
-	]
+		f'{_render_ss_coil_summary_row(flow_items)}</div>'
+	)
+
+
+def _render_ss_coil_dashboard(dashboard, include_summary=True):
+	summary = dashboard.get("summary") or {}
+	status_flow = dashboard.get("status_flow") or {}
+	checklist = dashboard.get("process_checklist") or []
+
+	parts = []
+	if include_summary:
+		parts.append(_render_ss_coil_summary(summary, status_flow))
 
 	if checklist:
 		checklist_rows = []

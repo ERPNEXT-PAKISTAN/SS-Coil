@@ -7,6 +7,7 @@ of sync before this was done, which is why it's done this way now.
 """
 
 from ss_coil.api import (
+	build_ss_coil_sticker_html,
 	build_ss_coil_sticker_footer_html,
 	build_ss_coil_sticker_payload,
 	build_stock_entry_sticker_body_html,
@@ -28,6 +29,7 @@ __all__ = [
 	"build_delivery_advise_print_html",
 	"build_sales_contract_lines",
 	"build_ss_coil_job_sheet_html",
+	"build_ss_coil_sticker_html",
 	"build_ss_coil_sticker_footer_html",
 	"build_ss_coil_sticker_payload",
 	"build_stock_entry_sticker_body_html",

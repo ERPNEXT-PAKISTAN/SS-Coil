@@ -15,6 +15,8 @@
   "estimated_wt",
   "actual_wt",
   "customer",
+  "for_customer",
+  "so_no",
   "column_break_fjzf",
   "thickness",
   "width",
@@ -48,6 +50,22 @@
    "in_list_view": 1,
    "label": "Customer",
    "options": "Customer"
+  },
+  {
+   "fieldname": "for_customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "For Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "so_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SO No",
+   "options": "Sales Order",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_acsa",

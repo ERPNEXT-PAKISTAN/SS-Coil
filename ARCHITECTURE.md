@@ -637,12 +637,20 @@ their production row. It shows the formula, substituted mother-coil values,
 calculated sheets, and saved counts separately so manual overrides are visible.
 Weight/dimension edits and cutting-scheme saves refresh the panel.
 
-SS Coil cutting schemes are keyed by Sales Order Item. Creation, before-validate
-sync, and the empty-scheme backfill restore a missing `sales_order_item` from
+SS Coil cutting schemes are keyed by Sales Order Item and process. The Sales
+Order `SO Production Plan` is the canonical saved plan; its child rows and the
+SS Coil `cutting_detail` rows are separate DocTypes that are mirrored on saves.
+Saving either side replaces the matching item's/process rows on the other side,
+and opening a legacy SS Coil repairs an empty or divergent mirror using the most
+recently modified parent as the source. Completed SS Coils reject scheme edits,
+and Sales Order plan edits that would change a completed SS Coil are rejected.
+Users assigned the `SS Coil Cutting Scheme Manager` role can unlock a completed
+scheme with a required reason; the unlock state is visible on the document and
+unlock/lock actions are recorded in its comments. Actual weight, output, and
+scrap fields remain editable under their existing permissions. Lock the scheme
+again when the correction is complete.
+Creation and before-validate sync restore a missing `sales_order_item` from
 `coil_production_line`, checking both rows belong to the selected Sales Order.
-New entries populate an empty cutting table before output generation. Existing
-entries use the backfill action, which preserves existing cuts and requires
-write permission; the UI permits backfill when only the production link exists.
 
 Legacy material rows can use item names such as Slitting Charges while carrying
 mother-coil and Stock Entry trace fields. `is_process_charge_row` preserves

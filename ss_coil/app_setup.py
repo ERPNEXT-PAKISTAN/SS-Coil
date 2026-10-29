@@ -24,6 +24,8 @@ def run_post_install_setup():
 	remove_duplicate_coil_quantity_fields()
 	remove_mill_key_fields()
 	setup_ss_coil_duplicate_override_field()
+	setup_ss_coil_cutting_scheme_unlock()
+	backfill_job_output_order_trace_fields()
 	setup_stock_entry_sales_order_link_fields()
 	setup_updatable_stock_entry_sales_order_property_setters()
 	setup_coil_item_trace_fields()
@@ -250,6 +252,69 @@ def setup_ss_coil_duplicate_override_field():
 			]
 		},
 		update=True,
+	)
+
+
+def setup_ss_coil_cutting_scheme_unlock():
+	"""Create the role and read-only audit fields for completed scheme edits."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	role_name = "SS Coil Cutting Scheme Manager"
+	if not frappe.db.exists("Role", role_name):
+		frappe.get_doc(
+			{"doctype": "Role", "role_name": role_name, "desk_access": 1}
+		).insert(ignore_permissions=True)
+
+	create_custom_fields(
+		{
+			"SS Coil": [
+				{
+					"fieldname": "custom_cutting_scheme_unlocked",
+					"label": "Completed Cutting Scheme Unlocked",
+					"fieldtype": "Check",
+					"default": "0",
+					"read_only": 1,
+					"insert_after": "cutting_detail",
+				},
+				{
+					"fieldname": "custom_cutting_scheme_unlocked_by",
+					"label": "Last Unlocked By",
+					"fieldtype": "Link",
+					"options": "User",
+					"read_only": 1,
+					"insert_after": "custom_cutting_scheme_unlocked",
+				},
+				{
+					"fieldname": "custom_cutting_scheme_unlocked_on",
+					"label": "Last Unlocked On",
+					"fieldtype": "Datetime",
+					"read_only": 1,
+					"insert_after": "custom_cutting_scheme_unlocked_by",
+				},
+				{
+					"fieldname": "custom_cutting_scheme_unlock_reason",
+					"label": "Last Unlock Reason",
+					"fieldtype": "Small Text",
+					"read_only": 1,
+					"insert_after": "custom_cutting_scheme_unlocked_on",
+				},
+			]
+		},
+		update=True,
+	)
+	frappe.clear_cache(doctype="SS Coil")
+
+
+def backfill_job_output_order_trace_fields():
+	"""Populate the new output-row Sales Order links on existing SS Coils."""
+	if not frappe.db.has_column("Coil Output", "for_customer") or not frappe.db.has_column("Coil Output", "so_no"):
+		return
+	frappe.db.sql(
+		"""UPDATE `tabCoil Output` output_row
+		INNER JOIN `tabSS Coil` coil ON coil.name = output_row.parent
+		SET output_row.for_customer = NULLIF(coil.for_customer, ''),
+			output_row.so_no = NULLIF(coil.order_no, '')
+		WHERE output_row.parenttype = 'SS Coil'"""
 	)
 
 

@@ -61,6 +61,7 @@ def _length_value_is_numeric(value):
 
 
 DEFAULT_LENGTH_C = "C"
+CUTTING_SCHEME_MANAGER_ROLE = "SS Coil Cutting Scheme Manager"
 
 
 def migrate_length_and_length_c_field_values():
@@ -2776,8 +2777,10 @@ def _register_ss_coil_job_output_tag(doc, row, parent_tag_no, root_tag_no):
 
 def prepare_ss_coil_output_tags(doc, method=None):
 	if getattr(getattr(doc, "flags", None), "skip_auto_job_output", False):
+		_sync_job_output_order_trace_fields(doc)
 		return
 	_sync_job_output_rows_from_cutting_detail(doc)
+	_sync_job_output_order_trace_fields(doc)
 	parent_input = (doc.input_coil or [None])[0]
 	parent_tag_no = getattr(parent_input, "tag_no", None) if parent_input else None
 	root_tag_no = _root_tag_for(parent_tag_no) if parent_tag_no else None
@@ -2794,6 +2797,13 @@ def prepare_ss_coil_output_tags(doc, method=None):
 				also_used.append(row.tag_no)
 
 		_register_ss_coil_job_output_tag(doc, row, row_parent_tag, root_tag_no)
+
+
+def _sync_job_output_order_trace_fields(doc):
+	"""Keep each output tag tied to its Sales Order and For Customer values."""
+	for row in doc.job_output or []:
+		row.for_customer = doc.get("for_customer") or None
+		row.so_no = doc.get("order_no") or None
 
 
 def _get_coil_output_target_fields():
@@ -2956,6 +2966,15 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 	if doc.order_no:
 		for row in doc.cutting_detail or []:
 			row.so_no = doc.order_no
+
+	# Completed jobs keep their cutting table as the production record. A change
+	# made after completion would rewrite that record and its Sales Order plan.
+	previous = doc.get_doc_before_save() if not doc.is_new() else None
+	if previous and previous.get("order_status") == "Completed":
+		if _cutting_scheme_signature(previous.get("cutting_detail") or []) != _cutting_scheme_signature(doc.get("cutting_detail") or []):
+			if not doc.get("custom_cutting_scheme_unlocked"):
+				frappe.throw(_("Unlock the completed Cutting Scheme before changing it."))
+			_require_cutting_scheme_manager()
 
 	packing_type = _ss_coil_packing_type(doc, so_row)
 	if packing_type:
@@ -3287,7 +3306,7 @@ def _build_qr_payload(row, ss_coil_doc):
 	return "\n".join(f"{key}: {value}" for key, value in payload.items() if value)
 
 
-def _build_qr_html(payload_text, plain=False, scale=3):
+def _build_qr_html(payload_text, plain=False, scale=3, centered=False):
 	if not payload_text:
 		return ""
 	if pyqrcode:
@@ -3296,9 +3315,10 @@ def _build_qr_html(payload_text, plain=False, scale=3):
 		qr.svg(buffer, scale=scale)
 		svg = _ensure_svg_viewbox(_strip_svg_preamble(buffer.getvalue().decode()))
 		if plain:
+			alignment = "margin-left:auto;margin-right:auto;" if centered else "margin-left:auto;margin-right:0;"
 			return (
 				f'<div class="ss-coil-qr" style="padding:0;background:#fff;border:none;'
-				f'display:block;margin-left:auto;margin-right:0;">{svg}</div>'
+				f'display:block;{alignment}">{svg}</div>'
 			)
 		return f'<div class="ss-coil-qr" style="padding:8px; background:#fff; border:1px solid #dbe4f0; border-radius:10px; display:inline-block;">{svg}</div>'
 	return (
@@ -3438,11 +3458,12 @@ def build_stock_entry_sticker_body_html(fields):
 
 def build_stock_entry_sticker_combo_html(fields):
 	"""Full-width, centered 'Mill x Qty x Thickness x Width' line below the two-column layout."""
-	combo_value = " x ".join(str(fields[key]) for key in ("Mill", "Qty", "Thickness", "Width"))
+	weight_or_qty = "Weight" if "Weight" in fields else "Qty"
+	combo_value = " x ".join(str(fields[key]) for key in ("Mill", weight_or_qty, "Thickness", "Width"))
 	return f'<div class="sticker-combo-line">{html.escape(combo_value)}</div>'
 
 
-def build_sticker_footer_html(entry_no, date_value, company):
+def build_sticker_footer_html(entry_no, date_value, company, include_entry_date=True):
 	logo_url = get_stock_entry_sticker_logo_url(company)
 	logo_html = ""
 	if logo_url:
@@ -3452,15 +3473,20 @@ def build_sticker_footer_html(entry_no, date_value, company):
 			f'style="display:block;height:24px;width:auto;max-width:52px;object-fit:contain;"></div>'
 		)
 	company_name = frappe.get_cached_value("Company", company, "company_name") if company else "-"
+	entry_date_html = ""
+	if include_entry_date:
+		entry_date_html = (
+			f'<div class="sticker-footer-line" style="margin:0;padding:0;line-height:1.05;">'
+			f'<span class="sticker-label">Entry No:</span> '
+			f'<span class="sticker-value">{html.escape(str(entry_no))}</span></div>'
+			f'<div class="sticker-footer-line" style="margin:0;padding:0;line-height:1.05;">'
+			f'<span class="sticker-label">Date:</span> '
+			f'<span class="sticker-value">{html.escape(str(date_value))}</span></div>'
+		)
 	lines_html = (
-		f'<div class="sticker-footer-line" style="margin:0;padding:0;line-height:1.05;">'
-		f'<span class="sticker-label">Entry No:</span> '
-		f'<span class="sticker-value">{html.escape(str(entry_no))}</span></div>'
-		f'<div class="sticker-footer-line" style="margin:0;padding:0;line-height:1.05;">'
-		f'<span class="sticker-label">Date:</span> '
-		f'<span class="sticker-value">{html.escape(str(date_value))}</span></div>'
-		f'<div class="sticker-footer-line sticker-company-name" style="margin:0;padding:0;line-height:1.05;">'
-		f"{html.escape(str(company_name))}</div>"
+		entry_date_html
+		+ f'<div class="sticker-footer-line sticker-company-name" style="margin:0;padding:0;line-height:1.05;">'
+		+ f"{html.escape(str(company_name))}</div>"
 	)
 	logo_cell = logo_html or "&nbsp;"
 	return (
@@ -3541,14 +3567,15 @@ def _get_sticker_print_options(print_format=None, print_settings=None):
 	return item_names, layout, has_filter
 
 
-def _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html):
+def _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html, center_qr=False):
+	qr_style = "padding-right:0;text-align:center;" if center_qr else "padding-right:8px;"
 	return f"""
 	<div class="sticker-card" style="width:3in;height:2in;box-sizing:border-box;display:flex;flex-direction:column;">
 		<div class="sticker-body-wrap" style="flex:1 1 auto;min-height:0;overflow:hidden;">
 		<table class="sticker-inner" cellspacing="0" cellpadding="0">
 			<tr>
 				<td class="sticker-fields">{lines_html}</td>
-				<td class="sticker-qr" style="padding-right:8px;">{qr_html}</td>
+				<td class="sticker-qr" style="{qr_style}">{qr_html}</td>
 			</tr>
 		</table>
 		</div>
@@ -3633,6 +3660,19 @@ def _ss_coil_sticker_company(doc):
 	return company
 
 
+def _ss_coil_sticker_logo_html(doc):
+	company = _ss_coil_sticker_company(doc)
+	logo_url = get_stock_entry_sticker_logo_url(company)
+	if not logo_url:
+		return ""
+	return (
+		'<div class="ss-coil-sticker-logo" style="text-align:center;margin:0 auto 2px;line-height:0;">'
+		f'<img src="{html.escape(logo_url)}" alt="Logo" '
+		'style="display:block;height:70px;width:70px;object-fit:contain;margin-left:auto;margin-right:auto;">'
+		"</div>"
+	)
+
+
 def _ss_coil_sticker_customer_name(doc, row):
 	customer_name = doc.get("customer_name") if isinstance(doc, dict) else getattr(doc, "customer_name", None)
 	if customer_name:
@@ -3650,9 +3690,7 @@ def build_ss_coil_sticker_payload(doc, row):
 	so_items = doc.get("so_item") or []
 	so_row = _normalize_sticker_row(so_items[0]) if so_items else {}
 
-	qty = row.get("actual_qty")
-	if qty in (None, ""):
-		qty = row.get("estimated_qty")
+	weight = row.get("actual_wt")
 
 	coils = so_row.get("qty_of_coil") if so_row else None
 	if coils in (None, ""):
@@ -3669,16 +3707,61 @@ def build_ss_coil_sticker_payload(doc, row):
 	return {
 		"Tag No": row.get("tag_no") or "-",
 		"Customer": _ss_coil_sticker_customer_name(doc, row),
-		"Item Name": row.get("class") or "-",
+		"Finish Good": row.get("class") or "-",
 		"Specification": doc.get("specifications") or so_row.get("specification") or "-",
-		"Qty": _sticker_format_float(qty),
-		"No of Coils": _sticker_format_float(coils),
+		"Weight": _sticker_format_float(weight),
+		"Qty": _sticker_format_float(coils),
 		"Thickness": thickness,
 		"Width": width,
 		"Length": _sticker_format_length(length_source),
 		"Mill": doc.get("mill") or so_row.get("mill") or "-",
 		"Ref No": so_row.get("ref_no") or "-",
+		"Entry No": doc.get("name") or "-",
+		"Date": _ss_coil_sticker_date(doc),
 	}
+
+
+def _ss_coil_sticker_date(doc):
+	date_value = frappe.utils.today()
+	if doc.get("creation"):
+		date_value = frappe.utils.getdate(doc.get("creation"))
+	if doc.get("order_no") and frappe.db.exists("Sales Order", doc.order_no):
+		date_value = frappe.db.get_value("Sales Order", doc.order_no, "transaction_date") or date_value
+	return frappe.format(date_value, {"fieldtype": "Date"})
+
+
+def build_ss_coil_sticker_body_html(fields):
+	triple_box = (
+		'<div class="sticker-triple-box">'
+		+ _sticker_triple_row(
+			[
+				("Spec", fields["Specification"]),
+				("Weight", fields["Weight"]),
+				("Qty", fields["Qty"]),
+			]
+		)
+		+ _sticker_triple_row(
+			[
+				("Thick", fields["Thickness"]),
+				("Width", fields["Width"]),
+				("Length", fields["Length"]),
+			],
+			divider=True,
+		)
+		+ "</div>"
+	)
+	return "".join(
+		[
+			f'<div class="sticker-tagno">{html.escape(str(fields["Tag No"]))}</div>',
+			_sticker_field_line("Customer", fields["Customer"]),
+			_sticker_field_line("Finish Good", fields["Finish Good"]),
+			triple_box,
+			_sticker_field_line("Mill", fields["Mill"]),
+			_sticker_field_line("Ref No", fields["Ref No"]),
+			_sticker_field_line("Entry No", fields["Entry No"]),
+			_sticker_field_line("Date", fields["Date"]),
+		]
+	)
 
 
 def build_ss_coil_sticker_qr_payload(doc, row):
@@ -3693,14 +3776,13 @@ def build_ss_coil_sticker_qr_payload(doc, row):
 
 def build_ss_coil_sticker_footer_html(doc):
 	doc = _normalize_sticker_doc(doc)
-	date_value = frappe.format(frappe.utils.today(), {"fieldtype": "Date"})
-	if doc.get("creation"):
-		date_value = frappe.format(frappe.utils.getdate(doc.get("creation")), {"fieldtype": "Date"})
-	if doc.get("order_no") and frappe.db.exists("Sales Order", doc.order_no):
-		so_date = frappe.db.get_value("Sales Order", doc.order_no, "transaction_date")
-		if so_date:
-			date_value = frappe.format(so_date, {"fieldtype": "Date"})
-	return build_sticker_footer_html(doc.get("name") or "-", date_value, _ss_coil_sticker_company(doc))
+	company = _ss_coil_sticker_company(doc)
+	company_name = frappe.get_cached_value("Company", company, "company_name") if company else "-"
+	return (
+		'<div class="sticker-footer" style="margin-top:1px;padding-top:1px;line-height:1.05;flex:0 0 auto;">'
+		f'<div class="sticker-company-name" style="font-size:16px;font-weight:800;line-height:1.1;">'
+		f"{html.escape(str(company_name))}</div></div>"
+	)
 
 
 def build_ss_coil_sticker_html(doc, row):
@@ -3708,11 +3790,12 @@ def build_ss_coil_sticker_html(doc, row):
 	row = _normalize_sticker_row(row)
 
 	fields = build_ss_coil_sticker_payload(doc, row)
-	qr_html = _build_qr_html(build_ss_coil_sticker_qr_payload(doc, row), plain=True, scale=4)
-	lines_html = build_stock_entry_sticker_body_html(fields)
-	combo_html = build_stock_entry_sticker_combo_html(fields)
+	qr_html = _ss_coil_sticker_logo_html(doc) + _build_qr_html(
+		build_ss_coil_sticker_qr_payload(doc, row), plain=True, scale=4, centered=True
+	)
+	lines_html = build_ss_coil_sticker_body_html(fields)
 	footer_html = build_ss_coil_sticker_footer_html(doc)
-	return _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html)
+	return _build_sticker_card_html(lines_html, qr_html, "", footer_html, center_qr=True)
 
 
 def _get_ss_coil_sticker_outputs(doc, output_names=None, filter_items=False):
@@ -8306,6 +8389,12 @@ def _save_so_production_plan_rows(sales_order, sales_order_item, process_key, ro
 		)
 
 	doc.save(ignore_permissions=True)
+	_sync_so_cutting_scheme_to_ss_coils(
+		sales_order or doc.sales_order,
+		sales_order_item or doc.sales_order_item,
+		process_key,
+		[child.as_dict() for child in doc.cutting_scheme],
+	)
 
 	result = {"status": "ok", "name": doc.name, "process_key": process_key}
 	if process_key == "slitter":
@@ -8326,6 +8415,158 @@ def _save_so_production_plan_rows(sales_order, sales_order_item, process_key, ro
 			}
 		)
 	return result
+
+
+_CUTTING_SCHEME_SYNC_FIELDS = (
+	"width", "strip", "lengthcut", "total_width", "length", "total_sheets",
+	"tolerance_plus", "tolerance_minus", "knife", "carry_forward",
+)
+
+
+def _cutting_scheme_signature(rows):
+	numeric_fields = {
+		"width", "strip", "lengthcut", "total_width", "length", "total_sheets",
+		"tolerance_plus", "tolerance_minus",
+	}
+	return tuple(
+		tuple(
+			(
+				field,
+				flt(row.get(field), 6)
+				if field in numeric_fields
+				else cint(row.get(field))
+				if field == "carry_forward"
+				else (row.get(field) or ""),
+			)
+			for field in _CUTTING_SCHEME_SYNC_FIELDS
+		)
+		for row in rows
+	)
+
+
+def _cutting_scheme_rows_for_sync(rows, parent_name):
+	fields = set(_child_table_fieldnames("Cutting Scheme"))
+	result = []
+	for source in rows or []:
+		as_dict = getattr(source, "as_dict", None)
+		values = as_dict() if callable(as_dict) else dict(source)
+		row = {key: values.get(key) for key in _CUTTING_SCHEME_SYNC_FIELDS if key in fields and values.get(key) is not None}
+		if "so_no" in fields:
+			row["so_no"] = parent_name
+		result.append(row)
+	return result
+
+
+def _sync_so_cutting_scheme_to_ss_coils(sales_order, sales_order_item, process_key, rows):
+	"""Mirror the canonical Sales Order plan into matching, unfinished SS Coils."""
+	if not sales_order or not sales_order_item:
+		return
+	rows = _cutting_scheme_rows_for_sync(rows, sales_order)
+	coil_names = frappe.get_all(
+		"SS Coil",
+		filters={"order_no": sales_order, "sales_order_item": sales_order_item, "docstatus": ["<", 2]},
+		pluck="name",
+	)
+	for name in coil_names:
+		coil = frappe.get_doc("SS Coil", name)
+		if _ss_coil_process_key_for_doc(coil) != process_key:
+			continue
+		if _cutting_scheme_signature(coil.cutting_detail or []) == _cutting_scheme_signature(rows):
+			continue
+		if coil.order_status == "Completed":
+			if not coil.get("custom_cutting_scheme_unlocked"):
+				frappe.throw(_("Unlock the completed Cutting Scheme on SS Coil {0} before changing the Sales Order plan.").format(name))
+			_require_cutting_scheme_manager()
+		coil.set("cutting_detail", [])
+		for row in rows:
+			coil.append("cutting_detail", row)
+		coil.flags.skip_cutting_scheme_sync = True
+		coil.save(ignore_permissions=True)
+
+
+def sync_ss_coil_cutting_scheme_to_sales_order(doc, method=None):
+	"""Write SS Coil cutting edits to its Sales Order plan and mirror siblings."""
+	if doc.doctype != "SS Coil" or doc.flags.get("skip_cutting_scheme_sync"):
+		return
+	if not doc.order_no or not doc.sales_order_item:
+		return
+	previous = doc.get_doc_before_save()
+	if previous and _cutting_scheme_signature(previous.get("cutting_detail") or []) == _cutting_scheme_signature(doc.get("cutting_detail") or []):
+		return
+	process_key = _ss_coil_process_key_for_doc(doc)
+	rows = [row.as_dict() for row in (doc.cutting_detail or [])]
+	_save_so_production_plan_rows(doc.order_no, doc.sales_order_item, process_key, rows)
+
+
+@frappe.whitelist()
+def sync_linked_cutting_scheme(ss_coil):
+	"""Repair an empty/stale mirror when opening an existing SS Coil."""
+	doc = frappe.get_doc("SS Coil", ss_coil)
+	doc.check_permission("write")
+	if not doc.order_no or not doc.sales_order_item:
+		return {"updated": False, "reason": "missing_sales_order_item"}
+	process_key = _ss_coil_process_key_for_doc(doc)
+	plan_name = _find_so_production_plan_name(doc.order_no, doc.sales_order_item, process_key)
+	plan = frappe.get_doc("SO Production Plan", plan_name) if plan_name else None
+	plan_rows = [row.as_dict() for row in (plan.cutting_scheme or [])] if plan else []
+	coil_rows = [row.as_dict() for row in (doc.cutting_detail or [])]
+	if not plan_rows and coil_rows:
+		_save_so_production_plan_rows(doc.order_no, doc.sales_order_item, process_key, coil_rows)
+		return {"updated": True, "source": "ss_coil"}
+	if plan_rows and not coil_rows:
+		_sync_so_cutting_scheme_to_ss_coils(doc.order_no, doc.sales_order_item, process_key, plan_rows)
+		return {"updated": True, "source": "sales_order"}
+	if plan_rows and coil_rows and _cutting_scheme_signature(plan_rows) != _cutting_scheme_signature(coil_rows):
+		# Legacy divergence: use the most recently changed parent as the source.
+		if doc.modified and plan and doc.modified > plan.modified:
+			_save_so_production_plan_rows(doc.order_no, doc.sales_order_item, process_key, coil_rows)
+			return {"updated": True, "source": "ss_coil"}
+		_sync_so_cutting_scheme_to_ss_coils(doc.order_no, doc.sales_order_item, process_key, plan_rows)
+		return {"updated": True, "source": "sales_order"}
+	return {"updated": False, "reason": "already_in_sync"}
+
+
+def _require_cutting_scheme_manager():
+	if CUTTING_SCHEME_MANAGER_ROLE not in frappe.get_roles():
+		frappe.throw(
+			_("You need the {0} role to unlock or edit a completed Cutting Scheme.").format(
+				CUTTING_SCHEME_MANAGER_ROLE
+			),
+			frappe.PermissionError,
+		)
+
+
+@frappe.whitelist()
+def set_completed_cutting_scheme_unlocked(ss_coil, unlock, reason=None):
+	"""Role-controlled unlock/lock action with a timeline audit comment."""
+	_require_cutting_scheme_manager()
+	doc = frappe.get_doc("SS Coil", ss_coil)
+	doc.check_permission("write")
+	if doc.order_status != "Completed":
+		frappe.throw(_("Only a Completed SS Coil needs a Cutting Scheme unlock."))
+	unlock = bool(cint(unlock))
+	reason = strip_html_tags(reason or "").strip()
+	if unlock and not reason:
+		frappe.throw(_("Enter a reason for unlocking the completed Cutting Scheme."))
+	if bool(cint(doc.get("custom_cutting_scheme_unlocked"))) == unlock:
+		return {"updated": False, "unlocked": unlock}
+	updates = {"custom_cutting_scheme_unlocked": 1 if unlock else 0}
+	if unlock:
+		updates.update(
+			{
+				"custom_cutting_scheme_unlocked_by": frappe.session.user,
+				"custom_cutting_scheme_unlocked_on": now_datetime(),
+				"custom_cutting_scheme_unlock_reason": reason,
+			}
+		)
+	frappe.db.set_value("SS Coil", doc.name, updates, update_modified=True)
+	comment = (
+		_('Cutting Scheme unlocked by {0}. Reason: {1}').format(frappe.session.user, reason)
+		if unlock
+		else _('Cutting Scheme locked by {0}.').format(frappe.session.user)
+	)
+	doc.add_comment("Comment", text=comment)
+	return {"updated": True, "unlocked": unlock}
 
 
 @frappe.whitelist()

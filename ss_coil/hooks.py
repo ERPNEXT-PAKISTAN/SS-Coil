@@ -229,7 +229,10 @@ doc_events = {
 			"ss_coil.coil_balance.sync_ss_coil_balance_rows",
 			"ss_coil.api.sync_ss_coil_process_tracking",
 		],
-		"on_update": "ss_coil.api.sync_ss_coil_process_tracking",
+		"on_update": [
+			"ss_coil.api.sync_ss_coil_cutting_scheme_to_sales_order",
+			"ss_coil.api.sync_ss_coil_process_tracking",
+		],
 		"before_print": "ss_coil.api.prepare_ss_coil_sticker_print",
 	},
 	"Stock Entry": {

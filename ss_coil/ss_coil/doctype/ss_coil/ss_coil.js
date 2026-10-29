@@ -20,6 +20,56 @@ function add_ss_coil_job_sheet_print_button(frm) {
 	ss_coil.job_sheet.add_print_button(frm, (f) => f.doc.name);
 }
 
+function configure_completed_cutting_scheme_access(frm) {
+	const role = "SS Coil Cutting Scheme Manager";
+	const can_manage = (frappe.user_roles || []).includes(role);
+	const is_completed = frm.doc.order_status === "Completed";
+	const is_unlocked = !!frm.doc.custom_cutting_scheme_unlocked;
+	frm.set_df_property("cutting_detail", "read_only", is_completed && !(can_manage && is_unlocked));
+	if (!is_completed || !can_manage || !frm.doc.name) return;
+
+	if (is_unlocked) {
+		frm.add_custom_button(
+			__("Lock Cutting Scheme"),
+			() => frappe.confirm(
+				__("Lock the completed Cutting Scheme again?"),
+				() => set_completed_cutting_scheme_state(frm, 0),
+			),
+			__("Actions"),
+		);
+		return;
+	}
+
+	frm.add_custom_button(
+		__("Unlock Cutting Scheme"),
+		() => frappe.prompt(
+			[
+				{
+					fieldname: "reason",
+					label: __("Reason for Unlocking"),
+					fieldtype: "Small Text",
+					reqd: 1,
+				},
+			],
+			(values) => set_completed_cutting_scheme_state(frm, 1, values.reason),
+			__("Unlock Completed Cutting Scheme"),
+			__("Unlock"),
+		),
+		__("Actions"),
+	);
+}
+
+function set_completed_cutting_scheme_state(frm, unlock, reason) {
+	frappe.call({
+		method: "ss_coil.api.set_completed_cutting_scheme_unlocked",
+		args: { ss_coil: frm.doc.name, unlock, reason },
+		freeze: true,
+		callback(r) {
+			if (r.message?.updated) frm.reload_doc();
+		},
+	});
+}
+
 function render_ss_coil_job_sheet_report(frm) {
 	ss_coil.job_sheet.render_on_ss_coil_form(frm);
 }
@@ -100,6 +150,7 @@ frappe.ui.form.on("SS Coil", {
 			ss_coil.prints.add_form_buttons(frm);
 		});
 		add_ss_coil_production_planning_report_button(frm);
+		configure_completed_cutting_scheme_access(frm);
 		add_ss_coil_tag_buttons(frm);
 		add_ss_coil_sales_order_buttons(frm);
 		add_process_action_buttons(frm);
@@ -113,7 +164,7 @@ frappe.ui.form.on("SS Coil", {
 		sync_cutting_detail_so_no(frm, false);
 		apply_ss_coil_cutting_detail_grid_mode(frm);
 		rebuild_job_output_if_needed(frm);
-		ensure_cutting_detail_from_so_plan(frm);
+		sync_linked_cutting_scheme_on_open(frm);
 		load_ss_coil_balance_child_table(frm);
 		render_job_output_qr_fields(frm);
 		load_ss_coil_flow_and_dashboards(frm);
@@ -330,6 +381,27 @@ frappe.ui.form.on("SS Coil", {
 		load_ss_coil_flow_and_dashboards(frm);
 	},
 });
+
+function sync_linked_cutting_scheme_on_open(frm) {
+	if (
+		!frm.doc.name ||
+		(frm.is_new && frm.is_new()) ||
+		(frm.is_dirty && frm.is_dirty()) ||
+		frm._linked_cutting_scheme_sync_pending
+	) return;
+	frm._linked_cutting_scheme_sync_pending = true;
+	frappe.call({
+		method: "ss_coil.api.sync_linked_cutting_scheme",
+		args: { ss_coil: frm.doc.name },
+		callback(r) {
+			frm._linked_cutting_scheme_sync_pending = false;
+			if (r.message?.updated && frm.doc.name) frm.reload_doc();
+		},
+		error() {
+			frm._linked_cutting_scheme_sync_pending = false;
+		},
+	});
+}
 
 function ensure_ss_coil_status_loaded(frm) {
 	if (!frm.doc.name || (frm.is_new && frm.is_new())) {

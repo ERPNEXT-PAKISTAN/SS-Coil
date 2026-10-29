@@ -227,23 +227,7 @@
 {% else %}
 <td style="width:50%;text-align:left;vertical-align:top;border:none;padding:0 0 3mm 0;">
 {% endif %}
-	{% set sticker_fields = build_ss_coil_sticker_payload(doc, row) %}
-	<div class="sticker-card" style="width:3in;height:2in;box-sizing:border-box;margin:0;display:flex;flex-direction:column;">
-		<div class="sticker-body-wrap" style="flex:1 1 auto;min-height:0;overflow:hidden;">
-		<table class="sticker-inner" cellspacing="0" cellpadding="0">
-			<tr>
-				<td class="sticker-fields">
-					{{ build_stock_entry_sticker_body_html(sticker_fields) | safe }}
-				</td>
-				<td class="sticker-qr" style="padding-right:8px;">
-					<img src="{{ site_url }}/api/method/ss_coil.api.get_ss_coil_sticker_qr_image?ss_coil={{ doc.name }}&output_name={{ row.name }}" alt="QR" style="width:70px;height:70px;display:block;margin-left:auto;margin-right:0;">
-				</td>
-			</tr>
-		</table>
-		</div>
-		{{ build_stock_entry_sticker_combo_html(sticker_fields) | safe }}
-		{{ build_ss_coil_sticker_footer_html(doc) | safe }}
-	</div>
+	{{ build_ss_coil_sticker_html(doc, row) | safe }}
 </td>
 {% set ns.col = ns.col + 1 %}
 {% if ns.col == 2 %}

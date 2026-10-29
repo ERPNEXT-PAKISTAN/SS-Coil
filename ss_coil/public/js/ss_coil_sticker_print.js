@@ -59,7 +59,7 @@ function show_ss_coil_sticker_print_dialog(frm) {
 				select_all: true,
 			},
 		],
-		primary_action_label: __("Print"),
+	primary_action_label: __("Preview"),
 		primary_action(values) {
 			const multicheck = dialog.fields_dict.output_names;
 			let output_names = multicheck ? multicheck.get_value() : values.output_names || [];
@@ -91,7 +91,6 @@ function show_ss_coil_sticker_print_dialog(frm) {
 						"&format=" +
 						encodeURIComponent(print_format) +
 						"&no_letterhead=1" +
-						"&trigger_print=1" +
 						"&settings=" +
 						encodeURIComponent(settings) +
 						"&_=" +

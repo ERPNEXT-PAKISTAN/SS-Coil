@@ -355,6 +355,14 @@ def apply_sales_order_ss_coil_defaults(doc, method=None):
 			)
 
 
+def render_sales_order_terms_template(doc, method=None):
+	"""Resolve Jinja placeholders left in a Sales Order's copied terms text."""
+	terms = doc.get("terms") or ""
+	if not doc.get("tc_name") or not ("{{" in terms or "{%" in terms):
+		return
+	doc.terms = frappe.render_template(terms, doc.as_dict(), restrict_globals=1)
+
+
 STOCK_SOURCE_PURCHASE_RECEIPTS = "Purchase Receipts"
 STOCK_SOURCE_STOCK_ENTRY = "Stock Entry"
 
@@ -5070,6 +5078,12 @@ def create_sales_order_from_stock_entry(source_name):
 	source = frappe.get_doc("Stock Entry", source_name)
 	if not source.items:
 		frappe.throw(_("Stock Entry {0} has no item rows.").format(source_name))
+	if source.get("purpose") == "Material Receipt":
+		missing_rows = [str(row.idx) for row in source.items if row.get("item_code") and not row.get("custom_finish_good_item")]
+		if missing_rows:
+			frappe.throw(
+				_("Select a Finish Good Item on Material Receipt row(s) {0} before creating the Sales Order.").format(", ".join(missing_rows))
+			)
 
 	sales_order = frappe.new_doc("Sales Order")
 
@@ -6299,6 +6313,26 @@ def prepare_stock_entry_links(doc, method=None):
 	fill_stock_entry_item_entry_numbers(doc, method=method)
 
 
+def validate_stock_entry_finish_good_items(doc, method=None):
+	"""Require an explicit output item for tagged Material Receipt production rows."""
+	if doc.doctype != "Stock Entry" or doc.get("purpose") != "Material Receipt":
+		return
+	if not (
+		doc.get("custom_create_tag_numbers")
+		or doc.get("custom_sales_order")
+		or doc.get("custom_linked_sales_orders")
+	):
+		return
+
+	missing = [row for row in (doc.items or []) if row.get("item_code") and not row.get("custom_finish_good_item")]
+	if not missing:
+		return
+	row_numbers = ", ".join(str(row.idx or idx) for idx, row in enumerate(missing, start=1))
+	frappe.throw(
+		_("Select a Finish Good Item for every Material Receipt item row used for tagged coil production or Sales Order planning. Missing on row(s): {0}.").format(row_numbers)
+	)
+
+
 def prepare_purchase_receipt_links(doc, method=None):
 	populate_custom_sales_order(doc, method=method)
 	apply_inward_tag_row_defaults(doc)
@@ -6604,7 +6638,8 @@ def setup_tag_origin_fields():
 				"in_list_view": 1,
 				"allow_on_submit": 1,
 				"depends_on": "eval:parent.purpose == 'Material Receipt'",
-				"description": "",
+				"mandatory_depends_on": "eval:parent.purpose == 'Material Receipt' && (parent.custom_create_tag_numbers || parent.custom_sales_order || parent.custom_linked_sales_orders)",
+				"description": "Select the finished or semi-finished item produced from this raw material. Required for tagged coil production and Sales Order planning.",
 			},
 		],
 	}
@@ -8290,6 +8325,9 @@ def get_sales_order_detail_dashboard(sales_order):
 		invoiced_qty = sum(flt(d.qty) for d in sales_invoice_items if d.so_detail == item.name)
 		dispatch_summary.append(
 			{
+				"sales_order_item": item.name,
+				"tag_no": item.get("custom_tag_no"),
+				"child_tag_no": item.get("custom_child_tag_no"),
 				"item_code": item.item_code,
 				"item_name": item.item_name,
 				"ordered_qty": flt(item.qty),

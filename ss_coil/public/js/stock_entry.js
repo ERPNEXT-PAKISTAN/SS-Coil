@@ -15,6 +15,9 @@ frappe.ui.form.on("Stock Entry", {
 		apply_ss_coil_stock_entry_header_defaults(frm);
 	},
 	refresh(frm) {
+		// Render here (in the primary Stock Entry client script) so the ribbon
+		// is not dependent on the optional linked-workflow script being loaded.
+		render_stock_entry_order_progress(frm);
 		ensure_inward_tag_batch_dialog_suppressed();
 		add_stock_entry_data_entry_button(frm);
 		maybe_open_stock_entry_data_entry_from_route(frm);
@@ -58,6 +61,220 @@ frappe.ui.form.on("Stock Entry", {
 		apply_ss_coil_stock_entry_row_defaults(frm, cdt, cdn);
 	},
 });
+
+function render_stock_entry_order_progress(frm) {
+	const $layout = frm.layout?.wrapper;
+	if (!$layout?.length || frm.is_new()) return;
+	const linked_orders = String(frm.doc.custom_linked_sales_orders || "").split(/[\n,]+/).map((name) => name.trim()).filter(Boolean);
+	const sales_order = frm.doc.custom_sales_order || linked_orders[0];
+	const request_id = (frm.__ss_coil_order_progress_request_id || 0) + 1;
+	frm.__ss_coil_order_progress_request_id = request_id;
+	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
+	const local_status = [__("Draft"), __("Submitted"), __("Cancelled")][Number(frm.doc.docstatus)] || __("Unknown");
+	$layout.children(".ss-coil-linked-workflow-ribbon").remove();
+	let $ribbon = $layout.children(".ss-coil-order-progress-ribbon");
+	if (!$ribbon.length) {
+		$ribbon = $('<div class="ss-coil-order-progress-ribbon"></div>');
+		const $page = $layout.children(".form-page").first();
+		$page.length ? $ribbon.insertBefore($page) : $layout.prepend($ribbon);
+	}
+	const render = (data = {}) => {
+		if (frm.__ss_coil_order_progress_request_id !== request_id) return;
+		const loading = Boolean(data.loading);
+		const status = data.status || (loading ? __("Loading…") : __("No linked Sales Order"));
+		const coils = data.ss_coil_docs || [];
+		const process_complete = coils.length > 0 && coils.every((row) => /complete|closed/i.test(row.order_status || ""));
+		const process_started = coils.some((row) => /process|partial|complete/i.test(row.order_status || ""));
+		const unique = (rows, key) => [...new Map((rows || []).filter((row) => row[key]).map((row) => [row[key], { ...row, name: row[key] }])).values()];
+		const stock_entries = unique(data.stock_entries, "name");
+		const delivery_notes = unique(data.delivery_note_items, "delivery_note");
+		const invoices = unique(data.sales_invoice_items, "sales_invoice");
+		const tag_map = new Map((data.tag_trace || []).filter((row) => row.tag_no).map((row) => [row.tag_no, { ...row }]));
+		const roots = new Set();
+		const walk = (node) => {
+			if (!node) return;
+			if (node.tag_no) tag_map.set(node.tag_no, { ...(tag_map.get(node.tag_no) || {}), ...node });
+			(node.children || []).forEach(walk);
+		};
+		(data.tag_tree || []).forEach((group) => { if (group.root_tag_no) roots.add(group.root_tag_no); walk(group.hierarchy); });
+		const tag_rows = [...tag_map.values()];
+		const root_count = Math.min(roots.size, tag_rows.length);
+		const child_count = Math.max(tag_rows.length - root_count, 0);
+		const steps = [
+			[__("Sales Order"), status, data.status ? "done" : "active"],
+			[__("Production"), loading ? __("Loading…") : process_complete ? __("Completed") : process_started ? __("In Progress") : __("Not Started"), process_complete ? "done" : process_started ? "active" : "waiting"],
+			[__("Delivery"), loading ? __("Loading…") : `${format_number(flt(data.per_delivered))}%`, flt(data.per_delivered) >= 100 ? "done" : flt(data.per_delivered) > 0 ? "active" : "waiting"],
+			[__("Billing"), loading ? __("Loading…") : `${format_number(flt(data.per_billed))}%`, flt(data.per_billed) >= 100 ? "done" : flt(data.per_billed) > 0 ? "active" : "waiting"],
+		];
+		const colors = { done: "#15803d", active: "#2563eb", waiting: "#94a3b8", cancelled: "#dc2626" };
+		const progress = steps.map(([label, value, state], index) => {
+			const color = colors[state];
+			const marker = state === "done" ? "✓" : state === "cancelled" ? "!" : index + 1;
+			return `${index ? '<span style="color:#94a3b8;font-size:16px;font-weight:900;">➜</span>' : ""}<div style="display:flex;align-items:center;gap:7px;flex:1 1 155px;min-width:0;padding:6px 9px;border:1px solid ${color}33;border-radius:9px;background:linear-gradient(110deg,${color}12,#fff 80%);"><span style="display:grid;place-items:center;flex:0 0 23px;height:23px;border-radius:50%;background:${color};color:#fff;font-size:11px;font-weight:900;">${marker}</span><span style="min-width:0;display:flex;flex-direction:column;line-height:1.2;"><b style="font-size:9px;letter-spacing:.045em;text-transform:uppercase;color:#64748b;">${esc(label)}</b><span style="font-size:10px;font-weight:800;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(value)}</span></span></div>`;
+		}).join("");
+		const coil_counts = {};
+		coils.forEach((row) => { const key = row.order_status || __("Not Started"); coil_counts[key] = (coil_counts[key] || 0) + 1; });
+		const purpose_counts = {};
+		stock_entries.forEach((row) => { const key = row.purpose || __("Other"); purpose_counts[key] = (purpose_counts[key] || 0) + 1; });
+		const card_specs = [
+			["stock_entries", __("Stock Entries"), stock_entries.length, loading ? __("Loading linked documents…") : Object.entries(purpose_counts).map(([key, count]) => `${key}: ${count}`).join(" · ") || __("No linked entries"), "#7c3aed", "stock-entry", stock_entries, stock_entries.map((row) => row.name)],
+			["ss_coils", __("SS Coil Production"), coils.length, loading ? __("Loading linked documents…") : Object.entries(coil_counts).map(([key, count]) => `${key}: ${count}`).join(" · ") || __("No SS Coil records yet"), "#0891b2", "ss-coil", coils, coils.map((row) => row.name)],
+			["delivery_notes", __("Delivery Notes"), delivery_notes.length, loading ? __("Loading delivery status…") : `${format_number(flt(data.per_delivered))}% ${__("delivered")}`, "#16a34a", "delivery-note", delivery_notes, delivery_notes.map((row) => row.delivery_note)],
+			["invoices", __("Sales Invoices"), invoices.length, loading ? __("Loading billing status…") : `${format_number(flt(data.per_billed))}% ${__("billed")} · ${__("Billing")}: ${data.billing_status || __("Not Billed")}`, "#ea580c", "sales-invoice", invoices, invoices.map((row) => row.sales_invoice)],
+			["tags", __("Tag Hierarchy"), tag_rows.length, loading ? __("Loading tag hierarchy…") : `${root_count} ${__("parent/root")} · ${child_count} ${__("child tags")}`, "#db2777", "tag-registry", tag_rows, []],
+		];
+		const cards_html = card_specs.map(([kind, label, count, detail, color, route, rows, names]) => {
+			const links = names.slice(0, 2).map((name) => `<a href="/app/${route}/${encodeURIComponent(name)}" style="color:${color};font-size:10px;font-weight:750;text-decoration:none;white-space:nowrap;">${esc(name)}</a>`).join('<span style="color:#cbd5e1;padding:0 5px;">·</span>');
+			return `<div style="min-width:0;padding:8px 10px;border:1px solid ${color}44;border-top:3px solid ${color};border-radius:10px;background:linear-gradient(145deg,${color}18,#fff 75%);box-shadow:0 2px 8px #0f172a10;"><div style="display:flex;align-items:center;justify-content:space-between;gap:7px;"><a href="/app/${route}/view/list" style="font-size:10px;font-weight:850;letter-spacing:.045em;text-transform:uppercase;color:${color};text-decoration:none;">${esc(label)} ↗</a><button type="button" data-stock-order-popup="${kind}" style="display:flex;align-items:center;gap:4px;border:0;border-radius:999px;background:${color};color:#fff;padding:3px 8px 3px 4px;font-size:9px;font-weight:800;cursor:pointer;"><span style="display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;color:${color};font-size:11px;font-weight:900;">${loading ? "…" : count}</span>${__("View all")}</button></div><div style="margin-top:4px;font-size:10px;line-height:1.3;font-weight:650;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(detail)}</div>${links ? `<div style="display:flex;align-items:center;gap:2px;margin-top:4px;overflow:hidden;">${links}</div>` : ""}</div>`;
+		}).join("");
+		const order_state_color = /cancel/i.test(status) ? "#dc2626" : /deliver/i.test(status) ? "#d97706" : /closed|complete|bill/i.test(status) ? "#15803d" : "#2563eb";
+		const order_indicator = `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:0 0 7px;padding:8px 10px;border:1px solid #93c5fd;border-left:4px solid #2563eb;border-radius:9px;background:linear-gradient(100deg,#eff6ff,#fff 75%);"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:7px;"><b style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#475569;">${__("Linked Sales Order")}</b>${sales_order ? `<a href="/app/sales-order/${encodeURIComponent(sales_order)}" style="font-size:12px;font-weight:850;color:#1d4ed8;text-decoration:none;">${esc(sales_order)} ↗</a>` : `<span style="font-size:11px;font-weight:750;color:#64748b;">${__("No linked Sales Order")}</span>`}<span style="padding:3px 8px;border-radius:999px;background:${order_state_color}18;color:${order_state_color};font-size:10px;font-weight:850;">${esc(status)}</span><span style="font-size:10px;color:#475569;">${esc(data.customer_name || data.customer || "")}</span></div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:10px;font-weight:700;color:#475569;"><span>${__("Delivery")}: ${loading ? "…" : `${format_number(flt(data.per_delivered))}%`}</span><span>${__("Billing")}: ${loading ? "…" : esc(data.billing_status || __("Not Billed"))}</span>${data.transaction_date ? `<span>${esc(data.transaction_date)}</span>` : ""}${sales_order ? `<button type="button" data-stock-order-detail-all style="border:0;border-radius:999px;background:#16324f;color:#fff;padding:4px 10px;font-size:9px;font-weight:850;cursor:pointer;">${__("View all")} ↗</button>` : ""}</div></div>`;
+		$ribbon.html(`<div style="padding:5px 4px 8px;"><div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")} <span style="font-size:10px;font-weight:650;color:#64748b;">· ${__("This Stock Entry")}: ${esc(local_status)}</span><span style="height:1px;flex:1;background:#dbe5ef;"></span></div>${order_indicator}<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:0 0 7px;">${progress}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">${cards_html}</div></div>`).show();
+		$ribbon.off("click.ss_coil_stock_order_detail", "[data-stock-order-detail-all]").on("click.ss_coil_stock_order_detail", "[data-stock-order-detail-all]", function () {
+			show_stock_entry_sales_order_detail(sales_order, data);
+		});
+		$ribbon.off("click.ss_coil_stock_order", "[data-stock-order-popup]").on("click.ss_coil_stock_order", "[data-stock-order-popup]", function () {
+			const kind = $(this).attr("data-stock-order-popup");
+			const spec = card_specs.find(([key]) => key === kind);
+			if (!spec) return;
+			const [, label, , , , route, rows] = spec;
+			if (kind === "tags") {
+				frappe.require("/assets/ss_coil/js/tag_hierarchy_viewer.js", () => {
+					if (typeof open_ss_coil_tag_hierarchy_popup === "function") {
+						open_ss_coil_tag_hierarchy_popup({ title: label, tag_groups: data.tag_tree || [], rows: tag_rows });
+					}
+				});
+				return;
+			}
+			const configs = {
+				stock_entries: rows.map((row) => ({ name: row.name, status: [__("Draft"), __("Submitted"), __("Cancelled")][Number(row.docstatus)] || __("Unknown"), date: row.posting_date, detail: row.purpose || "-" })),
+				ss_coils: rows.map((row) => ({ name: row.name, status: row.order_status || __("Not Started"), date: row.sc_date, detail: [row.operation, row.machine, row.sales_order_item].filter(Boolean).join(" · ") || "-" })),
+				delivery_notes: rows.map((row) => ({ name: row.delivery_note, status: row.status || "-", date: row.posting_date, detail: row.item_name || row.item_code || "-" })),
+				invoices: rows.map((row) => ({ name: row.sales_invoice, status: row.status || "-", date: row.posting_date, detail: `${row.item_name || row.item_code || "-"} · ${__("Outstanding")}: ${format_number(row.outstanding_amount || 0)}` })),
+			};
+			show_stock_entry_records_dialog(label, route, configs[kind] || []);
+		});
+	};
+	const loading = sales_order ? { status: __("Loading…"), loading: true } : {};
+	render(loading);
+	if (!sales_order) return;
+	frappe.call({
+		method: "ss_coil.api.get_sales_order_detail_dashboard",
+		args: { sales_order },
+		callback: (r) => render(r.message || {}),
+		error: () => render({ load_error: true }),
+	});
+}
+
+function show_stock_entry_sales_order_detail(sales_order, data) {
+	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
+	const qty = (value) => format_number(flt(value || 0));
+	const dispatch_rows = data.dispatch_summary || [];
+	const coils = data.ss_coil_docs || [];
+	const coils_by_item = new Map();
+	const coils_by_name = new Map(coils.map((coil) => [coil.name, coil]));
+	coils.forEach((coil) => {
+		if (!coils_by_item.has(coil.sales_order_item)) coils_by_item.set(coil.sales_order_item, []);
+		coils_by_item.get(coil.sales_order_item).push(coil);
+	});
+	const traces = new Map((data.tag_trace || []).filter((row) => row.tag_no).map((row) => [row.tag_no, row]));
+	const order_items = new Map((data.items || []).map((item) => [item.name, item]));
+	const status_summary = (records) => {
+		const counts = {};
+		(records || []).forEach((record) => {
+			const status = record.order_status || __("Not Started");
+			counts[status] = (counts[status] || 0) + 1;
+		});
+		return Object.entries(counts).map(([status, count]) => `${status}: ${count}`).join(" · ") || __("Not Started");
+	};
+	const root_for_tag = (tag) => String(tag || "").replace(/-\d+$/, "-000");
+	const tag_groups = data.tag_tree || [];
+	const group_has_tags = (group, tags) => {
+		let found = false;
+		const visit = (node) => {
+			if (!node || found) return;
+			if (tags.has(node.tag_no)) found = true;
+			(node.children || []).forEach(visit);
+		};
+		visit(group.hierarchy);
+		return found;
+	};
+	const item_sections = dispatch_rows.map((item) => {
+		const production_docs = coils_by_item.get(item.sales_order_item) || [];
+		const order_item = order_items.get(item.sales_order_item) || {};
+		const item_tags = [...new Set([item.tag_no, ...String(item.child_tag_no || "").split(/[\n,;]+/)].map((tag) => String(tag || "").trim()).filter(Boolean))];
+		const item_tag_set = new Set(item_tags);
+		const roots = new Set(item_tags.map(root_for_tag));
+		const groups = tag_groups.filter((group) => roots.has(group.root_tag_no) || group_has_tags(group, item_tag_set));
+		return {
+			item,
+			name: item.item_name || item.item_code || "-",
+			status: production_docs.length ? status_summary(production_docs) : order_item.custom_status || __("Not Started"),
+			production: production_docs.map((doc) => `${doc.name} · ${doc.operation || ""} · ${doc.order_status || __("Not Started")}`).join("; ") || __("No SS Coil production"),
+			groups,
+		};
+	});
+	const delivered_total = dispatch_rows.reduce((sum, item) => sum + flt(item.delivered_qty), 0);
+	const invoiced_total = dispatch_rows.reduce((sum, item) => sum + flt(item.invoiced_qty), 0);
+	const summary = [
+		[__("Sales Order"), sales_order], [__("Status"), data.status || "-"], [__("Order Qty"), qty(data.total_qty)],
+		[__("Delivered Qty"), qty(delivered_total)], [__("Invoice Status"), data.billing_status || __("Not Billed")],
+		[__("Invoiced Qty"), qty(invoiced_total)], [__("SS Coil Production"), `${coils.length} ${__("records")}`],
+	].map(([label, value]) => `<div style="padding:8px 9px;border:1px solid #dbe5ef;border-top:3px solid #2563eb;border-radius:8px;background:#f8fbff;font-size:10px;"><div style="font-size:8px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;">${esc(label)}</div><div style="margin-top:3px;font-size:10px;font-weight:650;color:#1e3a5f;">${esc(value)}</div></div>`).join("");
+	const table = (headers, body, width) => `<div style="max-height:34vh;overflow:auto;border:1px solid #dbe5ef;border-radius:8px;"><table class="table table-bordered" style="margin:0;min-width:${width}px;background:#fff;font-size:10px;font-weight:400;"><thead style="position:sticky;top:0;z-index:1;background:#eff6ff;font-size:9px;"><tr>${headers.map((header) => `<th style="padding:5px 6px;white-space:nowrap;">${esc(header)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
+	const item_tables = item_sections.map((section) => {
+		const item = section.item;
+		const body = `<tr style="background:#eaf2ff;font-size:10px;font-weight:400;"><td style="padding:5px 6px;">${esc(item.tag_no || "-")}</td><td style="padding:5px 6px;">${esc(section.status)}</td><td style="padding:5px 6px;text-align:right;">${qty(item.ordered_qty)}</td><td style="padding:5px 6px;text-align:right;">${qty(item.delivered_qty)}</td><td style="padding:5px 6px;text-align:right;">${qty(item.invoiced_qty)}</td><td style="padding:5px 6px;">${esc(section.production)}</td></tr>`;
+		return `<div style="margin:8px 0 10px;"><div style="margin:0 0 4px;color:#334155;font-size:10px;font-weight:700;">${esc(section.name)}</div>${table([__("Item Tag"), __("Production Status"), __("Order Qty"), __("Delivered"), __("Invoiced"), __("SS Coil Records / Status")], body, 820)}</div>`;
+	}).join("") || `<div style="padding:20px;text-align:center;color:#64748b;font-size:10px;">${__("No Sales Order item details found.")}</div>`;
+	const flatten_group = (group, item_section) => {
+		const rows = [];
+		const walk = (node, depth = 0) => {
+			if (!node?.tag_no) return;
+			const trace = traces.get(node.tag_no) || {};
+			const events = trace.events || [];
+			const doc_statuses = new Map();
+			[...(node.previous_docs || []), ...(node.next_docs || [])].forEach((doc) => {
+				if (doc.name) doc_statuses.set(doc.name, { name: doc.name, order_status: doc.order_status || coils_by_name.get(doc.name)?.order_status || __("Unknown"), operation: doc.operation || coils_by_name.get(doc.name)?.operation || "" });
+			});
+			events.filter((event) => /^SS Coil (Input|Output)$/.test(event.stage || "") && event.docname).forEach((event) => {
+				const coil = coils_by_name.get(event.docname);
+				doc_statuses.set(event.docname, { name: event.docname, order_status: coil?.order_status || doc_statuses.get(event.docname)?.order_status || __("Unknown"), operation: coil?.operation || event.extra?.operation || "" });
+			});
+			if (node.source_doctype === "SS Coil" && node.source_docname && !doc_statuses.has(node.source_docname)) {
+				const coil = coils_by_name.get(node.source_docname);
+				if (coil) doc_statuses.set(coil.name, { name: coil.name, order_status: coil.order_status || __("Unknown"), operation: coil.operation || "" });
+			}
+			const related_coils = [...doc_statuses.values()];
+			const tag_status = trace.registry?.status || node.status || "-";
+			const coil_status = related_coils.length ? status_summary(related_coils) : tag_status === "Produced" ? __("Produced") : __("No production record");
+			const delivered_events = events.filter((event) => event.stage === "Delivery Note");
+			const invoice_events = events.filter((event) => event.stage === "Sales Invoice");
+			const is_item_tag = node.tag_no === item_section.item.tag_no;
+			rows.push(`<tr style="background:${depth === 0 ? "#eaf2ff" : "#fff"};font-size:9px;font-weight:400;"><td style="padding:4px 6px;white-space:nowrap;">${depth ? `${"　".repeat(Math.min(depth, 4))}↳ ` : ""}${esc(node.tag_no)}</td><td style="padding:4px 6px;white-space:nowrap;">${esc(node.parent_tag_no || "-")}</td><td style="padding:4px 6px;">${esc(tag_status)}</td><td style="padding:4px 6px;">${esc(coil_status)}</td><td style="padding:4px 6px;">${esc(related_coils.map((doc) => `${doc.name} · ${doc.operation} · ${doc.order_status}`).join("; ") || "-")}</td><td style="padding:4px 6px;text-align:right;">${qty(is_item_tag ? item_section.item.ordered_qty : 0)}</td><td style="padding:4px 6px;text-align:right;">${qty(delivered_events.reduce((sum, event) => sum + flt(event.qty), 0))}</td><td style="padding:4px 6px;">${esc([...new Set(delivered_events.map((event) => event.docname).filter(Boolean))].join(", ") || "-")}</td><td style="padding:4px 6px;text-align:right;">${qty(invoice_events.reduce((sum, event) => sum + flt(event.qty), 0))}</td><td style="padding:4px 6px;">${esc([...new Set(invoice_events.map((event) => event.docname).filter(Boolean))].join(", ") || "-")}</td></tr>`);
+			(node.children || []).forEach((child) => walk(child, depth + 1));
+		};
+		walk(group.hierarchy);
+		return rows;
+	};
+	const tag_sections = item_sections.map((section) => {
+		const hierarchy_rows = section.groups.flatMap((group) => flatten_group(group, section));
+		const body = hierarchy_rows.length ? hierarchy_rows.join("") : `<tr style="background:#fff;font-size:9px;font-weight:400;"><td colspan="10" style="padding:12px;text-align:center;color:#64748b;">${__("No registered tag hierarchy found for this item.")}</td></tr>`;
+		return `<div style="margin:8px 0 12px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 4px;color:#334155;font-size:10px;font-weight:700;"><span>${esc(section.name)}</span><span style="font-size:9px;font-weight:400;color:#64748b;">${__("Order Qty")}: ${qty(section.item.ordered_qty)}</span></div>${table([__("Tag No"), __("Parent Tag"), __("Tag Status"), __("SS Coil Status"), __("SS Coil Production"), __("Order Qty"), __("Delivered Qty"), __("Delivery Notes"), __("Invoiced Qty"), __("Sales Invoices")], body, 1120)}</div>`;
+	}).join("") || `<div style="padding:20px;text-align:center;color:#64748b;font-size:10px;">${__("No tag details found.")}</div>`;
+	const dialog = new frappe.ui.Dialog({ title: `${__("Sales Order Details")}: ${sales_order}`, size: "extra-large", fields: [{ fieldtype: "HTML", fieldname: "details" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
+	dialog.fields_dict.details.$wrapper.html(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:10px;">${summary}</div><h5 style="margin:10px 0 5px;font-size:11px;color:#334155;">${__("Sales Order Items")}</h5>${item_tables}<h5 style="margin:12px 0 5px;font-size:11px;color:#334155;">${__("Tag-wise Production and Dispatch")}</h5>${tag_sections}`);
+	 dialog.show();
+}
+function show_stock_entry_records_dialog(title, route, rows) {
+	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
+	const body = rows.length
+		? rows.map((row) => `<tr><td><a href="/app/${route}/${encodeURIComponent(row.name)}" target="_blank" style="font-weight:750;">${esc(row.name)}</a></td><td>${esc(row.status)}</td><td>${esc(row.date)}</td><td>${esc(row.detail)}</td></tr>`).join("")
+		: `<tr><td colspan="4" style="padding:24px;text-align:center;color:#64748b;">${__("No linked records found.")}</td></tr>`;
+	const dialog = new frappe.ui.Dialog({ title, size: "large", fields: [{ fieldtype: "HTML", fieldname: "records" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
+	dialog.fields_dict.records.$wrapper.html(`<div style="max-height:65vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;"><table class="table table-bordered" style="margin:0;background:#fff;min-width:760px;"><thead style="position:sticky;top:0;background:#eff6ff;z-index:1;"><tr><th>${__("Document")}</th><th>${__("Status")}</th><th>${__("Date")}</th><th>${__("Details")}</th></tr></thead><tbody>${body}</tbody></table></div>`);
+	dialog.show();
+}
 
 function setup_finish_good_item_query(frm) {
 	frm.set_query("custom_finish_good_item", "items", () => ({
@@ -781,6 +998,20 @@ function apply_stock_entry_data_entry_dialog_layout(dialog) {
 function save_stock_entry_data_entry_from_dialog(state, dialog) {
 	const payload = collect_stock_entry_data_entry_payload(state);
 	if (!payload) return;
+	const requires_finish_good =
+		payload.purpose === "Material Receipt" &&
+		(!!payload.custom_create_tag_numbers || !!payload.custom_sales_order || !!payload.custom_linked_sales_orders);
+	if (requires_finish_good) {
+		const missing_rows = payload.items
+			.map((row, idx) => (!row.custom_finish_good_item && row.item_code ? idx + 1 : null))
+			.filter(Boolean);
+		if (missing_rows.length) {
+			frappe.msgprint(
+				__("Select a Finish Good Item for each Material Receipt item row used for tagged coil production or Sales Order planning. Missing on row(s): {0}.", [missing_rows.join(", ")])
+			);
+			return;
+		}
+	}
 	save_stock_entry_data_entry(state.frm, payload, dialog);
 }
 

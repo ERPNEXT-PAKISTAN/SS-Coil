@@ -154,6 +154,7 @@ doctype_js = {
 		"public/js/ss_coil_prints.js",
 		"public/js/coil_detail_print.js",
 		"public/js/entry_trace_links.js",
+		"public/js/tag_hierarchy_viewer.js",
 		"public/js/linked_workflow_ribbon.js",
 		"public/js/stock_entry.js",
 	],
@@ -186,6 +187,7 @@ doc_events = {
 	"Sales Order": {
 		"before_validate": [
 			"ss_coil.api.apply_sales_order_ss_coil_defaults",
+			"ss_coil.api.render_sales_order_terms_template",
 			"ss_coil.coil_production.sync_sales_order_items_and_production",
 			"ss_coil.coil_balance.sync_sales_order_coil_balance_rows",
 			"ss_coil.api.sync_sales_order_item_tags_from_stock_entry",
@@ -236,7 +238,10 @@ doc_events = {
 		"before_print": "ss_coil.api.prepare_ss_coil_sticker_print",
 	},
 	"Stock Entry": {
-		"before_validate": "ss_coil.api.prepare_stock_entry_links",
+		"before_validate": [
+			"ss_coil.api.prepare_stock_entry_links",
+			"ss_coil.api.validate_stock_entry_finish_good_items",
+		],
 		"before_save": "ss_coil.api.prepare_stock_entry_links",
 		"on_update": "ss_coil.api.sync_stock_entry_finish_good_to_sales_orders",
 		"on_update_after_submit": "ss_coil.api.sync_stock_entry_finish_good_to_sales_orders",

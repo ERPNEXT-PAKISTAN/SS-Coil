@@ -2,7 +2,10 @@
 function render_linked_workflow_ribbon(frm, context) {
 	if (!frm?.layout?.wrapper) return;
 	const doctype = frm.doctype;
-	const ribbon_class = "ss-coil-linked-workflow-ribbon";
+	// Use the same ribbon container as Sales Order so both forms share the same
+	// Order Progress presentation and do not leave behind the older compact UI.
+	const ribbon_class = "ss-coil-order-progress-ribbon";
+	frm.layout.wrapper.children(".ss-coil-linked-workflow-ribbon").remove();
 	if (frm.is_new?.()) {
 		frm.layout.wrapper.children(`.${ribbon_class}`).remove();
 		return;
@@ -38,6 +41,34 @@ function render_linked_workflow_ribbon(frm, context) {
 }
 
 function render_linked_workflow_ribbon_html(frm, context, data, local_status, ribbon_class) {
+	try {
+		render_linked_workflow_ribbon_html_content(frm, context, data, local_status, ribbon_class);
+	} catch (error) {
+		console.error("SS Coil Order Progress ribbon failed to render", error);
+		const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
+		const order = context.doctype === "Stock Entry"
+			? frm.doc.custom_sales_order || String(frm.doc.custom_linked_sales_orders || "").split(/[\n,]+/).map((name) => name.trim()).find(Boolean)
+			: frm.doc.order_no;
+		const order_status = data.status || (data.loading ? __("Loading…") : __("No linked Sales Order"));
+		const order_step = order
+			? `<a href="/app/sales-order/${encodeURIComponent(order)}" style="font-weight:800;color:#2563eb;text-decoration:none;">${esc(order)} · ${esc(order_status)}</a>`
+			: `<span style="font-weight:800;color:#64748b;">${esc(order_status)}</span>`;
+		const local_step = context.doctype === "Stock Entry"
+			? `<span style="margin-left:12px;font-weight:800;color:#475569;">${esc(__("Stock Entry"))}: ${esc(local_status)}</span>`
+			: "";
+		const $layout = frm.layout?.wrapper;
+		if (!$layout) return;
+		let $ribbon = $layout.children(`.${ribbon_class}`);
+		if (!$ribbon.length) {
+			$ribbon = $(`<div class="${ribbon_class}"></div>`);
+			const $page = $layout.children(".form-page").first();
+			$page.length ? $ribbon.insertBefore($page) : $layout.append($ribbon);
+		}
+		$ribbon.html(`<div style="padding:8px 10px;border:1px solid #dbe5ef;border-radius:9px;background:#f8fbff;"><b style="margin-right:10px;color:#16324f;">${__("Order Progress")}</b>${order_step}${local_step}</div>`).show();
+	}
+}
+
+function render_linked_workflow_ribbon_html_content(frm, context, data, local_status, ribbon_class) {
 	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
 	const unique = (rows, key) => [...new Map((rows || []).filter((row) => row[key]).map((row) => [row[key], { ...row, name: row[key] }])).values()];
 	const stock_entries = unique(data.stock_entries, "name");
@@ -75,11 +106,10 @@ function render_linked_workflow_ribbon_html(frm, context, data, local_status, ri
 	const process_started = ss_coils.some((doc) => /process|partial|complete/i.test(doc.order_status || ""));
 	const steps = context.doctype === "Stock Entry"
 		? [
-			{ label: __("Sales Order"), value: sales_order_status, done: data.status && !data.loading },
-			{ label: __("Stock Entry"), value: local_status, done: Number(frm.doc.docstatus) === 1 },
-			{ label: __("SS Coil by Process"), value: process_summary, done: process_complete, active: process_started, multiline: true },
-			{ label: __("Delivery"), value: data.loading ? __("Loading…") : `${percent_delivered}%`, done: percent_delivered >= 100 },
-			{ label: __("Billing"), value: data.loading ? __("Loading…") : `${percent_billed}%`, done: percent_billed >= 100 },
+			{ label: __("Sales Order"), value: sales_order_status, state: Number(frm.doc.docstatus) === 2 ? "cancelled" : data.status && !data.loading ? "done" : "active" },
+			{ label: __("Production"), value: data.loading ? __("Loading…") : process_complete ? __("Completed") : process_started ? __("In Progress") : __("Not Started"), state: process_complete ? "done" : process_started ? "active" : "waiting" },
+			{ label: __("Delivery"), value: data.loading ? __("Loading…") : `${format_number(percent_delivered)}%`, state: percent_delivered >= 100 ? "done" : percent_delivered > 0 ? "active" : "waiting" },
+			{ label: __("Billing"), value: data.loading ? __("Loading…") : `${format_number(percent_billed)}%`, state: percent_billed >= 100 ? "done" : percent_billed > 0 ? "active" : "waiting" },
 		]
 		: [
 			{ label: __("Sales Order"), value: sales_order_status, done: data.status && !data.loading },
@@ -89,8 +119,10 @@ function render_linked_workflow_ribbon_html(frm, context, data, local_status, ri
 			{ label: __("Billing"), value: data.loading ? __("Loading…") : `${percent_billed}%`, done: percent_billed >= 100 },
 		];
 	const steps_html = steps.map((step, index) => {
-		const color = step.done ? "#16a34a" : step.active ? "#2563eb" : "#94a3b8";
-		return `${index ? `<span aria-hidden="true" style="color:#94a3b8;font-size:14px;font-weight:900;">➜</span>` : ""}<div style="display:flex;align-items:center;gap:6px;flex:1 1 ${step.multiline ? "220px" : "140px"};min-width:0;padding:5px 7px;border:1px solid ${step.done ? "#86efac" : step.active ? "#93c5fd" : "#dbe5ef"};border-radius:8px;background:${step.done ? "#f0fdf4" : step.active ? "#eff6ff" : "#f8fafc"};"><span style="display:grid;place-items:center;flex:0 0 21px;width:21px;height:21px;border-radius:50%;background:${color};color:white;font-size:10px;font-weight:900;">${step.done ? "✓" : index + 1}</span><span style="min-width:0;display:flex;flex-direction:column;line-height:1.15;"><b style="font-size:9px;color:#64748b;text-transform:uppercase;">${esc(step.label)}</b><span title="${esc([step.value, operation_summary].filter(Boolean).join(" · "))}" style="font-size:10px;font-weight:750;color:${color};overflow:hidden;${step.multiline ? "white-space:normal;overflow-wrap:anywhere;max-height:2.5em;" : "text-overflow:ellipsis;white-space:nowrap;"}">${esc(step.value)}</span></span></div>`;
+		const state = step.state || (step.done ? "done" : step.active ? "active" : "waiting");
+		const color = state === "done" ? "#15803d" : state === "cancelled" ? "#dc2626" : state === "active" ? "#2563eb" : "#94a3b8";
+		const marker = state === "done" ? "✓" : state === "cancelled" ? "!" : index + 1;
+		return `${index ? `<span aria-hidden="true" style="color:#94a3b8;font-size:16px;font-weight:900;padding:0 2px;">➜</span>` : ""}<div style="display:flex;align-items:center;gap:7px;flex:1 1 155px;min-width:0;padding:6px 9px;border:1px solid ${color}33;border-radius:9px;background:linear-gradient(110deg,${color}12,#fff 80%);"><span style="display:grid;place-items:center;flex:0 0 23px;width:23px;height:23px;border-radius:50%;background:${color};color:#fff;font-size:11px;font-weight:900;">${marker}</span><span style="min-width:0;display:flex;flex-direction:column;line-height:1.2;"><b style="font-size:9px;letter-spacing:.045em;text-transform:uppercase;color:#64748b;">${esc(step.label)}</b><span title="${esc(step.value)}" style="font-size:10px;font-weight:800;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(step.value)}</span></span></div>`;
 	}).join("");
 	const route_map = { stock_entries: [__("Stock Entries"), "stock-entry", stock_entries], ss_coils: [__("SS Coil Records"), "ss-coil", ss_coils], delivery_notes: [__("Delivery Notes"), "delivery-note", delivery_notes], invoices: [__("Sales Invoices"), "sales-invoice", invoices], tags: [__("Tag Hierarchy"), "tag-registry", tag_rows.map((tag) => ({ ...tag, name: tag.tag_no }))] };
 	const detail_map = {
@@ -100,6 +132,14 @@ function render_linked_workflow_ribbon_html(frm, context, data, local_status, ri
 		invoices: [data.loading ? __("Loading billing status…") : `${percent_billed}% ${__("billed")}`],
 		tags: [`${tag_rows.length} ${__("parent and child tags")}`],
 	};
+	if (context.doctype === "Stock Entry") {
+		const order_rows = sales_order
+			? [{ name: sales_order, status: sales_order_status, transaction_date: data.transaction_date, customer_name: data.customer_name }]
+			: [];
+		// Reuse the established linked-record card and replace only its target.
+		route_map.stock_entries = [__("Sales Order"), "sales-order", order_rows];
+		detail_map.stock_entries = [sales_order_status, data.customer_name || data.customer].filter(Boolean);
+	}
 	const cards_html = Object.entries(route_map).map(([kind, [label, route, rows]]) => {
 		const color = { stock_entries: "#7c3aed", ss_coils: "#0891b2", delivery_notes: "#16a34a", invoices: "#ea580c", tags: "#db2777" }[kind];
 		const links = kind !== "tags" ? rows.slice(0, 2).map((row) => `<a href="/app/${route}/${encodeURIComponent(row.name)}" style="color:${color};font-size:10px;font-weight:700;text-decoration:none;">${esc(row.name)}</a>`).join('<span style="color:#cbd5e1;padding:0 4px;">·</span>') : "";
@@ -112,7 +152,7 @@ function render_linked_workflow_ribbon_html(frm, context, data, local_status, ri
 			: `<div title="${esc(detail_title)}" style="margin-top:4px;color:#475569;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc((detail_map[kind] || []).slice(0, 2).join(" · ") || (data.loading ? __("Loading…") : __("No linked records")))}</div>`;
 		return `<div style="min-width:0;padding:7px 9px;border:1px solid ${color}44;border-top:3px solid ${color};border-radius:9px;background:linear-gradient(145deg,${color}14,#fff 75%);"><div style="display:flex;justify-content:space-between;align-items:center;gap:5px;"><a href="/app/${route}/view/list" style="color:${color};font-size:9px;font-weight:850;text-transform:uppercase;text-decoration:none;">${esc(label)} ↗</a><button type="button" data-linked-workflow-popup="${kind}" style="display:flex;align-items:center;gap:4px;border:0;border-radius:999px;background:${color};color:white;padding:2px 7px 2px 3px;font-size:9px;font-weight:800;cursor:pointer;"><span style="display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:white;color:${color};font-size:10px;">${data.loading ? "…" : rows.length}</span>${__("View all")}</button></div>${details_html}${links ? `<div style="margin-top:3px;display:flex;gap:2px;overflow:hidden;white-space:nowrap;">${links}</div>` : ""}</div>`;
 	}).join("");
-	const html = `<div style="padding:5px 4px 8px;"><div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span></div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-bottom:7px;">${steps_html}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;">${cards_html}</div></div>`;
+	const html = `<div id="ss-coil-so-status-ribbon" style="padding:5px 4px 8px;"><div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span></div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:0 0 7px;">${steps_html}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">${cards_html}</div>${context.doctype === "Stock Entry" ? `<div style="margin-top:5px;text-align:right;font-size:10px;font-weight:700;color:#475569;">${__("This Stock Entry")}: ${esc(local_status)}</div>` : ""}</div>`;
 	const $layout = frm.layout.wrapper;
 	let $ribbon = $layout.children(`.${ribbon_class}`);
 	if (!$ribbon.length) {
@@ -142,9 +182,17 @@ function render_linked_workflow_ribbon_html(frm, context, data, local_status, ri
 		}
 		const row_data = rows.map((row) => ({
 			name: row.name,
-			status: kind === "stock_entries" ? [__("Draft"), __("Submitted"), __("Cancelled")][Number(row.docstatus)] || __("Unknown") : kind === "ss_coils" ? row.order_status || __("Not Started") : kind === "tags" ? row.registry?.status || row.status || "-" : row.status || "-",
-			date: row.posting_date || row.sc_date || "-",
-			detail: row.purpose || row.operation || row.item_name || row.item_code || row.root_tag_no || "-",
+			status: kind === "stock_entries"
+				? context.doctype === "Stock Entry"
+					? row.status || __("Unknown")
+					: [__("Draft"), __("Submitted"), __("Cancelled")][Number(row.docstatus)] || __("Unknown")
+				: kind === "ss_coils"
+					? row.order_status || __("Not Started")
+					: kind === "tags"
+						? row.registry?.status || row.status || "-"
+						: row.status || "-",
+			date: row.posting_date || row.sc_date || row.transaction_date || "-",
+			detail: row.purpose || row.operation || row.customer_name || row.item_name || row.item_code || row.root_tag_no || "-",
 		}));
 		const table = row_data.length ? row_data.map((row) => `<tr><td>${kind === "tags" ? esc(row.name) : `<a href="/app/${route}/${encodeURIComponent(row.name)}" target="_blank">${esc(row.name)}</a>`}</td><td>${esc(row.status)}</td><td>${esc(row.date)}</td><td>${esc(row.detail)}</td></tr>`).join("") : `<tr><td colspan="4" style="padding:22px;text-align:center;color:#64748b;">${__("No linked records found.")}</td></tr>`;
 		const dialog = new frappe.ui.Dialog({ title: label, size: "large", fields: [{ fieldtype: "HTML", fieldname: "records" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
@@ -152,12 +200,6 @@ function render_linked_workflow_ribbon_html(frm, context, data, local_status, ri
 		dialog.show();
 	});
 }
-
-frappe.ui.form.on("Stock Entry", {
-	refresh(frm) {
-		render_linked_workflow_ribbon(frm, { doctype: "Stock Entry", name: frm.doc.name });
-	},
-});
 
 frappe.ui.form.on("SS Coil", {
 	refresh(frm) {

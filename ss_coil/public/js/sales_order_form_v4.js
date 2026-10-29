@@ -5,6 +5,7 @@ frappe.ui.form.on("Sales Order", {
 		load_process_charge_catalog(frm);
 	},
 	refresh(frm) {
+		render_unresolved_sales_order_terms(frm);
 		bind_live_dimension_events(frm);
 		add_sales_order_tag_buttons(frm);
 		frappe.require("/assets/ss_coil/js/ss_coil_prints.js", () => {
@@ -40,6 +41,9 @@ frappe.ui.form.on("Sales Order", {
 		});
 		// Process charges are synced server-side on before_validate only.
 	},
+	tc_name(frm) {
+		render_unresolved_sales_order_terms(frm);
+	},
 	items_add(frm, cdt, cdn) {
 		apply_ss_coil_sales_order_row_defaults(frm, cdt, cdn);
 	},
@@ -47,6 +51,34 @@ frappe.ui.form.on("Sales Order", {
 		// Charge lines are rebuilt on Save by the server if processes are set.
 	},
 });
+
+function render_unresolved_sales_order_terms(frm) {
+	const rawTerms = String(frm.doc.terms || "");
+	const templateName = frm.doc.tc_name;
+	if (!templateName || (!rawTerms.includes("{{") && !rawTerms.includes("{%"))) {
+		return;
+	}
+	const requestKey = `${templateName}:${rawTerms}`;
+	if (frm.__ss_coil_terms_render_request === requestKey) {
+		return;
+	}
+	frm.__ss_coil_terms_render_request = requestKey;
+	frappe.call({
+		method: "erpnext.setup.doctype.terms_and_conditions.terms_and_conditions.get_terms_and_conditions",
+		args: { template_name: templateName, doc: frm.doc },
+		callback(r) {
+			if (frm.doc.tc_name !== templateName || !r.message) {
+				return;
+			}
+			if (String(frm.doc.terms || "").includes("{{") || String(frm.doc.terms || "").includes("{%")) {
+				frm.set_value("terms", r.message);
+			}
+		},
+		error() {
+			frm.__ss_coil_terms_render_request = null;
+		},
+	});
+}
 
 window.SS_COIL_DEFAULT_WAREHOUSE = window.SS_COIL_DEFAULT_WAREHOUSE || "Stores - SSC";
 window.SS_COIL_DEFAULT_LENGTH_C = window.SS_COIL_DEFAULT_LENGTH_C || "C";
@@ -2513,7 +2545,7 @@ function render_sales_order_status_ribbon(frm, data) {
 		</div>`;
 	}).join("");
 	const html = `<div id="ss-coil-so-status-ribbon" style="padding:5px 4px 8px;">
-		<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<span style="height:1px;flex:1;background:#dbe5ef;"></span></div>
+		<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<button type="button" data-sales-order-detail-all style="display:flex;align-items:center;gap:5px;margin-left:auto;border:0;border-radius:999px;background:#16324f;color:#fff;padding:3px 10px;font-size:10px;font-weight:800;cursor:pointer;">${__("View all")} ↗</button><span style="height:1px;flex:1;background:#dbe5ef;"></span></div>
 		<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:0 0 7px;">${progress_html}</div>
 		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">
 			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock_entries", stock_entries)}
@@ -2543,6 +2575,9 @@ function render_sales_order_status_ribbon(frm, data) {
 			tags: { title: __("Parent and Child Tags"), route: null, tag_groups: data.tag_tree || [], rows: tag_rows.map((d) => ({ name: d.tag_no, type: roots.has(d.tag_no) ? __("Parent / Root") : __("Child"), status: d.status, parent: d.parent_tag_no || "-", root: d.root_tag_no || "-", detail: d.item_name || "-", current: d.current || "-" })) },
 		};
 		if (configs[kind]) open_sales_order_status_popup(configs[kind]);
+	});
+	$ribbon.off("click.ss_coil_status_detail", "[data-sales-order-detail-all]").on("click.ss_coil_status_detail", "[data-sales-order-detail-all]", function () {
+		open_sales_order_execution_detail(frm, data);
 	});
 }
 
@@ -2605,6 +2640,7 @@ function open_sales_order_status_popup(config) {
 		});
 		return;
 	}
+
 	const columns = config.route
 		? [["name", __("Document")], ["status", __("Status")], ["date", __("Date")], ["detail", __("Details")]]
 		: [["name", __("Tag")], ["type", __("Type")], ["status", __("Status")], ["parent", __("Parent Tag")], ["root", __("Root Tag")], ["detail", __("Item")], ["current", __("Current Location")]];
@@ -2622,6 +2658,109 @@ function open_sales_order_status_popup(config) {
 	dialog.show();
 }
 
+function open_sales_order_execution_detail(frm, data) {
+	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
+	const qty = (value) => format_number(flt(value || 0));
+	const dispatch_rows = data.dispatch_summary || [];
+	const coils = data.ss_coil_docs || [];
+	const coils_by_item = new Map();
+	const coils_by_name = new Map(coils.map((coil) => [coil.name, coil]));
+	coils.forEach((coil) => {
+		if (!coils_by_item.has(coil.sales_order_item)) coils_by_item.set(coil.sales_order_item, []);
+		coils_by_item.get(coil.sales_order_item).push(coil);
+	});
+	const traces = new Map((data.tag_trace || []).filter((row) => row.tag_no).map((row) => [row.tag_no, row]));
+	const order_items = new Map((data.items || []).map((item) => [item.name, item]));
+	const status_summary = (docs) => {
+		const counts = {};
+		(docs || []).forEach((doc) => {
+			const status = doc.order_status || __("Not Started");
+			counts[status] = (counts[status] || 0) + 1;
+		});
+		return Object.entries(counts).map(([status, count]) => `${status}: ${count}`).join(" · ") || __("Not Started");
+	};
+	const item_rows = dispatch_rows.map((item) => {
+		const production_docs = coils_by_item.get(item.sales_order_item) || [];
+		const order_item = order_items.get(item.sales_order_item) || {};
+		return {
+			tag: item.tag_no || "-", item: item.item_name || item.item_code || "-",
+			status: production_docs.length ? status_summary(production_docs) : order_item.custom_status || __("Not Started"),
+			ordered: item.ordered_qty, delivered: item.delivered_qty, invoiced: item.invoiced_qty,
+			production: production_docs.map((doc) => `${doc.name} · ${doc.operation || ""} · ${doc.order_status || __("Not Started")}`).join("; ") || __("No SS Coil production"),
+		};
+	});
+
+	const tag_item_map = new Map();
+	const primary_tag_item_map = new Map();
+	dispatch_rows.forEach((item) => {
+		const primary = String(item.tag_no || "").trim();
+		if (primary) primary_tag_item_map.set(primary, item);
+		[primary, ...String(item.child_tag_no || "").split(/[\n,;]+/).map((tag) => tag.trim()).filter(Boolean)].forEach((tag) => {
+			if (tag && !tag_item_map.has(tag)) tag_item_map.set(tag, item);
+		});
+	});
+	const tag_rows = [];
+	const walk_tag = (node, parent_tag = "", root_tag = "") => {
+		if (!node?.tag_no) return;
+		const tag = node.tag_no;
+		const root = root_tag || tag;
+		const trace = traces.get(tag) || {};
+		const registry = trace.registry || {};
+		const item = primary_tag_item_map.get(tag) || tag_item_map.get(tag) || tag_item_map.get(root) || {};
+		const event_docs = (trace.events || []).filter((event) => /^SS Coil (Input|Output)$/.test(event.stage || "")).map((event) => event.docname);
+		const related_names = [...new Set([
+			...event_docs,
+			...(node.previous_docs || []).map((doc) => doc.name),
+			...(node.next_docs || []).map((doc) => doc.name),
+			...(node.source_doctype === "SS Coil" ? [node.source_docname] : []),
+		].filter(Boolean))];
+		const related_coils = related_names.map((name) => coils_by_name.get(name)).filter(Boolean);
+		const events = trace.events || [];
+		const delivered = events.filter((event) => event.stage === "Delivery Note").reduce((sum, event) => sum + flt(event.qty), 0);
+		const invoiced = events.filter((event) => event.stage === "Sales Invoice").reduce((sum, event) => sum + flt(event.qty), 0);
+		const delivery_docs = [...new Set(events.filter((event) => event.stage === "Delivery Note").map((event) => event.docname).filter(Boolean))];
+		const invoice_docs = [...new Set(events.filter((event) => event.stage === "Sales Invoice").map((event) => event.docname).filter(Boolean))];
+		tag_rows.push({
+			tag, parent: parent_tag || "-", item: registry.item_name || registry.item_code || node.item_name || node.item_code || item.item_name || item.item_code || "-",
+			tag_status: registry.status || node.status || "-",
+			production_status: related_coils.length ? status_summary(related_coils) : node.status === "Produced" ? __("Produced") : __("No production record"),
+			production_docs: related_coils.map((doc) => `${doc.name} · ${doc.operation || ""} · ${doc.order_status || __("Not Started")}`).join("; ") || related_names.join(", ") || "-",
+			ordered: primary_tag_item_map.has(tag) ? primary_tag_item_map.get(tag).ordered_qty : 0,
+			delivered, invoiced, delivery_docs: delivery_docs.join(", ") || "-", invoice_docs: invoice_docs.join(", ") || "-",
+		});
+		(node.children || []).forEach((child) => walk_tag(child, tag, root));
+	};
+	(data.tag_tree || []).forEach((group) => walk_tag(group.hierarchy, "", group.root_tag_no));
+	if (!tag_rows.length) {
+		dispatch_rows.forEach((item) => {
+			const tags = [...new Set([item.tag_no, ...String(item.child_tag_no || "").split(/[\n,;]+/)].map((tag) => String(tag || "").trim()).filter(Boolean))];
+			tags.forEach((tag) => {
+				const trace = traces.get(tag) || {};
+				const events = trace.events || [];
+				const docs = [...new Set(events.filter((event) => /^SS Coil (Input|Output)$/.test(event.stage || "")).map((event) => event.docname).filter(Boolean))];
+				const delivery_docs = [...new Set(events.filter((event) => event.stage === "Delivery Note").map((event) => event.docname).filter(Boolean))];
+				const invoice_docs = [...new Set(events.filter((event) => event.stage === "Sales Invoice").map((event) => event.docname).filter(Boolean))];
+				tag_rows.push({ tag, parent: "-", item: item.item_name || item.item_code, tag_status: trace.registry?.status || "-", production_status: docs.length ? status_summary(docs.map((name) => coils_by_name.get(name)).filter(Boolean)) : __("No production record"), production_docs: docs.join(", ") || "-", ordered: tag === item.tag_no ? item.ordered_qty : 0, delivered: events.filter((event) => event.stage === "Delivery Note").reduce((sum, event) => sum + flt(event.qty), 0), invoiced: events.filter((event) => event.stage === "Sales Invoice").reduce((sum, event) => sum + flt(event.qty), 0), delivery_docs: delivery_docs.join(", ") || "-", invoice_docs: invoice_docs.join(", ") || "-" });
+			});
+		});
+	}
+	const delivered_total = dispatch_rows.reduce((sum, item) => sum + flt(item.delivered_qty), 0);
+	const invoiced_total = dispatch_rows.reduce((sum, item) => sum + flt(item.invoiced_qty), 0);
+	const status = data.status || frm.doc.status || __("Draft");
+	const summary = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px;">${[
+		[__("Sales Order"), frm.doc.name], [__("Status"), status], [__("Order Qty"), qty(data.total_qty)],
+		[__("Delivered Qty"), qty(delivered_total)], [__("Invoice Status"), data.billing_status || __("Not Billed")], [__("Invoiced Qty"), qty(invoiced_total)],
+		[__("SS Coil Production"), `${coils.length} ${__("records")}`],
+	].map(([label, value]) => `<div style="padding:9px 10px;border:1px solid #dbe5ef;border-top:3px solid #2563eb;border-radius:9px;background:#f8fbff;"><div style="font-size:9px;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:#64748b;">${esc(label)}</div><div style="margin-top:4px;font-size:12px;font-weight:800;color:#1e3a5f;">${esc(value)}</div></div>`).join("")}</div>`;
+	const table_wrap = (title, headers, body, min_width) => `<h5 style="margin:14px 0 7px;color:#334155;font-weight:700;">${esc(title)}</h5><div style="max-height:36vh;overflow:auto;border:1px solid #dbe5ef;border-radius:10px;"><table class="table table-bordered" style="margin:0;min-width:${min_width}px;background:#fff;font-weight:400;"><thead style="position:sticky;top:0;z-index:1;background:#eff6ff;"><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
+	const item_body = item_rows.length ? item_rows.map((row) => `<tr style="background:#fff;font-weight:400;"><td>${esc(row.tag)}</td><td>${esc(row.item)}</td><td>${esc(row.status)}</td><td style="text-align:right;">${qty(row.ordered)}</td><td style="text-align:right;">${qty(row.delivered)}</td><td style="text-align:right;">${qty(row.invoiced)}</td><td>${esc(row.production)}</td></tr>`).join("") : `<tr style="background:#fff;font-weight:400;"><td colspan="7" style="padding:24px;text-align:center;color:#64748b;">${__("No Sales Order item details found.")}</td></tr>`;
+	const tag_body = tag_rows.length ? tag_rows.map((row) => `<tr style="background:#fff;font-weight:400;"><td>${esc(row.tag)}</td><td>${esc(row.parent)}</td><td>${esc(row.item)}</td><td>${esc(row.tag_status)}</td><td>${esc(row.production_status)}</td><td>${esc(row.production_docs)}</td><td style="text-align:right;">${qty(row.ordered)}</td><td style="text-align:right;">${qty(row.delivered)}</td><td>${esc(row.delivery_docs)}</td><td style="text-align:right;">${qty(row.invoiced)}</td><td>${esc(row.invoice_docs)}</td></tr>`).join("") : `<tr style="background:#fff;font-weight:400;"><td colspan="11" style="padding:24px;text-align:center;color:#64748b;">${__("No tag production details found.")}</td></tr>`;
+	const item_table = table_wrap(__("Sales Order Items"), [__("Item Tag"), __("Item"), __("Production Status"), __("Order Qty"), __("Delivered"), __("Invoiced"), __("SS Coil Records / Status")], item_body, 1050);
+	const tag_table = table_wrap(__("Tag-wise Production and Dispatch"), [__("Tag No"), __("Parent Tag"), __("Item"), __("Tag Status"), __("SS Coil Status"), __("SS Coil Production"), __("Order Qty"), __("Delivered Qty"), __("Delivery Notes"), __("Invoiced Qty"), __("Sales Invoices")], tag_body, 1500);
+	const dialog = new frappe.ui.Dialog({ title: `${__("Sales Order Details")}: ${frm.doc.name}`, size: "extra-large", fields: [{ fieldtype: "HTML", fieldname: "details" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
+	dialog.fields_dict.details.$wrapper.html(`${summary}${item_table}${tag_table}`);
+	dialog.show();
+}
 function render_sales_order_dashboard(frm) {
 	const html_field = frm.fields_dict.custom_detail_status || frm.fields_dict.detail_status;
 	if (frm.is_new && frm.is_new()) {

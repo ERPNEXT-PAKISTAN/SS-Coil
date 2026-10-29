@@ -1,11 +1,19 @@
 frappe.ui.form.on("SO Production Plan", {
 	refresh(frm) {
+		renumber_so_production_plan_rows(frm);
 		apply_so_production_plan_cutting_grid_mode(frm);
 	},
 	process_key(frm) {
 		apply_so_production_plan_cutting_grid_mode(frm);
 	},
 });
+
+function renumber_so_production_plan_rows(frm) {
+	(frm.doc.cutting_scheme || []).forEach((row, idx) => {
+		row.seq = idx + 1;
+	});
+	frm.refresh_field("cutting_scheme");
+}
 
 function apply_so_production_plan_cutting_grid_mode(frm) {
 	const grid_field = frm.fields_dict.cutting_scheme;

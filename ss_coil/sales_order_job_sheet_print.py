@@ -1,4 +1,4 @@
-"""Sales Order Job Sheet — items, cutting scheme, and packing (not SS Coil job sheet)."""
+"""Sales Order Job Sheet — order, cutting, production output, and packing details."""
 
 from html import escape
 
@@ -32,6 +32,22 @@ CUTTING_COLUMNS = (
 	("tolerance_plus", "Tol (+)"),
 	("tolerance_minus", "Tol (-)"),
 	("knife", "Knife"),
+)
+
+JOB_OUTPUT_COLUMNS = (
+	("tag_no", "Tag No"),
+	("class", "Finish Good"),
+	("customer", "Customer"),
+	("for_customer", "For Customer"),
+	("thickness", "Thickness"),
+	("width", "Width"),
+	("length", "Length (Mtr)"),
+	("estimated_qty", "Est Qty"),
+	("actual_qty", "Actual Qty"),
+	("estimated_wt", "Est WT"),
+	("actual_wt", "Actual WT"),
+	("packing", "Packing"),
+	("next_process", "Next Process"),
 )
 
 PACKING_COLUMNS = (
@@ -132,12 +148,16 @@ def _render_table(columns, rows, empty_label="No rows"):
 		bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
 		cells = []
 		for fieldname, _label in columns:
-			val = row.get(fieldname)
+			val = idx + 1 if fieldname == "seq" else row.get(fieldname)
 			if fieldname == "knife":
 				cell_val = escape(_knife(val))
 			elif fieldname in (
 				"qty",
+				"estimated_qty",
+				"actual_qty",
 				"estimated_wt",
+				"actual_wt",
+				"thickness",
 				"no_of_pack",
 				"width",
 				"strip",
@@ -349,9 +369,13 @@ def _so_cutting_sections(sales_order, doc=None):
 	for group in groups:
 		label = group.get("item_label") or group.get("sales_order_item") or "Item"
 		meta = (
-			f'<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:8px;">'
-			f"{_esc(label)} · Qty: {_fmt_float(group.get('qty'))} · "
-			f"Tag: {_esc(group.get('tag_no'))} · Dim: {_esc(group.get('dimension'))}</div>"
+			f'<div style="margin:14px 0 10px;padding:14px 16px;background:#dbeafe !important;'
+			f'border:2px solid #60a5fa;border-left:8px solid #1d4ed8;border-radius:10px;'
+			f'font-size:13px;color:#1e293b;box-shadow:0 2px 6px rgba(37,99,235,.18);'
+			f'-webkit-print-color-adjust:exact;print-color-adjust:exact;">'
+			f'<strong style="font-size:16px;font-weight:900;color:#12345a;">{_esc(label)}</strong>'
+			f" <span style='font-weight:800;'>· Qty: {_fmt_float(group.get('qty'))} · "
+			f"Tag: {_esc(group.get('tag_no'))} · Dim: {_esc(group.get('dimension'))}</span></div>"
 		)
 		rows = []
 		for row in group.get("rows") or []:
@@ -380,6 +404,56 @@ def _so_cutting_sections(sales_order, doc=None):
 			f"</div>"
 		)
 	return _section("Cutting Scheme", "".join(parts))
+
+
+def _sales_order_job_output_groups(doc):
+	item_names = [row.name for row in (doc.items or []) if row.name]
+	or_filters = [{"order_no": doc.name}]
+	if item_names:
+		or_filters.append({"sales_order_item": ["in", item_names]})
+	coils = frappe.get_all(
+		"SS Coil",
+		or_filters=or_filters,
+		fields=["name", "operation", "sales_order_item", "for_customer"],
+		order_by="creation asc, name asc",
+	)
+	groups = []
+	for coil in coils:
+		rows = frappe.get_all(
+			"Coil Output",
+			filters={"parent": coil.name, "parenttype": "SS Coil", "parentfield": "job_output"},
+			fields=[
+				"tag_no", "class", "customer", "for_customer", "thickness", "width", "length",
+				"estimated_qty", "actual_qty", "estimated_wt", "actual_wt", "packing", "next_process",
+			],
+			order_by="idx asc",
+		)
+		if not rows:
+			continue
+		for row in rows:
+			row["for_customer"] = row.get("for_customer") or coil.get("for_customer") or doc.get("custom_for_customer")
+		groups.append({"coil": coil, "rows": rows})
+	return groups
+
+
+def _sales_order_job_output_section(doc):
+	groups = _sales_order_job_output_groups(doc)
+	if not groups:
+		return _section("Job Output", _render_table(JOB_OUTPUT_COLUMNS, [], "No Job Output rows found for this Sales Order."))
+
+	parts = []
+	for group in groups:
+		coil = group["coil"]
+		process = _esc(coil.get("operation") or "Unassigned")
+		coil_link = _desk_link("ss-coil", coil.name)
+		item = _esc(coil.get("sales_order_item") or "—")
+		group_header = (
+			f'<div style="margin:12px 0 6px;padding:8px 10px;background:#eff6ff;border-left:4px solid #2563eb;'
+			f'border-radius:6px;font-size:12px;font-weight:800;color:#1e3a5f;">'
+			f'{process} · {coil_link} · SO Item: {item}</div>'
+		)
+		parts.append(group_header + _render_table(JOB_OUTPUT_COLUMNS, group["rows"], "No output rows."))
+	return _section("Job Output", "".join(parts))
 
 
 def build_sales_order_job_sheet_html(doc):
@@ -489,6 +563,7 @@ def build_sales_order_job_sheet_html(doc):
 	body = (
 		_section("Order Items", _render_table(ITEM_COLUMNS, _so_items(doc), "No order items."))
 		+ _so_cutting_sections(doc.name, doc)
+		+ _sales_order_job_output_section(doc)
 		+ _section(
 			"Signatures",
 			_signature_row(

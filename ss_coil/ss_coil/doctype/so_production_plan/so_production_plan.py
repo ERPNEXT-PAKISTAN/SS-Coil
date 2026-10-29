@@ -6,6 +6,7 @@ from frappe.model.document import Document
 
 class SOProductionPlan(Document):
 	def validate(self):
-		for row in self.cutting_scheme or []:
+		for idx, row in enumerate(self.cutting_scheme or [], start=1):
+			row.seq = idx
 			if self.sales_order and not row.get("so_no"):
 				row.so_no = self.sales_order

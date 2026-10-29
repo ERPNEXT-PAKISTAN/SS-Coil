@@ -33,6 +33,8 @@ class SSCoil(Document):
 			self.order_status = "Not Started"
 		self._enforce_completed_lock()
 		self._block_duplicate_active_entry()
+		for idx, row in enumerate(self.cutting_detail or [], start=1):
+			row.seq = idx
 
 	def _block_duplicate_active_entry(self):
 		# One SS Coil entry is allowed per production row and operation. This

@@ -3542,10 +3542,10 @@ function build_cutting_scheme_process_table_html(group) {
 
 	const rows = row_list.length
 		? row_list
-				.map((row) => {
+				.map((row, idx) => {
 					if (is_slitter) {
 						return `<tr>
-							<td style="${cell}">${row.seq || ""}</td>
+							<td style="${cell}">${idx + 1}</td>
 							<td style="${cell}">${row.width || ""}</td>
 							<td style="${cell}">${row.strip || ""}</td>
 							<td style="${cell}">${row.lengthcut || ""}</td>
@@ -3563,7 +3563,7 @@ function build_cutting_scheme_process_table_html(group) {
 								? row.strip
 								: "";
 					return `<tr>
-						<td style="${cell}">${row.seq || ""}</td>
+						<td style="${cell}">${idx + 1}</td>
 						<td style="${cell}">${row.width || ""}</td>
 						<td style="${cell}">${row.length || ""}</td>
 						<td style="${cell}">${row.lengthcut || ""}</td>
@@ -4170,7 +4170,7 @@ function format_cutting_scheme_preview_html(payload) {
 					const next_cell = cint(d.carry_forward) ? __("Yes") : __("No");
 					if (is_slitter) {
 						return `<tr style="background:${bg};">
-							<td style="${td}">${d.seq || ""}</td>
+							<td style="${td}">${idx + 1}</td>
 							<td style="${td}">${d.width || ""}</td>
 							<td style="${td}">${d.strip || ""}</td>
 							<td style="${td}">${d.lengthcut || ""}</td>
@@ -4188,7 +4188,7 @@ function format_cutting_scheme_preview_html(payload) {
 								? d.strip
 								: "";
 					return `<tr style="background:${bg};">
-						<td style="${td}">${d.seq || ""}</td>
+						<td style="${td}">${idx + 1}</td>
 						<td style="${td}">${d.width || ""}</td>
 						<td style="${td}">${d.length || ""}</td>
 						<td style="${td}">${d.lengthcut || ""}</td>

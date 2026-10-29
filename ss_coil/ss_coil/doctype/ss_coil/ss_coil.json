@@ -15,7 +15,6 @@
   "sc_date",
   "column_break_twvh",
   "order_no",
-  "job_sheet_no",
   "column_break_wmcx",
   "sales_order_item",
   "coil_production_line",
@@ -188,11 +187,6 @@
   {
    "fieldname": "column_break_twvh",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "job_sheet_no",
-   "fieldtype": "Data",
-   "label": "Job Sheet No"
   },
   {
    "fieldname": "order_no",

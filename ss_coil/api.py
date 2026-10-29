@@ -2886,6 +2886,41 @@ def _sales_order_item_qty_metrics_for_input(so_item):
 	return {"estimated_wt": qty, "estimated_qty": qty_of_coil, "actual_qty": qty_of_coil}
 
 
+def _stock_entry_for_sales_order_item(source, so_item=None, proxy=None, prod=None):
+	"""Resolve the precise source Stock Entry for the selected SO production row."""
+	for row, fieldname in (
+		(prod, "source_stock_entry"),
+		(proxy, "custom_source_stock_entry"),
+		(so_item, "custom_source_stock_entry"),
+	):
+		value = row.get(fieldname) if row else None
+		if value and frappe.db.exists("Stock Entry", value):
+			return value
+
+	for row, fieldname in (
+		(prod, "source_stock_entry_detail"),
+		(so_item, "custom_source_stock_entry_detail"),
+	):
+		detail = row.get(fieldname) if row else None
+		if detail and frappe.db.exists("Stock Entry Detail", detail):
+			stock_entry = frappe.db.get_value("Stock Entry Detail", detail, "parent")
+			if stock_entry and frappe.db.exists("Stock Entry", stock_entry):
+				return stock_entry
+
+	# The Sales Order header is a comma-separated summary. Use it only when it
+	# identifies exactly one valid entry; multiple entries need the item-level link.
+	entries = source.get("custom_source_stock_entries") if source else None
+	if entries:
+		candidates = list(dict.fromkeys(
+			name.strip()
+			for name in re.split(r"[,;\n]+", str(entries))
+			if name.strip() and frappe.db.exists("Stock Entry", name.strip())
+		))
+		if len(candidates) == 1:
+			return candidates[0]
+	return None
+
+
 def _job_output_estimated_wt(input_row, so_row, output_width):
 	"""estimated_wt = (input_coil.estimated_wt / so_item.width) × job_output row width."""
 	input_wt = flt(getattr(input_row, "estimated_wt", None) or (input_row or {}).get("estimated_wt"))
@@ -2975,6 +3010,13 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 			if not doc.get("custom_cutting_scheme_unlocked"):
 				frappe.throw(_("Unlock the completed Cutting Scheme before changing it."))
 			_require_cutting_scheme_manager()
+	if not doc.get("stock_entry") and doc.get("order_no"):
+		so_doc = frappe.get_cached_doc("Sales Order", doc.order_no)
+		doc.stock_entry = _stock_entry_for_sales_order_item(
+			so_doc,
+			so_item=so_item_doc,
+			proxy=so_item_doc,
+		)
 
 	packing_type = _ss_coil_packing_type(doc, so_row)
 	if packing_type:
@@ -4317,7 +4359,6 @@ def create_next_ss_coil_entry(source_name):
 		target_doc.for_customer = source_doc.for_customer
 		target_doc.order_received_date = source_doc.order_received_date
 		target_doc.sc_date = nowdate()
-		target_doc.job_sheet_no = source_doc.job_sheet_no
 		target_doc.machine = source_doc.machine
 		target_doc.special_instructions = source_doc.special_instructions
 		target_doc.remarks = source_doc.remarks
@@ -5370,7 +5411,13 @@ def get_sales_order_item_for_ss_coil(sales_order_item):
 	frappe.client.get / get_value fail for shop-floor users.
 	"""
 	_assert_ss_coil_or_sales_order_read()
-	return _get_sales_order_item_dict(sales_order_item)
+	row = _get_sales_order_item_dict(sales_order_item)
+	if row and row.get("parent"):
+		source = frappe.get_cached_doc("Sales Order", row.parent)
+		row["resolved_stock_entry"] = _stock_entry_for_sales_order_item(
+			source, so_item=row, proxy=row
+		)
+	return row
 
 
 def _coil_so_row_from_sales_order_item(so_item, order_no, operation=None):
@@ -5914,6 +5961,9 @@ def create_ss_coil_from_sales_order(
 	_restore_ss_coil_sales_order_item_link(ss_coil)
 	ss_coil.customer_name = source.customer_name
 	ss_coil.for_customer = source.get("custom_for_customer") or proxy.get("custom_for_customer")
+	ss_coil.stock_entry = _stock_entry_for_sales_order_item(
+		source, so_item=so_item, proxy=proxy, prod=prod
+	)
 	ss_coil.order_received_date = source.transaction_date
 	ss_coil.sc_date = nowdate()
 	ss_coil.order_status = "Not Started"

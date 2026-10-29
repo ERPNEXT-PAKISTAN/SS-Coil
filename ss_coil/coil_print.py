@@ -50,8 +50,29 @@ SS_COIL_PRINT_HEADER_FIELDS = [
 	"calc_ratio",
 	"actual_ratio",
 	"stock_entry",
-	"job_sheet_no",
 ]
+
+
+SALES_ORDER_PRINT_HEADER_FIELDS = (
+	"customer_name",
+	"custom_for_customer",
+	"transaction_date",
+	"delivery_date",
+	"po_no",
+	"status",
+)
+
+SALES_ORDER_PRINT_ITEM_FIELDS = (
+	("item_name", "Finish Good"),
+	("custom_tag_no", "Tag No"),
+	("custom_for_customer", "For Customer"),
+	("custom_dimension", "Dimension"),
+	("qty", "Qty"),
+	("custom_estimated_wt", "Estimated WT"),
+	("custom_mill", "Mill"),
+	("custom_specification", "Specification"),
+	("custom_ref_no", "Ref No"),
+)
 
 SS_COIL_PRINT_SECTION_FIELDS = {
 	"Coil SO": [
@@ -94,6 +115,7 @@ SS_COIL_PRINT_SECTION_FIELDS = {
 	"Coil Output": [
 		"tag_no",
 		"customer",
+		"for_customer",
 		"thickness",
 		"width",
 		"length",
@@ -190,10 +212,10 @@ def build_stock_entry_detail_context(doc):
 
 
 def build_sales_order_detail_context(doc):
-	header_fields = get_printable_fields("Sales Order")
-	item_fields = get_printable_fields("Sales Order Item")
-	items = []
+	header_fields = _selected_print_fields("Sales Order", SALES_ORDER_PRINT_HEADER_FIELDS)
+	item_fields = _selected_print_fields("Sales Order Item", SALES_ORDER_PRINT_ITEM_FIELDS)
 
+	items = []
 	for idx, row in enumerate(doc.items or [], 1):
 		root_tag = row.get("custom_raw_material_tag_no") or row.get("custom_tag_no")
 		tag_hierarchy = _tag_hierarchy_rows(root_tag)
@@ -215,11 +237,11 @@ def build_sales_order_detail_context(doc):
 
 	return {
 		"doctype": doc.doctype,
-		"title": "Sales Order Detail Report",
+		"title": "Sales Order Coil Detail Report",
 		"name": doc.name,
 		"subtitle": f"{doc.customer_name or doc.customer or '-'} | {doc.transaction_date or '-'} | {doc.status or '-'}",
 		"header_columns": get_row_column_values(doc, header_fields),
-		"sections": [{"title": "Items", "columns": item_fields, "rows": items}],
+		"sections": [{"title": "Ordered Coils", "columns": item_fields, "rows": items}],
 	}
 
 
@@ -272,6 +294,25 @@ def build_ss_coil_detail_context(doc):
 		"dashboard": dashboard,
 		"root_tag_hierarchy": flatten_tag_hierarchy(dashboard.get("tag_hierarchy") or {}),
 	}
+
+
+def _selected_print_fields(doctype, field_specs):
+	meta = frappe.get_meta(doctype)
+	fields = []
+	for spec in field_specs:
+		fieldname, label = spec if isinstance(spec, tuple) else (spec, None)
+		df = meta.get_field(fieldname)
+		if not df or df.fieldtype in SKIP_FIELDTYPES or df.fieldtype == "Table":
+			continue
+		fields.append(
+			{
+				"label": label or df.label or fieldname,
+				"fieldname": fieldname,
+				"fieldtype": df.fieldtype,
+				"options": df.options,
+			}
+		)
+	return fields
 
 
 def _filter_print_fields(fields, allowed_fieldnames):
@@ -394,16 +435,22 @@ def render_coil_detail_html(context):
 def _render_styles():
 	return """
 <style>
-	@page { size: A4 landscape; margin: 6mm; }
+	@page { size: 297mm 210mm; margin: 6mm; }
 	.print-format {
 		orientation: Landscape;
 		page-size: A4;
+		page-width: 297mm;
+		page-height: 210mm;
 		margin: 6mm;
 		font-family: Inter, Arial, sans-serif;
 		font-size: 9px;
 		color: #0f172a;
 	}
-	.coil-detail-print { width: 100%; }
+	.coil-detail-print { width: 100%; max-width: 285mm; margin: 0 auto; }
+	@media print {
+		html, body, .print-format { width: 100% !important; max-width: none !important; }
+		.coil-detail-print { width: 100% !important; max-width: none !important; }
+	}
 	.coil-detail-print .hero {
 		background: linear-gradient(135deg, #16324f 0%, #1f56d2 100%);
 		color: #fff;

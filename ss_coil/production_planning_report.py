@@ -86,11 +86,13 @@ COIL_OUTPUT_FIELDS = (
 	("tag_no", _("Tag No")),
 	("class", _("Class")),
 	("customer", _("Customer")),
+	("for_customer", _("For Customer")),
 	("thickness", _("Thickness")),
 	("width", _("Width")),
 	("length", _("Length (Mtr)")),
 	("estimated_qty", _("Est Qty")),
 	("actual_qty", _("Actual Qty")),
+	("actual_wt", _("Actual WT")),
 	("packing_type", _("Packing Type")),
 	("next_process", _("Next Process")),
 )
@@ -206,7 +208,7 @@ def _append_cutting_scheme_table(data, rows, section_label=None):
 		data.append(
 			_row_base(
 				row_type="cutting_row",
-				label=str(row.get("seq") or index + 1),
+				label=str(index + 1),
 				value=str(row.get("width") or ""),
 				color=color,
 				width=flt(row.get("width")),

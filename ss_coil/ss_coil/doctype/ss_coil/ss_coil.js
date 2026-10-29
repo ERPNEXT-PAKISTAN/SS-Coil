@@ -111,6 +111,13 @@ function load_ss_coil_balance_child_table(frm) {
 	});
 }
 
+function renumber_ss_coil_cutting_rows(frm) {
+	(frm.doc.cutting_detail || []).forEach((row, idx) => {
+		row.seq = idx + 1;
+	});
+	frm.refresh_field("cutting_detail");
+}
+
 frappe.ui.form.on("SS Coil", {
 	setup(frm) {
 		frm.set_query("order_no", function () {
@@ -173,6 +180,7 @@ frappe.ui.form.on("SS Coil", {
 		render_ss_coil_formulas(frm);
 		// Refresh updates link descriptions without changing the saved source entry.
 		sync_linked_stock_entry_field(frm, true);
+		sync_stock_entry_from_sales_order_item(frm);
 		apply_sales_order_item_link_title(frm);
 	},
 	operation(frm) {
@@ -267,6 +275,9 @@ frappe.ui.form.on("SS Coil", {
 			callback: function (r) {
 				const item = r.message;
 				if (!item) return;
+				if (item.resolved_stock_entry && frm.doc.stock_entry !== item.resolved_stock_entry) {
+					frm.set_value("stock_entry", item.resolved_stock_entry);
+				}
 				set_sales_order_item_link_title(item.name, item.item_name || item.item_code || item.name);
 				frm.refresh_field("sales_order_item");
 
@@ -553,6 +564,29 @@ function sync_linked_stock_entry_field(frm, skipAutofill = false) {
 			if (frm.doc.stock_entry !== selected) {
 				frm.set_value("stock_entry", selected);
 			}
+		},
+	});
+}
+
+function sync_stock_entry_from_sales_order_item(frm) {
+	if (!frm.doc.sales_order_item || frm.doc.stock_entry || frm._source_stock_entry_lookup_pending) return;
+	const sales_order_item = frm.doc.sales_order_item;
+	frm._source_stock_entry_lookup_pending = true;
+	frappe.call({
+		method: "ss_coil.api.get_sales_order_item_for_ss_coil",
+		args: { sales_order_item },
+		callback(r) {
+			frm._source_stock_entry_lookup_pending = false;
+			if (
+				r.message?.resolved_stock_entry &&
+				frm.doc.sales_order_item === sales_order_item &&
+				!frm.doc.stock_entry
+			) {
+				frm.set_value("stock_entry", r.message.resolved_stock_entry);
+			}
+		},
+		error() {
+			frm._source_stock_entry_lookup_pending = false;
 		},
 	});
 }
@@ -929,9 +963,9 @@ function buildSSCoilDashboardHtml(data) {
 				<div style="font-size:15px;font-weight:800;color:#102a43;margin:18px 0 10px;">SS Coil Cutting Detail</div>
 				${table(
 					["Seq","Width","Strip","Total Width","Length Cut","Tol +","Tol -"],
-					cuttingRows.map((row) => `
+					cuttingRows.map((row, idx) => `
 						<tr>
-							<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.seq || "-")}</td>
+							<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${idx + 1}</td>
 							<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.width || "-")}</td>
 							<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.strip || "-")}</td>
 							<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.total_width || "-")}</td>

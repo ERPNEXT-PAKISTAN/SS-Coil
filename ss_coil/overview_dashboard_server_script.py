@@ -148,7 +148,7 @@ recent_purchase_receipts = frappe.db.sql("""
 
 if has_ss_coil:
     work_orders = frappe.db.sql("""
-        SELECT sc.name, COALESCE(sc.job_sheet_no,sc.name) job_no, COALESCE(sc.operation,'Unassigned') operation,
+        SELECT sc.name, sc.name job_no, COALESCE(sc.operation,'Unassigned') operation,
                COALESCE(sc.machine,'Unassigned') machine, COALESCE(sc.grand_estimated_wt,0) target,
                sc.order_status status, COALESCE(SUM(co.actual_wt),0) actual
         FROM `tabSS Coil` sc LEFT JOIN `tabCoil Output` co ON co.parent=sc.name

@@ -40,12 +40,14 @@ JOB_OUTPUT_COLUMNS = (
 	("tag_no", "Tag No"),
 	("class", "Class"),
 	("customer", "Customer"),
+	("for_customer", "For Customer"),
 	("thickness", "Thick"),
 	("width", "Width"),
 	("length", "Length (Mtr)"),
 	("estimated_qty", "Est Qty"),
 	("actual_qty", "Actual Qty"),
 	("estimated_wt", "Est WT"),
+	("actual_wt", "Actual WT"),
 	("packing", "Packing"),
 )
 
@@ -119,7 +121,7 @@ def _render_table(columns, rows, empty_label="No rows"):
 		bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
 		cells = []
 		for fieldname, _label in columns:
-			val = row.get(fieldname)
+			val = idx + 1 if fieldname == "seq" else row.get(fieldname)
 			if fieldname == "knife":
 				cell_val = escape(_knife(val))
 			elif fieldname in (

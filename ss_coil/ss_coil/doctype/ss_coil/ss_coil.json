@@ -79,6 +79,8 @@
   "encoded_by",
   "dashboard_tab",
   "order_status_report",
+  "manufacturing_tab",
+  "manufacturing_html",
   "daigrams_tab",
   "daigrams_view",
   "job_sheet_tab",
@@ -526,6 +528,16 @@
    "fieldname": "order_status_report",
    "fieldtype": "HTML",
    "label": "Order Status Report"
+  },
+  {
+   "fieldname": "manufacturing_tab",
+   "fieldtype": "Tab Break",
+   "label": "Manufacturing"
+  },
+  {
+   "fieldname": "manufacturing_html",
+   "fieldtype": "HTML",
+   "label": "Manufacturing by Output Tag"
   },
   {
    "fieldname": "daigrams_tab",

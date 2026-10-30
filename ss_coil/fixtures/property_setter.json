@@ -749,7 +749,7 @@
   "property": "options",
   "property_type": "Text",
   "row_name": null,
-  "value": "MAT-STE-.YYYY.-\nMR-.YYYY.-"
+  "value": "MAT-STE-.YYYY.-\nMR-.YYYY.-\nMI-.YYYY.-\nMT-.YYYY.-\nMTM-.YYYY.-\nMCM-.YYYY.-\nMFG-.YYYY.-\nRPK-.YYYY.-\nDIS-.YYYY.-\nRFC-.YYYY.-\nRRM-.YYYY.-\nSTS-.YYYY.-\nSCD-.YYYY.-\nSCR-.YYYY.-"
  },
  {
   "default_value": null,

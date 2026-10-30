@@ -239,6 +239,7 @@ doc_events = {
 	},
 	"Stock Entry": {
 		"before_validate": [
+			"ss_coil.coil_manufacture.set_stock_entry_type_naming_series",
 			"ss_coil.api.prepare_stock_entry_links",
 			"ss_coil.api.validate_stock_entry_finish_good_items",
 		],

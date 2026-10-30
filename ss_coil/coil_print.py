@@ -9,7 +9,11 @@ from html import escape
 import frappe
 from frappe.utils import cint, flt
 
-from ss_coil.api import _build_tag_hierarchy, get_ss_coil_detail_dashboard
+from ss_coil.api import (
+	_build_tag_hierarchy,
+	get_sales_order_detail_dashboard,
+	get_ss_coil_detail_dashboard,
+)
 
 SKIP_FIELDTYPES = frozenset(
 	{
@@ -63,7 +67,7 @@ SALES_ORDER_PRINT_HEADER_FIELDS = (
 )
 
 SALES_ORDER_PRINT_ITEM_FIELDS = (
-	("item_name", "Finish Good"),
+	("item_name", "Item Name"),
 	("custom_tag_no", "Tag No"),
 	("custom_for_customer", "For Customer"),
 	("custom_dimension", "Dimension"),
@@ -214,6 +218,7 @@ def build_stock_entry_detail_context(doc):
 def build_sales_order_detail_context(doc):
 	header_fields = _selected_print_fields("Sales Order", SALES_ORDER_PRINT_HEADER_FIELDS)
 	item_fields = _selected_print_fields("Sales Order Item", SALES_ORDER_PRINT_ITEM_FIELDS)
+	dashboard = get_sales_order_detail_dashboard(doc.name)
 
 	items = []
 	for idx, row in enumerate(doc.items or [], 1):
@@ -235,13 +240,38 @@ def build_sales_order_detail_context(doc):
 			}
 		)
 
+	manufacturing_columns = [
+		{"fieldname": "tag_no", "label": "Output Tag", "fieldtype": "Data"},
+		{"fieldname": "stock_entry", "label": "Manufacture Stock Entry", "fieldtype": "Link"},
+		{"fieldname": "posting_date", "label": "Posting Date", "fieldtype": "Date"},
+		{"fieldname": "status", "label": "Status", "fieldtype": "Data"},
+		{"fieldname": "item_code", "label": "Finished Good", "fieldtype": "Data"},
+		{"fieldname": "qty", "label": "Actual WT", "fieldtype": "Float"},
+		{"fieldname": "ss_coil", "label": "SS Coil", "fieldtype": "Data"},
+	]
+	manufacturing_rows = []
+	for tag_no, entries in (dashboard.get("manufacturing_by_tag") or {}).items():
+		for entry in entries:
+			row_data = {"tag_no": tag_no, **entry}
+			manufacturing_rows.append(
+				{
+					"idx": len(manufacturing_rows) + 1,
+					"tag_no": tag_no,
+					"columns": get_row_column_values(row_data, manufacturing_columns),
+				}
+			)
+	sections = [{"title": "Ordered Coils", "columns": item_fields, "rows": items}]
+	if manufacturing_rows:
+		sections.append({"title": "Manufacturing by Output Tag", "columns": manufacturing_columns, "rows": manufacturing_rows})
+
 	return {
 		"doctype": doc.doctype,
 		"title": "Sales Order Coil Detail Report",
 		"name": doc.name,
 		"subtitle": f"{doc.customer_name or doc.customer or '-'} | {doc.transaction_date or '-'} | {doc.status or '-'}",
 		"header_columns": get_row_column_values(doc, header_fields),
-		"sections": [{"title": "Ordered Coils", "columns": item_fields, "rows": items}],
+		"sections": sections,
+		"dashboard": dashboard,
 	}
 
 
@@ -1018,8 +1048,10 @@ def _render_ss_coil_dashboard(dashboard, include_summary=True):
 			f'<td class="col-tag">{_esc(row.get("stock_entry"))}</td>'
 			f'<td class="col-num">{_esc(row.get("posting_date"))}</td>'
 			f"<td>{_esc(row.get('purpose'))}</td>"
-			f"<td>{_esc(row.get('item_code'))}</td>"
+			f"<td>{_esc(row.get('finish_good_item') or row.get('item_code'))}</td>"
 			f'<td class="col-tag">{_esc(row.get("tag_no"))}</td>'
+			f'<td class="col-tag">{_esc(row.get("output_tag_no"))}</td>'
+			f'<td class="col-num">{_esc(row.get("actual_wt") or row.get("qty"))}</td>'
 			"</tr>"
 		)
 	for row in dashboard.get("delivery_details") or []:
@@ -1031,6 +1063,7 @@ def _render_ss_coil_dashboard(dashboard, include_summary=True):
 			f"<td>{_esc(row.get('status'))}</td>"
 			f"<td>{_esc(row.get('item_code'))}</td>"
 			f'<td class="col-tag">{_esc(row.get("tag_no"))}</td>'
+			"<td></td><td></td>"
 			"</tr>"
 		)
 	for row in dashboard.get("invoice_details") or []:
@@ -1042,6 +1075,7 @@ def _render_ss_coil_dashboard(dashboard, include_summary=True):
 			f"<td>{_esc(row.get('status'))}</td>"
 			f"<td>{_esc(row.get('item_code'))}</td>"
 			f'<td class="col-tag">{_esc(row.get("tag_no"))}</td>'
+			"<td></td><td></td>"
 			"</tr>"
 		)
 
@@ -1050,7 +1084,7 @@ def _render_ss_coil_dashboard(dashboard, include_summary=True):
 			'<div class="section-heading">Linked Documents</div>'
 			'<table class="data-table"><thead><tr>'
 			'<th class="col-num">Type</th><th class="col-tag">Name</th><th class="col-num">Date</th>'
-			"<th>Status</th><th>Item</th><th class=\"col-tag\">Tag</th>"
+			"<th>Status</th><th>Item</th><th class=\"col-tag\">Source Tag</th><th class=\"col-tag\">Output Tag</th><th class=\"col-num\">Actual WT</th>"
 			f"</tr></thead><tbody>{''.join(linked_rows)}</tbody></table>"
 		)
 

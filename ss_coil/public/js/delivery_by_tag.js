@@ -79,10 +79,12 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 	const multi_so = new Set(rows.map((r) => r.sales_order).filter(Boolean)).size > 1;
 
 	rows.forEach((row) => {
-		if (row.tag_no || row.custom_tag_no) selected.add(delivery_tag_selection_key(row));
+		if ((row.tag_no || row.custom_tag_no) && (!row.output_tag_no || row.delivery_ready)) selected.add(delivery_tag_selection_key(row));
 	});
 	if (!selected.size && rows.length) {
-		rows.forEach((row) => selected.add(delivery_tag_selection_key(row)));
+		rows.forEach((row) => {
+			if (!row.output_tag_no || row.delivery_ready) selected.add(delivery_tag_selection_key(row));
+		});
 	}
 
 	const dialog = new frappe.ui.Dialog({
@@ -129,7 +131,7 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 			</div>
 		</div>
 		<div class="text-muted" style="margin-bottom:8px;font-size:12px;">
-			${__("Select Tag No rows to load onto this Delivery Note. No need to save first.")}
+			${__("Select manufactured output tags to load onto the Delivery Note. SS Coil output tags become selectable after their Manufacture Stock Entry is submitted.")}
 		</div>
 	`);
 
@@ -146,6 +148,8 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 				row.item_code,
 				row.item_name,
 				row.sales_order,
+				row.manufacture_status,
+				row.manufacture_entries,
 				row.dimension,
 				row.mill,
 				row.location,
@@ -156,24 +160,29 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 			return hay.includes(q);
 		});
 
-		const so_col = multi_so || options.mode === "customer";
+		const so_col = true;
 		const body = filtered
 			.map((row) => {
 				const selection_key = delivery_tag_selection_key(row);
 				const checked = selected.has(selection_key) ? "checked" : "";
+				const delivery_ready = !row.output_tag_no || row.delivery_ready;
 				const tag_cell = row.tag_no || row.custom_tag_no
 					? `<b class="ss-coil-dn-tag-value">${escape_html(row.tag_no || row.custom_tag_no)}</b>`
 					: `<span class="text-muted">${__("No Tag")}</span>`;
 				const sub_tag = row.output_tag_no && row.ss_coil
-					? `<div class="text-muted small">${escape_html(row.ss_coil)}</div>`
+					? `<div class="text-muted small"><a href="/app/ss-coil/${encodeURIComponent(row.ss_coil)}" target="_blank">${escape_html(row.ss_coil)}</a></div>`
 					: row.custom_sub_tag_no
 					? `<div class="text-muted small">${escape_html(row.custom_sub_tag_no)}</div>`
 					: "";
+				const manufacture_entries = (row.manufacture_entries || "").split(", ").filter(Boolean)
+					.map((name) => '<a href="/app/stock-entry/' + encodeURIComponent(name) + '" target="_blank">' + escape_html(name) + "</a>")
+					.join("; ") || "—";
+				const manufacture_cells = "<td>" + escape_html(row.manufacture_status || "—") + "</td><td>" + manufacture_entries + "</td>";
 				return `<tr data-selection-key="${escape_html(selection_key)}">
 					<td class="ss-coil-dn-check-col">
 						<input type="checkbox" class="ss-coil-dn-row-check" data-selection-key="${escape_html(
 							selection_key
-						)}" ${checked} />
+						)}" ${checked} ${delivery_ready ? "" : "disabled"} />
 					</td>
 					<td class="ss-coil-dn-tag-col">${tag_cell}${sub_tag}</td>
 					${
@@ -183,6 +192,7 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 							  )}">${escape_html(row.sales_order || "")}</a></td>`
 							: ""
 					}
+					${manufacture_cells}
 					<td><b>${escape_html(row.item_code || "")}</b></td>
 					<td class="text-right">${format_qty(row.qty)}</td>
 					<td class="text-right">${format_qty(row.delivered_qty)}</td>
@@ -199,6 +209,8 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 						<col class="ss-coil-dn-tag-width" />
 						${so_col ? '<col class="ss-coil-dn-order-width" />' : ""}
 						<col class="ss-coil-dn-item-width" />
+						<col class="ss-coil-dn-item-width" />
+						<col class="ss-coil-dn-item-width" />
 						<col class="ss-coil-dn-qty-width" />
 						<col class="ss-coil-dn-qty-width" />
 						<col class="ss-coil-dn-qty-width" />
@@ -208,6 +220,8 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 							<th class="ss-coil-dn-check-col"></th>
 							<th>${__("Tag No")}</th>
 							${so_col ? `<th>${__("Sales Order")}</th>` : ""}
+							<th>${__("Manufacturing Status")}</th>
+							<th>${__("Manufacture Stock Entry")}</th>
 							<th>${__("Item")}</th>
 							<th class="text-right">${__("Ordered")}</th>
 							<th class="text-right">${__("Delivered")}</th>
@@ -215,7 +229,7 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 						</tr>
 					</thead>
 					<tbody>${
-						body || `<tr><td colspan="${so_col ? 7 : 6}" class="text-muted">${__("No matching rows")}</td></tr>`
+						body || `<tr><td colspan="9" class="text-muted">${__("No matching rows")}</td></tr>`
 					}</tbody>
 				</table>
 			</div>
@@ -243,7 +257,9 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 	dialog.fields_dict.search.df.onchange = () => render();
 	dialog.$wrapper.on("input", '[data-fieldname="search"] input', () => render());
 	dialog.fields_dict.header_html.$wrapper.find(".ss-coil-dn-select-all").on("click", () => {
-		rows.forEach((row) => selected.add(delivery_tag_selection_key(row)));
+		rows.forEach((row) => {
+			if (!row.output_tag_no || row.delivery_ready) selected.add(delivery_tag_selection_key(row));
+		});
 		render();
 	});
 	dialog.fields_dict.header_html.$wrapper.find(".ss-coil-dn-clear").on("click", () => {
@@ -253,7 +269,7 @@ function show_delivery_note_by_tag_dialog(data, options = {}) {
 	dialog.fields_dict.header_html.$wrapper.find(".ss-coil-dn-tagged-only").on("click", () => {
 		selected.clear();
 		rows.forEach((row) => {
-			if (row.tag_no || row.custom_tag_no) selected.add(delivery_tag_selection_key(row));
+			if ((row.tag_no || row.custom_tag_no) && (!row.output_tag_no || row.delivery_ready)) selected.add(delivery_tag_selection_key(row));
 		});
 		render();
 	});

@@ -162,6 +162,9 @@ frappe.ui.form.on("SS Coil", {
 		add_ss_coil_sales_order_buttons(frm);
 		add_process_action_buttons(frm);
 		add_ss_coil_manufacture_button(frm);
+		if (typeof coil_mfg_render_manufacturing_tab === "function") {
+			coil_mfg_render_manufacturing_tab(frm);
+		}
 		frm.set_df_property("order_status", "read_only", 1);
 		update_grand_totals(frm);
 		update_calc_ratio(frm);
@@ -686,6 +689,7 @@ function buildSSCoilDashboardHtml(data) {
 					${linkBtn("Sales Order Item", "Sales Order Item", data.sales_order_item, "#3b82f6")}
 					${linkBtn("Stock Entry", "Stock Entry", data.stock_entry, "#0f766e")}
 					${linkBtn("View Tags", "List", "", "#374151")}
+					${data.order_no ? `<button type="button" class="btn btn-xs ss-coil-dash-delivery" style="margin-right:8px;background:#15803d;border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;">${__("Create Delivery Note by Tag")}</button>` : ""}
 				</div>
 				<div style="font-size:12px;color:#486581;margin-top:12px;">Customer: <b>${esc(data.customer_name || "-")}</b> | Machine: <b>${esc(data.machine || "-")}</b></div>
 			</div>
@@ -792,10 +796,13 @@ function buildSSCoilDashboardHtml(data) {
 
 	const stockRows = (data.stock_entry_details || []).map((row) => `
 		<tr>
-			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.tag_no || "-")}</td>
-			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.stock_entry || "-")}</td>
-			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.item_name || row.item_code || "-")}</td>
+			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.output_tag_no || row.tag_no || "-")}</td>
+			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;"><a href="/app/stock-entry/${encodeURIComponent(row.stock_entry || "")}">${esc(row.stock_entry || "-")}</a></td>
+			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.sales_order || "-")}</td>
+			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.finish_good_item || row.item_name || row.item_code || "-")}</td>
 			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.purpose || "-")}</td>
+			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(Number(row.entry_docstatus) === 1 ? __("Submitted") : Number(row.entry_docstatus) === 2 ? __("Cancelled") : __("Draft"))}</td>
+			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;text-align:right;">${esc(row.actual_wt || row.qty || "-")}</td>
 			<td style="padding:10px 12px;border-bottom:1px solid #eef2f6;">${esc(row.posting_date || "-")}</td>
 		</tr>
 	`);
@@ -986,7 +993,7 @@ function buildSSCoilDashboardHtml(data) {
 			`)}
 			${section("Linked Documents", "Stock, dispatch and invoicing details for related tags", "linear-gradient(90deg,#0f766e,#22c55e)", `
 				<div style="font-size:15px;font-weight:800;color:#102a43;margin-bottom:10px;">Stock Entry Detail</div>
-				${table(["Tag No","Stock Entry","Item","Purpose","Posting Date"], stockRows)}
+				${table(["Output Tag No","Manufacture / Stock Entry","Sales Order","Finish Good / Item","Purpose","Manufacturing Status","Actual WT","Posting Date"], stockRows)}
 				<div style="font-size:15px;font-weight:800;color:#102a43;margin:18px 0 10px;">Delivery Note</div>
 				${table(["Tag No","Delivery Note","Posting Date","Status"], dispatchRows)}
 				<div style="font-size:15px;font-weight:800;color:#102a43;margin:18px 0 10px;">Sales Invoice</div>
@@ -1388,6 +1395,11 @@ function bindSSCoilDiagramActions(frm, $wrapper) {
 }
 
 function bindSSCoilDashboardActions(frm, $wrapper, data) {
+	$wrapper.find(".ss-coil-dash-delivery").on("click", function () {
+		const open = () => ss_coil.delivery_by_tag?.open?.(data.order_no);
+		if (ss_coil.delivery_by_tag?.open) open();
+		else frappe.require("/assets/ss_coil/js/delivery_by_tag.js", open);
+	});
 	$wrapper.find(".ss-coil-dash-link").on("click", function () {
 		const doctype = $(this).data("doctype");
 		const name = $(this).data("name");

@@ -3757,7 +3757,7 @@ def build_ss_coil_sticker_payload(doc, row):
 	return {
 		"Tag No": row.get("tag_no") or "-",
 		"Customer": _ss_coil_sticker_customer_name(doc, row),
-		"Finish Good": row.get("class") or "-",
+		"Item Name": row.get("class") or "-",
 		"Specification": doc.get("specifications") or so_row.get("specification") or "-",
 		"Weight": _sticker_format_float(weight),
 		"Qty": _sticker_format_float(coils),
@@ -3804,7 +3804,7 @@ def build_ss_coil_sticker_body_html(fields):
 		[
 			f'<div class="sticker-tagno">{html.escape(str(fields["Tag No"]))}</div>',
 			_sticker_field_line("Customer", fields["Customer"]),
-			_sticker_field_line("Finish Good", fields["Finish Good"]),
+			_sticker_field_line("Item Name", fields["Item Name"]),
 			triple_box,
 			_sticker_field_line("Mill", fields["Mill"]),
 			_sticker_field_line("Ref No", fields["Ref No"]),
@@ -4753,16 +4753,22 @@ def get_ss_coil_detail_dashboard(ss_coil_name):
 	stock_entry_details = []
 	if all_tags:
 		stock_entry_details = frappe.db.sql(
-			"""
+			f"""
 			select
 				parent.name as stock_entry,
 				parent.posting_date,
 				parent.purpose,
+				parent.docstatus as entry_docstatus,
+				parent.custom_sales_order as sales_order,
 				child.item_code,
 				child.item_name,
 				child.qty,
 				child.transfer_qty,
 				child.custom_tag_no as tag_no,
+				{('child.custom_output_tag_no' if _has_field('Stock Entry Detail', 'custom_output_tag_no') else 'child.custom_tag_no')} as output_tag_no,
+				{('child.custom_actual_wt' if _has_field('Stock Entry Detail', 'custom_actual_wt') else 'child.custom_estimated_wt')} as actual_wt,
+				{('child.custom_finish_good_item' if _has_field('Stock Entry Detail', 'custom_finish_good_item') else 'child.item_code')} as finish_good_item,
+				child.is_finished_item,
 				child.custom_dimension as dimension,
 				child.custom_estimated_wt as estimated_wt
 			from `tabStock Entry Detail` child
@@ -8053,13 +8059,19 @@ def get_sales_order_detail_dashboard(sales_order):
 	)
 	stock_entry_items = (
 		frappe.db.sql(
-			"""
+			f"""
 			select
-				parent, item_code, item_name, qty,
-				custom_tag_no, custom_dimension, custom_estimated_wt
-			from `tabStock Entry Detail`
-			where parent in %(parents)s
-			order by parent asc, idx asc
+				child.parent, child.item_code, child.item_name, child.qty,
+				child.custom_tag_no, child.custom_dimension, child.custom_estimated_wt,
+				child.is_finished_item, parent.purpose, parent.docstatus as entry_docstatus,
+				parent.posting_date, child.custom_ss_coil, child.custom_entry_no,
+				{('child.custom_output_tag_no' if _has_field('Stock Entry Detail', 'custom_output_tag_no') else 'child.custom_tag_no')} as output_tag_no,
+				{('child.custom_actual_wt' if _has_field('Stock Entry Detail', 'custom_actual_wt') else 'child.custom_estimated_wt')} as actual_wt,
+				{('child.custom_finish_good_item' if _has_field('Stock Entry Detail', 'custom_finish_good_item') else 'child.item_code')} as finish_good_item
+			from `tabStock Entry Detail` child
+			inner join `tabStock Entry` parent on parent.name = child.parent
+			where child.parent in %(parents)s
+			order by child.parent asc, child.idx asc
 			""",
 			{"parents": tuple(stock_entry_filter_values)},
 			as_dict=True,
@@ -8339,6 +8351,32 @@ def get_sales_order_detail_dashboard(sales_order):
 		)
 
 	ss_coil_names = [row.name for row in ss_coil_docs]
+	manufacturing_by_tag = {}
+	seen_manufacturing = set()
+	for row in stock_entry_items:
+		if row.get("purpose") != "Manufacture" or not cint(row.get("is_finished_item")):
+			continue
+		tag_no = row.get("output_tag_no") or row.get("custom_tag_no")
+		if not tag_no:
+			continue
+		key = (tag_no, row.get("parent"))
+		if key in seen_manufacturing:
+			continue
+		seen_manufacturing.add(key)
+		manufacturing_by_tag.setdefault(tag_no, []).append(
+			{
+				"tag_no": tag_no,
+				"stock_entry": row.get("parent"),
+				"status": "Submitted" if cint(row.get("entry_docstatus")) == 1 else "Draft",
+				"docstatus": cint(row.get("entry_docstatus")),
+				"posting_date": str(row.get("posting_date")) if row.get("posting_date") else None,
+				"item_code": row.get("finish_good_item") or row.get("item_code"),
+				"qty": flt(row.get("actual_wt") or row.get("qty")),
+				"ss_coil": row.get("custom_ss_coil"),
+			}
+		)
+	for tag_no in manufacturing_by_tag:
+		manufacturing_by_tag[tag_no].sort(key=lambda row: (row.get("posting_date") or "", row.get("stock_entry") or ""))
 	tag_numbers = _collect_sales_order_tag_numbers(doc, sales_order, stock_entry_items, ss_coil_names)
 	tag_trace = _get_tag_trace_rows(tag_numbers)
 	tag_trace_rows = _sort_tag_trace_rows([tag_trace[tag] for tag in tag_numbers if tag in tag_trace])
@@ -8395,6 +8433,7 @@ def get_sales_order_detail_dashboard(sales_order):
 		"profit_proxy": profit_proxy,
 		"tag_trace": tag_trace_rows,
 		"tag_tree": tag_tree,
+		"manufacturing_by_tag": manufacturing_by_tag,
 	}
 
 

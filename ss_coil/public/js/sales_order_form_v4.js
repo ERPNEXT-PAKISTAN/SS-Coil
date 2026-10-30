@@ -2461,6 +2461,13 @@ function render_sales_order_status_ribbon(frm, data) {
 	const delivery_notes = unique_docs(data.delivery_note_items, "delivery_note");
 	const invoices = unique_docs(data.sales_invoice_items, "sales_invoice");
 	const esc = (value) => frappe.utils.escape_html(String(value ?? ""));
+	const manufacture_tags_by_entry = new Map();
+	Object.entries(data.manufacturing_by_tag || {}).forEach(([tag, entries]) => {
+		(entries || []).forEach((entry) => {
+			if (!manufacture_tags_by_entry.has(entry.stock_entry)) manufacture_tags_by_entry.set(entry.stock_entry, []);
+			manufacture_tags_by_entry.get(entry.stock_entry).push(`${tag} · ${format_number(entry.qty || 0)} WT`);
+		});
+	});
 	const tag_by_no = new Map((data.tag_trace || []).filter((tag) => tag.tag_no).map((tag) => [tag.tag_no, { ...tag, registry: tag.registry || {} }]));
 	const roots = new Set();
 	(data.tag_tree || []).forEach((group) => {
@@ -2568,7 +2575,7 @@ function render_sales_order_status_ribbon(frm, data) {
 	$ribbon.off("click.ss_coil_status", "[data-status-popup]").on("click.ss_coil_status", "[data-status-popup]", function () {
 		const kind = $(this).attr("data-status-popup");
 		const configs = {
-			stock_entries: { title: __("Linked Stock Entries"), route: "stock-entry", rows: stock_entries.map((d) => ({ name: d.name, status: [__("Draft"), __("Submitted"), __("Cancelled")][Number(d.docstatus)] || __("Unknown"), date: d.posting_date, detail: d.purpose || "-" })) },
+			stock_entries: { title: __("Linked Stock Entries"), route: "stock-entry", rows: stock_entries.map((d) => ({ name: d.name, status: [__("Draft"), __("Submitted"), __("Cancelled")][Number(d.docstatus)] || __("Unknown"), date: d.posting_date, detail: [d.purpose || "-", ...(manufacture_tags_by_entry.get(d.name) || [])].join(" · ") })) },
 			ss_coils: { title: __("SS Coil Production Status"), route: "ss-coil", rows: ss_coils.map((d) => ({ name: d.name, status: d.order_status || __("Not Started"), date: d.sc_date, detail: [d.operation, d.machine, d.sales_order_item].filter(Boolean).join(" · ") || "-" })) },
 			delivery_notes: { title: __("Linked Delivery Notes"), route: "delivery-note", rows: delivery_notes.map((d) => ({ name: d.name, status: d.status || "-", date: d.posting_date, detail: d.item_name || d.item_code || "-" })) },
 			invoices: { title: __("Linked Sales Invoices"), route: "sales-invoice", rows: invoices.map((d) => ({ name: d.name, status: d.status || "-", date: d.posting_date, detail: `${d.item_name || d.item_code || "-"} · ${__("Outstanding")}: ${format_number(d.outstanding_amount)}` })) },
@@ -2670,6 +2677,17 @@ function open_sales_order_execution_detail(frm, data) {
 		coils_by_item.get(coil.sales_order_item).push(coil);
 	});
 	const traces = new Map((data.tag_trace || []).filter((row) => row.tag_no).map((row) => [row.tag_no, row]));
+	const manufacturingByTag = data.manufacturing_by_tag || {};
+	const manufacturingForTag = (tag) => manufacturingByTag[tag] || [];
+	const manufacturingStatus = (tag) => {
+		const entries = manufacturingForTag(tag);
+		return entries.some((entry) => Number(entry.docstatus) === 1)
+			? __("Manufactured")
+			: entries.length ? __("Draft Manufacture") : __("Not Manufactured");
+	};
+	const manufacturingLinks = (tag) => manufacturingForTag(tag).map((entry) =>
+		`<a href="/app/stock-entry/${encodeURIComponent(entry.stock_entry || "")}" target="_blank">${esc(entry.stock_entry || "")}</a> (${esc(format_number(entry.qty || 0))})`,
+	).join("; ") || "-";
 	const order_items = new Map((data.items || []).map((item) => [item.name, item]));
 	const status_summary = (docs) => {
 		const counts = {};
@@ -2727,6 +2745,7 @@ function open_sales_order_execution_detail(frm, data) {
 			production_docs: related_coils.map((doc) => `${doc.name} · ${doc.operation || ""} · ${doc.order_status || __("Not Started")}`).join("; ") || related_names.join(", ") || "-",
 			ordered: primary_tag_item_map.has(tag) ? primary_tag_item_map.get(tag).ordered_qty : 0,
 			delivered, invoiced, delivery_docs: delivery_docs.join(", ") || "-", invoice_docs: invoice_docs.join(", ") || "-",
+			manufacture_status: manufacturingStatus(tag), manufacture_entries: manufacturingLinks(tag),
 		});
 		(node.children || []).forEach((child) => walk_tag(child, tag, root));
 	};
@@ -2740,7 +2759,7 @@ function open_sales_order_execution_detail(frm, data) {
 				const docs = [...new Set(events.filter((event) => /^SS Coil (Input|Output)$/.test(event.stage || "")).map((event) => event.docname).filter(Boolean))];
 				const delivery_docs = [...new Set(events.filter((event) => event.stage === "Delivery Note").map((event) => event.docname).filter(Boolean))];
 				const invoice_docs = [...new Set(events.filter((event) => event.stage === "Sales Invoice").map((event) => event.docname).filter(Boolean))];
-				tag_rows.push({ tag, parent: "-", item: item.item_name || item.item_code, tag_status: trace.registry?.status || "-", production_status: docs.length ? status_summary(docs.map((name) => coils_by_name.get(name)).filter(Boolean)) : __("No production record"), production_docs: docs.join(", ") || "-", ordered: tag === item.tag_no ? item.ordered_qty : 0, delivered: events.filter((event) => event.stage === "Delivery Note").reduce((sum, event) => sum + flt(event.qty), 0), invoiced: events.filter((event) => event.stage === "Sales Invoice").reduce((sum, event) => sum + flt(event.qty), 0), delivery_docs: delivery_docs.join(", ") || "-", invoice_docs: invoice_docs.join(", ") || "-" });
+				tag_rows.push({ tag, parent: "-", item: item.item_name || item.item_code, tag_status: trace.registry?.status || "-", production_status: docs.length ? status_summary(docs.map((name) => coils_by_name.get(name)).filter(Boolean)) : __("No production record"), production_docs: docs.join(", ") || "-", manufacture_status: manufacturingStatus(tag), manufacture_entries: manufacturingLinks(tag), ordered: tag === item.tag_no ? item.ordered_qty : 0, delivered: events.filter((event) => event.stage === "Delivery Note").reduce((sum, event) => sum + flt(event.qty), 0), invoiced: events.filter((event) => event.stage === "Sales Invoice").reduce((sum, event) => sum + flt(event.qty), 0), delivery_docs: delivery_docs.join(", ") || "-", invoice_docs: invoice_docs.join(", ") || "-" });
 			});
 		});
 	}
@@ -2754,9 +2773,9 @@ function open_sales_order_execution_detail(frm, data) {
 	].map(([label, value]) => `<div style="padding:9px 10px;border:1px solid #dbe5ef;border-top:3px solid #2563eb;border-radius:9px;background:#f8fbff;"><div style="font-size:9px;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:#64748b;">${esc(label)}</div><div style="margin-top:4px;font-size:12px;font-weight:800;color:#1e3a5f;">${esc(value)}</div></div>`).join("")}</div>`;
 	const table_wrap = (title, headers, body, min_width) => `<h5 style="margin:14px 0 7px;color:#334155;font-weight:700;">${esc(title)}</h5><div style="max-height:36vh;overflow:auto;border:1px solid #dbe5ef;border-radius:10px;"><table class="table table-bordered" style="margin:0;min-width:${min_width}px;background:#fff;font-weight:400;"><thead style="position:sticky;top:0;z-index:1;background:#eff6ff;"><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
 	const item_body = item_rows.length ? item_rows.map((row) => `<tr style="background:#fff;font-weight:400;"><td>${esc(row.tag)}</td><td>${esc(row.item)}</td><td>${esc(row.status)}</td><td style="text-align:right;">${qty(row.ordered)}</td><td style="text-align:right;">${qty(row.delivered)}</td><td style="text-align:right;">${qty(row.invoiced)}</td><td>${esc(row.production)}</td></tr>`).join("") : `<tr style="background:#fff;font-weight:400;"><td colspan="7" style="padding:24px;text-align:center;color:#64748b;">${__("No Sales Order item details found.")}</td></tr>`;
-	const tag_body = tag_rows.length ? tag_rows.map((row) => `<tr style="background:#fff;font-weight:400;"><td>${esc(row.tag)}</td><td>${esc(row.parent)}</td><td>${esc(row.item)}</td><td>${esc(row.tag_status)}</td><td>${esc(row.production_status)}</td><td>${esc(row.production_docs)}</td><td style="text-align:right;">${qty(row.ordered)}</td><td style="text-align:right;">${qty(row.delivered)}</td><td>${esc(row.delivery_docs)}</td><td style="text-align:right;">${qty(row.invoiced)}</td><td>${esc(row.invoice_docs)}</td></tr>`).join("") : `<tr style="background:#fff;font-weight:400;"><td colspan="11" style="padding:24px;text-align:center;color:#64748b;">${__("No tag production details found.")}</td></tr>`;
+	const tag_body = tag_rows.length ? tag_rows.map((row) => `<tr style="background:#fff;font-weight:400;"><td>${esc(row.tag)}</td><td>${esc(row.parent)}</td><td>${esc(row.item)}</td><td>${esc(row.tag_status)}</td><td>${esc(row.production_status)}</td><td>${esc(row.production_docs)}</td><td>${esc(row.manufacture_status)}</td><td>${row.manufacture_entries === "-" ? "-" : row.manufacture_entries}</td><td style="text-align:right;">${qty(row.ordered)}</td><td style="text-align:right;">${qty(row.delivered)}</td><td>${esc(row.delivery_docs)}</td><td style="text-align:right;">${qty(row.invoiced)}</td><td>${esc(row.invoice_docs)}</td></tr>`).join("") : `<tr style="background:#fff;font-weight:400;"><td colspan="13" style="padding:24px;text-align:center;color:#64748b;">${__("No tag production details found.")}</td></tr>`;
 	const item_table = table_wrap(__("Sales Order Items"), [__("Item Tag"), __("Item"), __("Production Status"), __("Order Qty"), __("Delivered"), __("Invoiced"), __("SS Coil Records / Status")], item_body, 1050);
-	const tag_table = table_wrap(__("Tag-wise Production and Dispatch"), [__("Tag No"), __("Parent Tag"), __("Item"), __("Tag Status"), __("SS Coil Status"), __("SS Coil Production"), __("Order Qty"), __("Delivered Qty"), __("Delivery Notes"), __("Invoiced Qty"), __("Sales Invoices")], tag_body, 1500);
+	const tag_table = table_wrap(__("Tag-wise Production and Dispatch"), [__("Tag No"), __("Parent Tag"), __("Item"), __("Tag Status"), __("SS Coil Status"), __("SS Coil Production"), __("Manufacturing Status"), __("Manufacture Stock Entry · Actual WT"), __("Order Qty"), __("Delivered Qty"), __("Delivery Notes"), __("Invoiced Qty"), __("Sales Invoices")], tag_body, 1850);
 	const dialog = new frappe.ui.Dialog({ title: `${__("Sales Order Details")}: ${frm.doc.name}`, size: "extra-large", fields: [{ fieldtype: "HTML", fieldname: "details" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
 	dialog.fields_dict.details.$wrapper.html(`${summary}${item_table}${tag_table}`);
 	dialog.show();

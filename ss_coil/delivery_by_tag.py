@@ -240,6 +240,11 @@ def _expand_pending_ss_coil_outputs(sales_order_rows, filters):
 	if filters.get("company"):
 		where.append("so.company = %(company)s")
 		params["company"] = filters["company"]
+	manufacture_tag_field = (
+		"custom_output_tag_no"
+		if _has_field("Stock Entry Detail", "custom_output_tag_no")
+		else "custom_tag_no"
+	)
 
 	outputs = frappe.db.sql(
 		f"""
@@ -249,12 +254,24 @@ def _expand_pending_ss_coil_outputs(sales_order_rows, filters):
 			soi.item_code, soi.item_name, soi.qty as order_qty,
 			soi.delivered_qty, soi.uom, soi.warehouse, soi.rate,
 			co.tag_no as output_tag_no,
-			co.actual_wt, co.estimated_wt, co.idx as output_idx, sc.name as ss_coil
+			co.actual_wt, co.estimated_wt, co.idx as output_idx, sc.name as ss_coil,
+			coalesce(manufacture.manufacturing_status, 'Not Manufactured') as manufacture_status,
+			coalesce(manufacture.manufacture_entries, '') as manufacture_entries
 		from `tabSS Coil` sc
 		inner join `tabSales Order` so on so.name = sc.order_no
 		inner join `tabSales Order Item` soi on soi.name = sc.sales_order_item
 		inner join `tabCoil Output` co on co.parent = sc.name and co.parentfield = 'job_output'
 		left join `tabTag Registry` reg on reg.tag_no = co.tag_no
+		left join (
+			select
+				detail.{manufacture_tag_field} as tag_no,
+				case max(entry.docstatus) when 1 then 'Manufactured' when 0 then 'Draft Manufacture' else 'Not Manufactured' end as manufacturing_status,
+				group_concat(distinct entry.name order by entry.posting_date, entry.name separator ', ') as manufacture_entries
+			from `tabStock Entry Detail` detail
+			inner join `tabStock Entry` entry on entry.name = detail.parent
+			where entry.purpose = 'Manufacture' and entry.docstatus < 2 and detail.is_finished_item = 1
+			group by detail.{manufacture_tag_field}
+		) manufacture on manufacture.tag_no = co.tag_no
 		where {' and '.join(where)}
 		order by so.transaction_date desc, so.name, soi.idx, co.idx
 		""",
@@ -285,6 +302,10 @@ def _expand_pending_ss_coil_outputs(sales_order_rows, filters):
 				"selection_key": selection_key,
 				"output_tag_no": output.output_tag_no,
 				"ss_coil": output.ss_coil,
+			"order_no": output.sales_order,
+			"manufacture_status": output.manufacture_status,
+			"manufacture_entries": output.manufacture_entries,
+			"delivery_ready": output.manufacture_status == "Manufactured",
 				"idx": output.idx,
 				"item_code": output.item_code,
 				"item_name": output.item_name,
@@ -477,9 +498,10 @@ def load_delivery_note_items_by_tags(
 			selection
 			for selection in output_tags
 			if (selection["so_detail"], selection["tag_no"]) not in eligible_outputs
+			or not eligible_outputs[(selection["so_detail"], selection["tag_no"])].get("delivery_ready")
 		]
 		if invalid:
-			frappe.throw(_("One or more selected SS Coil output tags are no longer pending delivery"))
+			frappe.throw(_("Selected SS Coil tags must have a submitted Manufacture Stock Entry and still be pending delivery"))
 
 	by_so = {}
 	tag_by_detail = {}

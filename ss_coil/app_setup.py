@@ -54,6 +54,9 @@ def run_post_install_setup():
 	remove_empty_sales_order_duplicate_tabs()
 	allow_sales_order_fields_after_submit()
 	sync_saved_form_layouts()
+	# The child table field-order property setter is restored by form-layout
+	# sync, so apply manufacture trace fields to that order afterward as well.
+	setup_coil_manufacture_fields()
 	frappe.db.commit()
 
 

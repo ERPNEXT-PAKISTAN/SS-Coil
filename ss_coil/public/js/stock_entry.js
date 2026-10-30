@@ -87,6 +87,13 @@ function render_stock_entry_order_progress(frm) {
 		const process_started = coils.some((row) => /process|partial|complete/i.test(row.order_status || ""));
 		const unique = (rows, key) => [...new Map((rows || []).filter((row) => row[key]).map((row) => [row[key], { ...row, name: row[key] }])).values()];
 		const stock_entries = unique(data.stock_entries, "name");
+		const manufacture_tags_by_entry = new Map();
+		Object.entries(data.manufacturing_by_tag || {}).forEach(([tag, entries]) => {
+			(entries || []).forEach((entry) => {
+				if (!manufacture_tags_by_entry.has(entry.stock_entry)) manufacture_tags_by_entry.set(entry.stock_entry, []);
+				manufacture_tags_by_entry.get(entry.stock_entry).push(`${tag} · ${format_number(entry.qty || 0)} WT`);
+			});
+		});
 		const delivery_notes = unique(data.delivery_note_items, "delivery_note");
 		const invoices = unique(data.sales_invoice_items, "sales_invoice");
 		const tag_map = new Map((data.tag_trace || []).filter((row) => row.tag_no).map((row) => [row.tag_no, { ...row }]));
@@ -128,10 +135,13 @@ function render_stock_entry_order_progress(frm) {
 			return `<div style="min-width:0;padding:8px 10px;border:1px solid ${color}44;border-top:3px solid ${color};border-radius:10px;background:linear-gradient(145deg,${color}18,#fff 75%);box-shadow:0 2px 8px #0f172a10;"><div style="display:flex;align-items:center;justify-content:space-between;gap:7px;"><a href="/app/${route}/view/list" style="font-size:10px;font-weight:850;letter-spacing:.045em;text-transform:uppercase;color:${color};text-decoration:none;">${esc(label)} ↗</a><button type="button" data-stock-order-popup="${kind}" style="display:flex;align-items:center;gap:4px;border:0;border-radius:999px;background:${color};color:#fff;padding:3px 8px 3px 4px;font-size:9px;font-weight:800;cursor:pointer;"><span style="display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;color:${color};font-size:11px;font-weight:900;">${loading ? "…" : count}</span>${__("View all")}</button></div><div style="margin-top:4px;font-size:10px;line-height:1.3;font-weight:650;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(detail)}</div>${links ? `<div style="display:flex;align-items:center;gap:2px;margin-top:4px;overflow:hidden;">${links}</div>` : ""}</div>`;
 		}).join("");
 		const order_state_color = /cancel/i.test(status) ? "#dc2626" : /deliver/i.test(status) ? "#d97706" : /closed|complete|bill/i.test(status) ? "#15803d" : "#2563eb";
-		const order_indicator = `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:0 0 7px;padding:8px 10px;border:1px solid #93c5fd;border-left:4px solid #2563eb;border-radius:9px;background:linear-gradient(100deg,#eff6ff,#fff 75%);"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:7px;"><b style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#475569;">${__("Linked Sales Order")}</b>${sales_order ? `<a href="/app/sales-order/${encodeURIComponent(sales_order)}" style="font-size:12px;font-weight:850;color:#1d4ed8;text-decoration:none;">${esc(sales_order)} ↗</a>` : `<span style="font-size:11px;font-weight:750;color:#64748b;">${__("No linked Sales Order")}</span>`}<span style="padding:3px 8px;border-radius:999px;background:${order_state_color}18;color:${order_state_color};font-size:10px;font-weight:850;">${esc(status)}</span><span style="font-size:10px;color:#475569;">${esc(data.customer_name || data.customer || "")}</span></div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:10px;font-weight:700;color:#475569;"><span>${__("Delivery")}: ${loading ? "…" : `${format_number(flt(data.per_delivered))}%`}</span><span>${__("Billing")}: ${loading ? "…" : esc(data.billing_status || __("Not Billed"))}</span>${data.transaction_date ? `<span>${esc(data.transaction_date)}</span>` : ""}${sales_order ? `<button type="button" data-stock-order-detail-all style="border:0;border-radius:999px;background:#16324f;color:#fff;padding:4px 10px;font-size:9px;font-weight:850;cursor:pointer;">${__("View all")} ↗</button>` : ""}</div></div>`;
+		const order_indicator = `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:0 0 7px;padding:8px 10px;border:1px solid #93c5fd;border-left:4px solid #2563eb;border-radius:9px;background:linear-gradient(100deg,#eff6ff,#fff 75%);"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:7px;"><b style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#475569;">${__("Linked Sales Order")}</b>${sales_order ? `<a href="/app/sales-order/${encodeURIComponent(sales_order)}" style="font-size:12px;font-weight:850;color:#1d4ed8;text-decoration:none;">${esc(sales_order)} ↗</a>` : `<span style="font-size:11px;font-weight:750;color:#64748b;">${__("No linked Sales Order")}</span>`}<span style="padding:3px 8px;border-radius:999px;background:${order_state_color}18;color:${order_state_color};font-size:10px;font-weight:850;">${esc(status)}</span><span style="font-size:10px;color:#475569;">${esc(data.customer_name || data.customer || "")}</span></div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:10px;font-weight:700;color:#475569;"><span>${__("Delivery")}: ${loading ? "…" : `${format_number(flt(data.per_delivered))}%`}</span><span>${__("Billing")}: ${loading ? "…" : esc(data.billing_status || __("Not Billed"))}</span>${data.transaction_date ? `<span>${esc(data.transaction_date)}</span>` : ""}${sales_order ? `<button type="button" data-stock-order-detail-all style="border:0;border-radius:999px;background:#16324f;color:#fff;padding:4px 10px;font-size:9px;font-weight:850;cursor:pointer;">${__("View all")} ↗</button><button type="button" data-stock-create-delivery style="border:0;border-radius:999px;background:#15803d;color:#fff;padding:4px 10px;font-size:9px;font-weight:850;cursor:pointer;">${__("Create Delivery Note by Tag")}</button>` : ""}</div></div>`;
 		$ribbon.html(`<div style="padding:5px 4px 8px;"><div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")} <span style="font-size:10px;font-weight:650;color:#64748b;">· ${__("This Stock Entry")}: ${esc(local_status)}</span><span style="height:1px;flex:1;background:#dbe5ef;"></span></div>${order_indicator}<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:0 0 7px;">${progress}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">${cards_html}</div></div>`).show();
 		$ribbon.off("click.ss_coil_stock_order_detail", "[data-stock-order-detail-all]").on("click.ss_coil_stock_order_detail", "[data-stock-order-detail-all]", function () {
 			show_stock_entry_sales_order_detail(sales_order, data);
+		});
+		$ribbon.off("click.ss_coil_stock_create_delivery", "[data-stock-create-delivery]").on("click.ss_coil_stock_create_delivery", "[data-stock-create-delivery]", function () {
+			open_delivery_note_picker_for_order(sales_order);
 		});
 		$ribbon.off("click.ss_coil_stock_order", "[data-stock-order-popup]").on("click.ss_coil_stock_order", "[data-stock-order-popup]", function () {
 			const kind = $(this).attr("data-stock-order-popup");
@@ -147,7 +157,7 @@ function render_stock_entry_order_progress(frm) {
 				return;
 			}
 			const configs = {
-				stock_entries: rows.map((row) => ({ name: row.name, status: [__("Draft"), __("Submitted"), __("Cancelled")][Number(row.docstatus)] || __("Unknown"), date: row.posting_date, detail: row.purpose || "-" })),
+				stock_entries: rows.map((row) => ({ name: row.name, status: [__("Draft"), __("Submitted"), __("Cancelled")][Number(row.docstatus)] || __("Unknown"), date: row.posting_date, detail: [row.purpose || "-", ...(manufacture_tags_by_entry.get(row.name) || [])].join(" · ") })),
 				ss_coils: rows.map((row) => ({ name: row.name, status: row.order_status || __("Not Started"), date: row.sc_date, detail: [row.operation, row.machine, row.sales_order_item].filter(Boolean).join(" · ") || "-" })),
 				delivery_notes: rows.map((row) => ({ name: row.delivery_note, status: row.status || "-", date: row.posting_date, detail: row.item_name || row.item_code || "-" })),
 				invoices: rows.map((row) => ({ name: row.sales_invoice, status: row.status || "-", date: row.posting_date, detail: `${row.item_name || row.item_code || "-"} · ${__("Outstanding")}: ${format_number(row.outstanding_amount || 0)}` })),
@@ -166,6 +176,14 @@ function render_stock_entry_order_progress(frm) {
 	});
 }
 
+function open_delivery_note_picker_for_order(sales_order) {
+	const open = () => {
+		if (ss_coil.delivery_by_tag?.open) ss_coil.delivery_by_tag.open(sales_order);
+	};
+	if (ss_coil.delivery_by_tag?.open) open();
+	else frappe.require("/assets/ss_coil/js/delivery_by_tag.js", open);
+}
+
 function show_stock_entry_sales_order_detail(sales_order, data) {
 	const esc = (value) => frappe.utils.escape_html(String(value ?? "-"));
 	const qty = (value) => format_number(flt(value || 0));
@@ -178,6 +196,13 @@ function show_stock_entry_sales_order_detail(sales_order, data) {
 		coils_by_item.get(coil.sales_order_item).push(coil);
 	});
 	const traces = new Map((data.tag_trace || []).filter((row) => row.tag_no).map((row) => [row.tag_no, row]));
+	const manufacturingByTag = data.manufacturing_by_tag || {};
+	const manufacturingForTag = (tag) => manufacturingByTag[tag] || [];
+	const manufactureStatus = (tag) => manufacturingForTag(tag).some((row) => Number(row.docstatus) === 1)
+		? __("Manufactured") : manufacturingForTag(tag).length ? __("Draft Manufacture") : __("Not Manufactured");
+	const manufactureLinks = (tag) => manufacturingForTag(tag).map((row) =>
+		`<a target="_blank" href="/app/stock-entry/${encodeURIComponent(row.stock_entry || "")}">${esc(row.stock_entry || "")}</a> · ${qty(row.qty)}`
+	).join("; ") || "-";
 	const order_items = new Map((data.items || []).map((item) => [item.name, item]));
 	const status_summary = (records) => {
 		const counts = {};
@@ -251,7 +276,7 @@ function show_stock_entry_sales_order_detail(sales_order, data) {
 			const delivered_events = events.filter((event) => event.stage === "Delivery Note");
 			const invoice_events = events.filter((event) => event.stage === "Sales Invoice");
 			const is_item_tag = node.tag_no === item_section.item.tag_no;
-			rows.push(`<tr style="background:${depth === 0 ? "#eaf2ff" : "#fff"};font-size:9px;font-weight:400;"><td style="padding:4px 6px;white-space:nowrap;">${depth ? `${"　".repeat(Math.min(depth, 4))}↳ ` : ""}${esc(node.tag_no)}</td><td style="padding:4px 6px;white-space:nowrap;">${esc(node.parent_tag_no || "-")}</td><td style="padding:4px 6px;">${esc(tag_status)}</td><td style="padding:4px 6px;">${esc(coil_status)}</td><td style="padding:4px 6px;">${esc(related_coils.map((doc) => `${doc.name} · ${doc.operation} · ${doc.order_status}`).join("; ") || "-")}</td><td style="padding:4px 6px;text-align:right;">${qty(is_item_tag ? item_section.item.ordered_qty : 0)}</td><td style="padding:4px 6px;text-align:right;">${qty(delivered_events.reduce((sum, event) => sum + flt(event.qty), 0))}</td><td style="padding:4px 6px;">${esc([...new Set(delivered_events.map((event) => event.docname).filter(Boolean))].join(", ") || "-")}</td><td style="padding:4px 6px;text-align:right;">${qty(invoice_events.reduce((sum, event) => sum + flt(event.qty), 0))}</td><td style="padding:4px 6px;">${esc([...new Set(invoice_events.map((event) => event.docname).filter(Boolean))].join(", ") || "-")}</td></tr>`);
+		rows.push(`<tr style="background:${depth === 0 ? "#eaf2ff" : "#fff"};font-size:9px;font-weight:400;"><td style="padding:4px 6px;white-space:nowrap;">${depth ? `${"　".repeat(Math.min(depth, 4))}↳ ` : ""}${esc(node.tag_no)}</td><td style="padding:4px 6px;white-space:nowrap;">${esc(node.parent_tag_no || "-")}</td><td style="padding:4px 6px;">${esc(tag_status)}</td><td style="padding:4px 6px;">${esc(coil_status)}</td><td style="padding:4px 6px;">${esc(related_coils.map((doc) => `${doc.name} · ${doc.operation} · ${doc.order_status}`).join("; ") || "-")}</td><td style="padding:4px 6px;">${esc(manufactureStatus(node.tag_no))}</td><td style="padding:4px 6px;">${manufactureLinks(node.tag_no)}</td><td style="padding:4px 6px;text-align:right;">${qty(is_item_tag ? item_section.item.ordered_qty : 0)}</td><td style="padding:4px 6px;text-align:right;">${qty(delivered_events.reduce((sum, event) => sum + flt(event.qty), 0))}</td><td style="padding:4px 6px;">${esc([...new Set(delivered_events.map((event) => event.docname).filter(Boolean))].join(", ") || "-")}</td><td style="padding:4px 6px;text-align:right;">${qty(invoice_events.reduce((sum, event) => sum + flt(event.qty), 0))}</td><td style="padding:4px 6px;">${esc([...new Set(invoice_events.map((event) => event.docname).filter(Boolean))].join(", ") || "-")}</td></tr>`);
 			(node.children || []).forEach((child) => walk(child, depth + 1));
 		};
 		walk(group.hierarchy);
@@ -259,8 +284,8 @@ function show_stock_entry_sales_order_detail(sales_order, data) {
 	};
 	const tag_sections = item_sections.map((section) => {
 		const hierarchy_rows = section.groups.flatMap((group) => flatten_group(group, section));
-		const body = hierarchy_rows.length ? hierarchy_rows.join("") : `<tr style="background:#fff;font-size:9px;font-weight:400;"><td colspan="10" style="padding:12px;text-align:center;color:#64748b;">${__("No registered tag hierarchy found for this item.")}</td></tr>`;
-		return `<div style="margin:8px 0 12px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 4px;color:#334155;font-size:10px;font-weight:700;"><span>${esc(section.name)}</span><span style="font-size:9px;font-weight:400;color:#64748b;">${__("Order Qty")}: ${qty(section.item.ordered_qty)}</span></div>${table([__("Tag No"), __("Parent Tag"), __("Tag Status"), __("SS Coil Status"), __("SS Coil Production"), __("Order Qty"), __("Delivered Qty"), __("Delivery Notes"), __("Invoiced Qty"), __("Sales Invoices")], body, 1120)}</div>`;
+		const body = hierarchy_rows.length ? hierarchy_rows.join("") : `<tr style="background:#fff;font-size:9px;font-weight:400;"><td colspan="12" style="padding:12px;text-align:center;color:#64748b;">${__("No registered tag hierarchy found for this item.")}</td></tr>`;
+		return `<div style="margin:8px 0 12px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 4px;color:#334155;font-size:10px;font-weight:700;"><span>${esc(section.name)}</span><span style="font-size:9px;font-weight:400;color:#64748b;">${__("Order Qty")}: ${qty(section.item.ordered_qty)}</span></div>${table([__("Tag No"), __("Parent Tag"), __("Tag Status"), __("SS Coil Status"), __("SS Coil Production"), __("Manufacturing Status"), __("Manufacture Stock Entry · Actual WT"), __("Order Qty"), __("Delivered Qty"), __("Delivery Notes"), __("Invoiced Qty"), __("Sales Invoices")], body, 1500)}</div>`;
 	}).join("") || `<div style="padding:20px;text-align:center;color:#64748b;font-size:10px;">${__("No tag details found.")}</div>`;
 	const dialog = new frappe.ui.Dialog({ title: `${__("Sales Order Details")}: ${sales_order}`, size: "extra-large", fields: [{ fieldtype: "HTML", fieldname: "details" }], primary_action_label: __("Close"), primary_action() { dialog.hide(); } });
 	dialog.fields_dict.details.$wrapper.html(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:10px;">${summary}</div><h5 style="margin:10px 0 5px;font-size:11px;color:#334155;">${__("Sales Order Items")}</h5>${item_tables}<h5 style="margin:12px 0 5px;font-size:11px;color:#334155;">${__("Tag-wise Production and Dispatch")}</h5>${tag_sections}`);

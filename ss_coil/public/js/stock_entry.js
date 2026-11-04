@@ -1363,22 +1363,28 @@ function add_stock_entry_sticker_print_button(frm) {
 }
 
 function show_stock_entry_sticker_print_dialog(frm) {
-	const item_options = (frm.doc.items || []).map((row, index) => ({
-		label: [
-			`${index + 1}.`,
-			row.item_code || __("Item"),
-			row.custom_tag_no || "",
-			row.custom_ref_no || "",
-			row.qty ? `${row.qty}` : "",
-		]
-			.filter(Boolean)
-			.join(" | "),
-		value: row.name,
-		checked: true,
-	}));
+	const item_options = (frm.doc.items || [])
+		.filter((row) => row.custom_tag_no)
+		.map((row, index) => ({
+			label: [
+				`${index + 1}.`,
+				row.custom_tag_no || __("Tag"),
+				row.item_name || row.item_code || __("Item"),
+				row.custom_width ? `${row.custom_width}` : "",
+			]
+				.filter(Boolean)
+				.join(" | "),
+			value: row.name,
+			checked: true,
+		}));
+
+	if (!item_options.length) {
+		frappe.msgprint(__("No item tags found on Stock Entry."));
+		return;
+	}
 
 	const dialog = new frappe.ui.Dialog({
-		title: __("Print Stickers"),
+		title: __("Print Output Stickers"),
 		fields: [
 			{
 				fieldtype: "Select",
@@ -1393,17 +1399,17 @@ function show_stock_entry_sticker_print_dialog(frm) {
 			},
 			{
 				fieldtype: "MultiCheck",
-				fieldname: "item_names",
-				label: __("Select Item Rows"),
+				fieldname: "output_names",
+				label: __("Select Output Tags"),
 				options: item_options,
 				columns: 1,
 				select_all: true,
 			},
 		],
-		primary_action_label: __("Print"),
+		primary_action_label: __("Preview"),
 		primary_action(values) {
-			const multicheck = dialog.fields_dict.item_names;
-			let item_names = multicheck ? multicheck.get_value() : values.item_names || [];
+			const multicheck = dialog.fields_dict.output_names;
+			let item_names = multicheck ? multicheck.get_value() : values.output_names || [];
 			if (typeof item_names === "string") {
 				try {
 					item_names = JSON.parse(item_names);
@@ -1413,16 +1419,13 @@ function show_stock_entry_sticker_print_dialog(frm) {
 			}
 			item_names = (item_names || []).filter(Boolean);
 			if (!item_names.length) {
-				frappe.msgprint(__("Select at least one item row to print."));
+				frappe.msgprint(__("Select at least one output tag to print."));
 				return;
 			}
 
 			const print_format =
 				values.layout === "thermal" ? "Stock Entry Sticker Thermal" : "Stock Entry Sticker";
-			const settings = JSON.stringify({
-				item_names,
-				layout: values.layout,
-			});
+			const settings = JSON.stringify({ output_names: item_names, layout: values.layout });
 			const url =
 				frappe.urllib.get_full_url(
 					"/printview?doctype=" +
@@ -1432,7 +1435,6 @@ function show_stock_entry_sticker_print_dialog(frm) {
 						"&format=" +
 						encodeURIComponent(print_format) +
 						"&no_letterhead=1" +
-						"&trigger_print=1" +
 						"&settings=" +
 						encodeURIComponent(settings) +
 						"&_=" +

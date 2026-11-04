@@ -3435,11 +3435,15 @@ def build_stock_entry_sticker_payload(doc, row):
 
 	return {
 		"Tag No": row.get("custom_tag_no") or "-",
-		"Customer": doc.get("custom_customer") or "-",
+		"Customer": (
+			frappe.get_cached_value("Customer", doc.get("custom_customer"), "customer_name")
+			if doc.get("custom_customer")
+			else None
+		) or "-",
 		"Item Name": row.get("item_name") or row.get("item_code") or "-",
 		"Specification": row.get("custom_specification") or "-",
-		"Qty": _fmt_float(row.get("qty")),
-		"No of Coils": _fmt_float(row.get("custom_qty_of_coil")),
+		"Weight": _fmt_float(row.get("custom_estimated_wt")),
+		"Qty": _fmt_float(row.get("custom_qty_of_coil") or 1),
 		"Thickness": row.get("custom_thickness") or "-",
 		"Width": row.get("custom_width") or "-",
 		"Length": _sticker_format_length(row.get("custom_length_c")),
@@ -3473,22 +3477,21 @@ def _sticker_triple_row(items, divider=False):
 
 
 def build_stock_entry_sticker_body_html(fields):
-	"""Build the ordered/grouped field markup for the sticker's left column."""
-	length_label = "Length"
+	"""Stock Entry copy of the SS Coil sticker body layout."""
 	triple_box = (
 		'<div class="sticker-triple-box">'
 		+ _sticker_triple_row(
 			[
 				("Spec", fields["Specification"]),
+				("Weight", fields["Weight"]),
 				("Qty", fields["Qty"]),
-				("Coils", fields["No of Coils"]),
 			]
 		)
 		+ _sticker_triple_row(
 			[
 				("Thick", fields["Thickness"]),
 				("Width", fields["Width"]),
-				(length_label, fields.get(length_label, "-")),
+				("Length", fields.get("Length", "-")),
 			],
 			divider=True,
 		)
@@ -3502,6 +3505,8 @@ def build_stock_entry_sticker_body_html(fields):
 			triple_box,
 			_sticker_field_line("Mill", fields["Mill"]),
 			_sticker_field_line("Ref No", fields["Ref No"]),
+			_sticker_field_line("Entry No", fields["Entry No"]),
+			_sticker_field_line("Date", fields["Date"]),
 		]
 	)
 
@@ -3552,10 +3557,24 @@ def build_sticker_footer_html(entry_no, date_value, company, include_entry_date=
 
 
 def build_stock_entry_sticker_footer_html(doc):
-	date_value = (
-		frappe.format(doc.get("posting_date"), {"fieldtype": "Date"}) if doc.get("posting_date") else "-"
+	company_name = frappe.get_cached_value("Company", doc.get("company"), "company_name") if doc.get("company") else "-"
+	return (
+		'<div class="sticker-footer" style="margin-top:1px;padding-top:1px;line-height:1.05;flex:0 0 auto;">'
+		'<div class="sticker-company-name" style="font-size:16px;font-weight:800;line-height:1.1;">'
+		f"{html.escape(str(company_name or '-'))}</div></div>"
 	)
-	return build_sticker_footer_html(doc.get("name") or "-", date_value, doc.get("company"))
+
+
+def _stock_entry_sticker_logo_html(doc):
+	logo_url = get_stock_entry_sticker_logo_url(doc.get("company"))
+	if not logo_url:
+		return ""
+	return (
+		'<div class="ss-coil-sticker-logo" style="text-align:center;margin:0 auto 2px;line-height:0;">'
+		f'<img src="{html.escape(logo_url)}" alt="Logo" '
+		'style="display:block;height:70px;width:70px;object-fit:contain;margin-left:auto;margin-right:auto;">'
+		"</div>"
+	)
 
 
 def _normalize_sticker_row(row):
@@ -3636,21 +3655,23 @@ def _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html, cente
 
 
 def build_stock_entry_sticker_html(doc, row):
-	"""Return sticker HTML block with QR code and field text for one item row."""
+	"""Return a Stock Entry sticker matching the SS Coil sticker card output."""
 	doc = _normalize_sticker_doc(doc)
 	row = _normalize_sticker_row(row)
 
 	fields = build_stock_entry_sticker_payload(doc, row)
-	qr_html = _build_qr_html(build_stock_entry_sticker_qr_payload(doc, row), plain=True, scale=4)
+	qr_html = _stock_entry_sticker_logo_html(doc) + _build_qr_html(
+		build_stock_entry_sticker_qr_payload(doc, row), plain=True, scale=4, centered=True
+	)
 	lines_html = build_stock_entry_sticker_body_html(fields)
-	combo_html = build_stock_entry_sticker_combo_html(fields)
 	footer_html = build_stock_entry_sticker_footer_html(doc)
-	return _build_sticker_card_html(lines_html, qr_html, combo_html, footer_html)
+	return _build_sticker_card_html(lines_html, qr_html, "", footer_html, center_qr=True)
 
 
 def build_stock_entry_sticker_sheet_html(doc, item_names=None, layout="a4", filter_items=False):
 	"""Build sticker sheet HTML for selected item rows."""
 	rows = _get_sticker_items(doc, item_names=item_names, filter_items=filter_items)
+	rows = [row for row in rows if (row.get("custom_tag_no") if isinstance(row, dict) else getattr(row, "custom_tag_no", None))]
 	stickers = [build_stock_entry_sticker_html(doc, _normalize_sticker_row(row)) for row in rows]
 	return _build_sticker_sheet_html(stickers, layout=layout)
 

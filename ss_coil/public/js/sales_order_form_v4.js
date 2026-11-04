@@ -451,6 +451,13 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 						options.find((entry) => entry._label === values.production_row) ||
 						options[0];
 					const existingProcess = (row.process_statuses || {})[values.operation];
+					const firstProcess = (row.processes || row.operations || ["Slitter"])[0];
+					if (values.operation !== firstProcess) {
+						frappe.msgprint(
+							__("Create {0} from the previous SS Coil using Create Next Process.", [values.operation])
+						);
+						return;
+					}
 					if (existingProcess && !values.allow_duplicate_process) {
 						frappe.msgprint(
 							__("This item already has an SS Coil entry for {0}: {1}.", [
@@ -482,7 +489,8 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 				const processes = row.processes || row.operations || ["Slitter"];
 				const statuses = row.process_statuses || {};
 				const allowDuplicate = Boolean(allowDuplicateField.get_value());
-				const available = allowDuplicate ? processes : processes.filter((process) => !statuses[process]);
+				const firstProcess = processes[0];
+				const available = firstProcess && (!statuses[firstProcess] || allowDuplicate) ? [firstProcess] : [];
 				detailsField.$wrapper.html(
 					`<div style="font-size:12px;color:#334155;line-height:1.6;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
 						<div><b>${frappe.utils.escape_html(row.item_code || "-")}</b> — ${frappe.utils.escape_html(
@@ -493,10 +501,15 @@ function open_sales_order_ss_coil_item_dialog(frm) {
 						)}: ${frappe.utils.escape_html(row.dimension || "-")} | ${__("Tag")}: ${frappe.utils.escape_html(
 							row.tag_no || "-"
 						)}</div>
+						<div style="margin-top:6px"><b>${__("Process status")}:</b> ${processes.map((process) => {
+							const status = statuses[process];
+							const laterHint = process !== firstProcess ? ` — ${__("Create from the previous SS Coil using Create Next Process")}` : "";
+							return `${frappe.utils.escape_html(process)}: ${status ? `${frappe.utils.escape_html(status.status)} (${frappe.utils.escape_html(status.ss_coil)})` : __("Not created")}${frappe.utils.escape_html(laterHint)}`;
+						}).join(" · ")}</div>
 					</div>`
 				);
-				operationField.df.options = (available.length ? available : [__("All processes already created")]).join("\n");
-				operationField.set_value(available[0] || __("All processes already created"));
+				operationField.df.options = (available.length ? available : [__("Create later processes from previous SS Coil")]).join("\n");
+				operationField.set_value(available[0] || __("Create later processes from previous SS Coil"));
 				operationField.refresh();
 				dialog.get_primary_btn().prop("disabled", !available.length);
 

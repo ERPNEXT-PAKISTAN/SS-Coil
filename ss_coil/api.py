@@ -6055,6 +6055,16 @@ def create_ss_coil_from_sales_order(
 		configured = _get_enabled_processes_from_row(proxy, custom=True)
 		if not configured and prod is not None:
 			configured = _get_enabled_processes_from_row(prod, custom=False)
+		# Sales Orders may only launch the first configured operation. Later
+		# operations must be created from the preceding SS Coil's output tags.
+		if not configured:
+			configured = ["slitter"]
+		if process_key and process_key != configured[0]:
+			frappe.throw(
+				_("Create {0} from the previous SS Coil using Create Next Process.").format(
+					_label_for_process(process_key)
+				)
+			)
 		has_flag = proxy.get(f"custom_{process_key}") if process_key else None
 		if not has_flag and prod is not None and process_key:
 			has_flag = prod.get(process_key)

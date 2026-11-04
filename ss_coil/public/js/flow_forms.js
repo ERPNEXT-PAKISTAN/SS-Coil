@@ -1602,7 +1602,8 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 				const row = options.find((o) => o._label === label) || first;
 				const statuses = row.process_statuses || {};
 				const allowDuplicate = Boolean(dialog.get_value("allow_duplicate_process"));
-				const available = allowDuplicate ? row._processes : row._processes.filter((process) => !statuses[process]);
+				const firstProcess = row._processes[0];
+				const available = firstProcess && (!statuses[firstProcess] || allowDuplicate) ? [firstProcess] : [];
 				const details = dialog.fields_dict.item_details;
 				if (details && details.$wrapper) {
 					details.$wrapper.html(
@@ -1619,16 +1620,17 @@ ss_coil.flow_forms.open_create_ss_coil_dialog = function (sales_order_name, hand
 							)}</div>
 							<div style="margin-top:6px"><b>${__("Process status")}:</b> ${row._processes.map((process) => {
 								const status = statuses[process];
-								return `${frappe.utils.escape_html(process)}: ${status ? `${frappe.utils.escape_html(status.status)} (${frappe.utils.escape_html(status.ss_coil)})` : __("Not created")}`;
+								const laterHint = process !== firstProcess ? ` — ${__("Create from the previous SS Coil using Create Next Process")}` : "";
+								return `${frappe.utils.escape_html(process)}: ${status ? `${frappe.utils.escape_html(status.status)} (${frappe.utils.escape_html(status.ss_coil)})` : __("Not created")}${frappe.utils.escape_html(laterHint)}`;
 							}).join(" · ")}</div>
 							${allowDuplicate ? `<div style="margin-top:6px;color:#b45309"><b>${__("Duplicate creation is enabled.")}</b> ${__("This may create a second process entry for this item.")}</div>` : ""}
 						</div>`
 					);
 				}
 				const op = dialog.fields_dict.operation;
-				op.df.options = (available.length ? available : [__("All processes already created")]).join("\n");
+				op.df.options = (available.length ? available : [__("Create later processes from previous SS Coil")]).join("\n");
 				op.refresh();
-				op.set_value(available[0] || __("All processes already created"));
+				op.set_value(available[0] || __("Create later processes from previous SS Coil"));
 				dialog.get_primary_btn().prop("disabled", !available.length);
 			}
 

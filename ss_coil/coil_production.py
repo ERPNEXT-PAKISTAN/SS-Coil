@@ -14,6 +14,8 @@ from ss_coil.api import (
 	_has_field,
 )
 
+SEMI_FINISH_DEPENDS_ON = "eval:[doc.custom_slitter, doc.custom_leveler, doc.custom_reshearing].filter(Boolean).length > 1"
+
 # Coil Production Line field -> Sales Order Item custom_* (for reuse of SO helpers)
 PROD_TO_SO_CUSTOM = {
 	"raw_material_item": "custom_raw_material_item",
@@ -254,6 +256,37 @@ def setup_coil_production_fields():
 				"options": "Item",
 				"insert_after": "item_code",
 			},
+			{
+				"fieldname": "custom_semi_finish_item",
+				"label": "Semi Finish Item",
+				"fieldtype": "Link",
+				"options": "Item",
+				"insert_after": "custom_finish_good_item",
+				"in_list_view": 1,
+				"depends_on": SEMI_FINISH_DEPENDS_ON,
+			},
+		],
+		"Stock Entry Detail": [
+			{
+				"fieldname": "custom_semi_finish_item",
+				"label": "Semi Finish Item",
+				"fieldtype": "Link",
+				"options": "Item",
+				"insert_after": "custom_finish_good_item",
+				"in_list_view": 1,
+				"depends_on": SEMI_FINISH_DEPENDS_ON,
+			},
+		],
+		"Purchase Receipt Item": [
+			{
+				"fieldname": "custom_semi_finish_item",
+				"label": "Semi Finish Item",
+				"fieldtype": "Link",
+				"options": "Item",
+				"insert_after": "custom_finish_good_item",
+				"in_list_view": 1,
+				"depends_on": SEMI_FINISH_DEPENDS_ON,
+			},
 		],
 		"Sales Order": [
 			{
@@ -303,6 +336,8 @@ def setup_coil_production_fields():
 
 	if to_create:
 		create_custom_fields(to_create, update=True)
+	_sync_semi_finish_item_dependencies()
+	migrate_ss_coil_semi_finish_to_so_item()
 	if frappe.db.exists("Custom Field", "Sales Order Item-custom_finish_good_item"):
 		frappe.db.set_value(
 			"Custom Field",
@@ -349,13 +384,74 @@ def setup_coil_production_fields():
 			update_modified=False,
 		)
 
-	# Prefer native field on SS Coil when migrating later; custom field is fine for now.
+	# Refresh layouts and child DocType metadata after custom-field setup/migration.
 	frappe.clear_cache(doctype="Sales Order")
 	frappe.clear_cache(doctype="SS Coil")
+	frappe.clear_cache(doctype="Coil SO")
 	frappe.clear_cache(doctype="Coil Production Line")
 	frappe.clear_cache(doctype="Coil Balance Row")
 	frappe.clear_cache(doctype="Sales Order")
 	return {"status": "ok", "migrated_production_rows": migration.get("migrated_rows", 0)}
+
+
+def _sync_semi_finish_item_dependencies():
+	"""Only show the intermediate item field when more than one process is selected."""
+	for doctype in ("Stock Entry Detail", "Purchase Receipt Item", "Sales Order Item"):
+		name = f"{doctype}-custom_semi_finish_item"
+		if frappe.db.exists("Custom Field", name):
+			frappe.db.set_value(
+				"Custom Field", name, "depends_on", SEMI_FINISH_DEPENDS_ON, update_modified=False
+			)
+		frappe.clear_cache(doctype=doctype)
+
+
+def migrate_ss_coil_semi_finish_to_so_item():
+	"""Move the temporary SS Coil parent field into its existing ``so_item`` rows."""
+	custom_field = "SS Coil-semi_finish_item"
+	moved = 0
+	has_old_parent_field = frappe.db.exists("Custom Field", custom_field)
+	if has_old_parent_field and not frappe.db.has_column("SS Coil", "semi_finish_item"):
+		return 0
+	if not frappe.db.has_column("Coil SO", "semi_finish_item"):
+		return 0
+
+	coil_fields = ["name", "sales_order_item"]
+	if has_old_parent_field:
+		coil_fields.append("semi_finish_item")
+	for coil in frappe.get_all("SS Coil", fields=coil_fields):
+		semi_item = coil.get("semi_finish_item") if has_old_parent_field else None
+		if not semi_item and coil.sales_order_item and _has_field("Sales Order Item", "custom_semi_finish_item"):
+			semi_item = frappe.db.get_value("Sales Order Item", coil.sales_order_item, "custom_semi_finish_item")
+		if not semi_item:
+			continue
+		rows = frappe.get_all(
+			"Coil SO",
+			filters={"parent": coil.name, "parenttype": "SS Coil", "parentfield": "so_item"},
+			fields=["name", "semi_finish_item"],
+		)
+		if not rows:
+			if has_old_parent_field and coil.get("semi_finish_item"):
+				# Preserve the old field if a legacy record has nowhere to migrate its value.
+				return moved
+			continue
+		for row in rows:
+			if not row.semi_finish_item:
+				frappe.db.set_value("Coil SO", row.name, "semi_finish_item", semi_item, update_modified=False)
+				moved += 1
+
+	if has_old_parent_field:
+		frappe.delete_doc("Custom Field", custom_field, force=True, ignore_permissions=True)
+
+	for setter in frappe.get_all(
+		"Property Setter",
+		filters={"doc_type": "SS Coil", "property": "field_order"},
+		fields=["name", "value"],
+	):
+		order = frappe.parse_json(setter.value or "[]")
+		cleaned = [fieldname for fieldname in order if fieldname != "semi_finish_item"]
+		if cleaned != order:
+			frappe.db.set_value("Property Setter", setter.name, "value", frappe.as_json(cleaned), update_modified=False)
+	return moved
 
 
 def migrate_coil_production_rows_to_sales_order_items():

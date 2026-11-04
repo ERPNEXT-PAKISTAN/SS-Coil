@@ -156,25 +156,28 @@ def _render_table(columns, rows, empty_label="No rows"):
 
 
 def _info_grid(pairs):
-	"""Order & product fields: one row, each field in its own box (full width)."""
+	"""Render order and product fields as a compact, unboxed page-width grid."""
 	cells = []
 	for label, value in pairs:
 		cells.append(
 			f"""
-			<td style="padding:0;vertical-align:top;">
-				<div style="background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:8px 9px;height:100%;box-sizing:border-box;min-height:52px;">
-					<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#1e3a5f;line-height:1.25;">{escape(str(label))}</div>
-					<div style="font-size:13px;font-weight:700;color:#0f172a;margin-top:5px;line-height:1.3;word-break:break-word;">{_esc(value)}</div>
-				</div>
+			<td style="width:25%;padding:5px 12px 7px 0;vertical-align:top;border-bottom:1px solid #dbe4ef;">
+				<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#64748b;line-height:1.2;">{escape(str(label))}</div>
+				<div style="font-size:12px;font-weight:700;color:#0f172a;margin-top:3px;line-height:1.25;word-break:break-word;">{_esc(value)}</div>
 			</td>"""
 		)
 	if not cells:
 		return '<div style="color:#94a3b8;font-size:12px;">—</div>'
-	col_width = round(100 / max(len(cells), 1), 2)
+	columns = 4
+	rows = []
+	for start in range(0, len(cells), columns):
+		row = cells[start:start + columns]
+		row.extend(['<td style="width:25%;padding:5px 12px 7px 0;border-bottom:1px solid #dbe4ef;"></td>'] * (columns - len(row)))
+		rows.append(f"<tr>{''.join(row)}</tr>")
 	return f"""
 	<div style="width:100%;box-sizing:border-box;">
-		<table style="width:100%;border-collapse:separate;border-spacing:6px 0;table-layout:fixed;">
-			<tr>{"".join(cells)}</tr>
+		<table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+			{"".join(rows)}
 		</table>
 	</div>"""
 
@@ -336,14 +339,8 @@ def build_ss_coil_job_sheet_html(doc, for_print=False):
 	def order_product_section(body):
 		return f"""
 		<section style="margin-top:16px;width:100%;box-sizing:border-box;">
-			<table style="width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;">
-				<tr>
-					<td style="width:118px;vertical-align:top;padding:0 10px 0 0;">
-						<div style="background:#1e3a5f !important;color:#f8fafc;border-radius:10px;padding:12px 10px;height:100%;box-sizing:border-box;min-height:52px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Order &amp; Product</div>
-					</td>
-					<td style="vertical-align:top;padding:0;">{body}</td>
-				</tr>
-			</table>
+			<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1e3a5f;margin-bottom:6px;padding-bottom:5px;border-bottom:2px solid #1e3a5f;">Order &amp; Product</div>
+			{body}
 		</section>"""
 
 	meta_row = _info_grid(

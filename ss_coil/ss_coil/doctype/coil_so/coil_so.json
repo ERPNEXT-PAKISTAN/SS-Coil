@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "item_name",
+  "semi_finish_item",
   "dimension",
   "ref_no",
   "mill",
@@ -39,6 +40,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Dimension"
+  },
+  {
+   "depends_on": "eval:[doc.slitter, doc.leveler, doc.reshearing].filter(Boolean).length > 1",
+   "fieldname": "semi_finish_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Semi Finish Item",
+   "options": "Item"
   },
   {
    "fieldname": "column_break_xhjm",

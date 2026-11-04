@@ -638,7 +638,7 @@ const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
 	},
 	{
 		label: "Processing",
-		fields: ["custom_finish_good_item", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments"],
+		fields: ["custom_finish_good_item", "custom_semi_finish_item", "custom_slitter", "custom_leveler", "custom_reshearing", "custom_comments"],
 	},
 	{
 		label: "JS / Location",
@@ -1206,6 +1206,7 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 
 	const controls = {};
 	const dimension_fields = ["custom_thickness", "custom_width", "custom_length_c"];
+	const process_fields = ["custom_slitter", "custom_leveler", "custom_reshearing"];
 
 	state.child_columns.forEach((group) => {
 		group.fields.forEach((df) => {
@@ -1218,7 +1219,10 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 					options: df.options,
 					reqd: df.reqd,
 					read_only: df.fieldname === "custom_dimension" ? 1 : df.read_only,
-					depends_on: df.fieldname === "custom_finish_good_item" ? null : df.depends_on,
+					depends_on:
+						["custom_finish_good_item", "custom_semi_finish_item"].includes(df.fieldname)
+							? null
+							: df.depends_on,
 					get_query:
 						df.fieldname === "custom_finish_good_item"
 							? get_stock_entry_finish_good_item_query
@@ -1227,6 +1231,9 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 						item[df.fieldname] = control.get_value();
 						if (dimension_fields.includes(df.fieldname)) {
 							update_row_dimension_control();
+						}
+						if (process_fields.includes(df.fieldname)) {
+							update_semi_finish_item_visibility();
 						}
 					},
 				},
@@ -1240,6 +1247,17 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 			controls[df.fieldname] = control;
 		});
 	});
+	update_semi_finish_item_visibility();
+
+	function update_semi_finish_item_visibility() {
+		const selected_process_count = process_fields.filter((fieldname) => {
+			const value = controls[fieldname] ? controls[fieldname].get_value() : item[fieldname];
+			return value !== undefined && value !== null && value !== "";
+		}).length;
+		$tr
+			.find('[data-fieldname="custom_semi_finish_item"]')
+			.css("visibility", selected_process_count > 1 ? "visible" : "hidden");
+	}
 
 	function update_row_dimension_control() {
 		dimension_fields.forEach((fieldname) => {

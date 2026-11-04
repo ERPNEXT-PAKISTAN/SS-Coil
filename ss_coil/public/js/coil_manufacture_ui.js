@@ -126,15 +126,14 @@ function coil_mfg_render_manufacturing_tab_content(frm, preview) {
 	const ready = preview.ready_tags || [];
 	const already = preview.already_tags || [];
 	const blocked = preview.blocked_tags || [];
-	const continuing = preview.continuing_tags || [];
+	const has_continuing_outputs = (preview.continuing_tags || []).length > 0;
 	const mother = preview.mother || {};
 	const esc = (value) => frappe.utils.escape_html(String(value == null || value === "" ? "—" : value));
 
 	const rows = [
-		...ready.map((row) => ({ ...row, status_label: __("Ready"), status_class: "ready", action: true })),
+		...ready.map((row) => ({ ...row, status_label: row.next_process ? __("Semi Finish → Next: {0}", [row.next_process]) : __("Final Finish Good"), status_class: "ready", action: true })),
 		...already.map((row) => ({ ...row, status_label: __("Manufactured"), status_class: "done", entry: row.already_se })),
 		...blocked.map((row) => ({ ...row, status_label: __("Blocked"), status_class: "blocked", note: row.blocked_reason })),
-		...continuing.map((row) => ({ ...row, status_label: row.next_process || __("Next Process"), status_class: "next", note: __("Waiting for the next process") })),
 	];
 	const tableRows = rows.map((row) => {
 		const qty = row.actual_wt != null ? row.actual_wt : row.qty;
@@ -163,15 +162,16 @@ function coil_mfg_render_manufacturing_tab_content(frm, preview) {
 					<div class="coil-mfg-sub">${__("SS Coil")}: <b>${esc(preview.ss_coil)}</b> · ${__("Sales Order")}: <b>${esc(preview.sales_order)}</b> · ${__("Status")}: <b>${esc(preview.order_status)}</b></div>
 				</div>
 			</div>
-			<div class="coil-mfg-notice">${__("Each output tag creates its own BOM-based Manufacture Stock Entry. The source mother batch is consumed and the finished-good batch uses the output tag.")}</div>
+			<div class="coil-mfg-notice">${__("Each output tag creates its own BOM-based Manufacture Stock Entry. Continuing tags produce Semi Finish; the final process produces the Finish Good. The output batch uses the tag number.")}</div>
 			<div class="coil-mfg-meta">
 				<div class="coil-mfg-meta-card"><div class="coil-mfg-meta-k">${__("Mother / Raw Item")}</div><div class="coil-mfg-meta-v">${esc(mother.item_code)}<div style="font-size:11px;color:#64748b;font-weight:600;margin-top:2px">${__("Source Tag / Batch")}: ${esc(mother.tag_no || mother.batch_no)}</div></div></div>
 				<div class="coil-mfg-meta-card"><div class="coil-mfg-meta-k">${__("Finished Good")}</div><div class="coil-mfg-meta-v">${esc(preview.fg_item)}</div></div>
+				${has_continuing_outputs ? `<div class="coil-mfg-meta-card"><div class="coil-mfg-meta-k">${__("Semi Finish")}</div><div class="coil-mfg-meta-v">${esc(preview.semi_finish_item || "—")}</div></div>` : ""}
 			</div>
 			<div class="coil-mfg-section">${__("Stock Entry Warehouses")}</div>
 			<div class="coil-mfg-grid-2">
 				<div><label class="coil-mfg-label">${__("Source Warehouse")} *</label><div id="coil-mfg-tab-src-wh"></div></div>
-				<div><label class="coil-mfg-label">${__("Finished Goods Warehouse")} *</label><div id="coil-mfg-tab-tgt-wh"></div></div>
+				<div><label class="coil-mfg-label">${__("Output Warehouse")} *</label><div id="coil-mfg-tab-tgt-wh"></div></div>
 			</div>
 			<div style="max-width:260px;margin-top:12px"><label class="coil-mfg-label">${__("Posting Date")}</label><input type="date" class="form-control" id="coil-mfg-tab-posting-date" value="${frappe.datetime.get_today()}" title="${esc(__("Choose a backdated posting date when required."))}"></div>
 			<div class="coil-mfg-tab-toolbar">
@@ -179,7 +179,7 @@ function coil_mfg_render_manufacturing_tab_content(frm, preview) {
 				<button type="button" class="btn btn-primary coil-mfg-tab-create-all" ${ready.length ? "" : "disabled"}>${__("Create All Ready ({0})", [ready.length])}</button>
 			</div>
 			<div class="coil-mfg-tab-table-wrap"><table class="coil-mfg-table coil-mfg-tab-grid"><thead><tr>
-				<th class="coil-mfg-th">${__("Output Tag")}</th><th class="coil-mfg-th">${__("Finished Good / BOM")}</th>
+				<th class="coil-mfg-th">${__("Output Tag")}</th><th class="coil-mfg-th">${__("Output Item / BOM")}</th>
 				<th class="coil-mfg-th" style="text-align:right">${__("Actual WT")}</th><th class="coil-mfg-th">${__("FG Batch No")}</th>
 				<th class="coil-mfg-th">${__("Status")}</th><th class="coil-mfg-th">${__("Manufacture Entry / Action")}</th>
 			</tr></thead><tbody>${tableRows || `<tr><td class="coil-mfg-td" colspan="6">${__("No output tags found.")}</td></tr>`}</tbody></table></div>
@@ -372,7 +372,6 @@ function coil_mfg_open_dialog(frm, preview, source) {
 	const ready = preview.ready_tags || [];
 	const already = preview.already_tags || [];
 	const blocked = preview.blocked_tags || [];
-	const continuing = preview.continuing_tags || [];
 	const mother = preview.mother || {};
 
 	const d = new frappe.ui.Dialog({
@@ -401,7 +400,7 @@ function coil_mfg_open_dialog(frm, preview, source) {
 					<input type="checkbox" class="coil-mfg-chk" data-tag="${frappe.utils.escape_html(r.tag_no)}" checked>
 				</td>
 				<td class="coil-mfg-td"><b>${frappe.utils.escape_html(r.tag_no)}</b>
-					<div><span class="coil-mfg-pill coil-mfg-pill-ready">${__("Ready · separate entry")}</span></div>
+					<div><span class="coil-mfg-pill coil-mfg-pill-ready">${r.next_process ? __("Semi Finish → Next: {0}", [r.next_process]) : __("Final Finish Good")}</span></div>
 				</td>
 				<td class="coil-mfg-td">${frappe.utils.escape_html(r.fg_item || "—")}<div style="font-size:10px;color:#64748b">${__("BOM")}: ${frappe.utils.escape_html(r.bom_no || "—")}</div></td>
 				<td class="coil-mfg-td" style="text-align:right">${flt(r.qty).toFixed(3)}</td>
@@ -416,20 +415,6 @@ function coil_mfg_open_dialog(frm, preview, source) {
 				<td class="coil-mfg-td">${frappe.utils.escape_html(r.fg_item || "—")}<div style="font-size:10px;color:#64748b">${__("BOM")}: ${frappe.utils.escape_html(r.bom_no || "—")}</div></td>
 				<td class="coil-mfg-td" style="text-align:right">${flt(r.actual_wt || 0).toFixed(3)}</td>
 				<td class="coil-mfg-td">${frappe.utils.escape_html(r.blocked_reason || "")}</td>
-			</tr>`
-		),
-		...continuing.map(
-			(r) => `
-			<tr class="coil-mfg-row-next">
-				<td class="coil-mfg-td"></td>
-				<td class="coil-mfg-td"><b>${frappe.utils.escape_html(r.tag_no)}</b>
-					<div><span class="coil-mfg-pill coil-mfg-pill-next">${__("Next")}: ${frappe.utils.escape_html(
-						r.next_process || ""
-					)}</span></div>
-				</td>
-				<td class="coil-mfg-td">—</td>
-				<td class="coil-mfg-td" style="text-align:right">${flt(r.qty).toFixed(3)}</td>
-				<td class="coil-mfg-td">${__("Skipped — still in process chain")}</td>
 			</tr>`
 		),
 		...already.map(
@@ -488,7 +473,7 @@ function coil_mfg_open_dialog(frm, preview, source) {
 					<div id="coil-mfg-src-wh"></div>
 				</div>
 				<div>
-					<label class="coil-mfg-label">${__("Finished Goods Warehouse")} *</label>
+					<label class="coil-mfg-label">${__("Output Warehouse")} *</label>
 					<div id="coil-mfg-tgt-wh"></div>
 				</div>
 			</div>

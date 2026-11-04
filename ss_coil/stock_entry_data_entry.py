@@ -31,6 +31,7 @@ PARENT_SECTIONS = [
 STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"item_code",
 	"custom_finish_good_item",
+	"custom_semi_finish_item",
 	"qty",
 	"custom_tag_no",
 	"custom_mill",
@@ -60,6 +61,7 @@ CHILD_FIELDS_SYNCED_FROM_PARENT = {
 CHILD_FIELD_COLUMNS = {
 	"item_code": 2,
 	"custom_finish_good_item": 2,
+	"custom_semi_finish_item": 2,
 	"custom_specification": 2,
 	"custom_dimension": 2,
 	"custom_comments": 2,

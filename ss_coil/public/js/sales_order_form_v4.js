@@ -2534,6 +2534,7 @@ function render_sales_order_status_ribbon(frm, data) {
 		: /draft/i.test(order_status) ? "#64748b" : "#2563eb";
 	const delivery_percent = flt(data.per_delivered);
 	const billed_percent = flt(data.per_billed);
+	const order_indicator = `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:0 0 7px;padding:8px 10px;border:1px solid #93c5fd;border-left:4px solid #2563eb;border-radius:9px;background:linear-gradient(100deg,#eff6ff,#fff 75%);"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:7px;"><b style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#475569;">${__("Linked Sales Order")}</b><a href="/app/sales-order/${encodeURIComponent(frm.doc.name)}" style="font-size:12px;font-weight:850;color:#1d4ed8;text-decoration:none;">${esc(frm.doc.name)} ↗</a><span style="padding:3px 8px;border-radius:999px;background:${order_status_color}18;color:${order_status_color};font-size:10px;font-weight:850;">${esc(order_status)}</span><span style="font-size:10px;color:#475569;">${esc(data.customer_name || data.customer || frm.doc.customer_name || frm.doc.customer || "")}</span></div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:10px;font-weight:700;color:#475569;"><span>${__("Delivery")}: ${data.loading ? "…" : `${format_number(delivery_percent)}%`}</span><span>${__("Billing")}: ${data.loading ? "…" : esc(data.billing_status || __("Not Billed"))}</span>${(data.transaction_date || frm.doc.transaction_date) ? `<span>${esc(data.transaction_date || frm.doc.transaction_date)}</span>` : ""}<button type="button" data-sales-order-detail-all style="border:0;border-radius:999px;background:#16324f;color:#fff;padding:4px 10px;font-size:9px;font-weight:850;cursor:pointer;">${__("View all")} ↗</button><button type="button" data-sales-order-create-delivery style="border:0;border-radius:999px;background:#15803d;color:#fff;padding:4px 10px;font-size:9px;font-weight:850;cursor:pointer;">${__("Create Delivery Note by Tag")}</button></div></div>`;
 	const production_complete = ss_coils.length > 0 && ss_coils.every((doc) => /complete|closed/i.test(doc.order_status || ""));
 	const production_started = ss_coils.some((doc) => /process|partial|complete/i.test(doc.order_status || ""));
 	const progress_steps = [
@@ -2553,6 +2554,7 @@ function render_sales_order_status_ribbon(frm, data) {
 	}).join("");
 	const html = `<div id="ss-coil-so-status-ribbon" style="padding:5px 4px 8px;">
 		<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 2px;color:#16324f;font-size:12px;font-weight:800;">${__("Order Progress")}<button type="button" data-sales-order-detail-all style="display:flex;align-items:center;gap:5px;margin-left:auto;border:0;border-radius:999px;background:#16324f;color:#fff;padding:3px 10px;font-size:10px;font-weight:800;cursor:pointer;">${__("View all")} ↗</button><span style="height:1px;flex:1;background:#dbe5ef;"></span></div>
+		${order_indicator}
 		<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:0 0 7px;">${progress_html}</div>
 		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">
 			${card(__("Stock Entries"), count_or_loading(stock_entries.length), stock_detail, "#7c3aed", "stock_entries", stock_entries)}
@@ -2572,6 +2574,11 @@ function render_sales_order_status_ribbon(frm, data) {
 		else $layout.append($ribbon);
 	}
 	$ribbon.html(html).show();
+	$ribbon.off("click.ss_coil_status_delivery", "[data-sales-order-create-delivery]").on("click.ss_coil_status_delivery", "[data-sales-order-create-delivery]", function () {
+		const open = () => ss_coil.delivery_by_tag?.open?.(frm.doc.name);
+		if (ss_coil.delivery_by_tag?.open) open();
+		else frappe.require("/assets/ss_coil/js/delivery_by_tag.js", open);
+	});
 	$ribbon.off("click.ss_coil_status", "[data-status-popup]").on("click.ss_coil_status", "[data-status-popup]", function () {
 		const kind = $(this).attr("data-status-popup");
 		const configs = {

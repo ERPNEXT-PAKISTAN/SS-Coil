@@ -3033,8 +3033,17 @@ def sync_ss_coil_sales_order_item_fields(doc, method=None):
 				row.packing = packing_type
 
 
-def _ss_coil_job_output_class(doc, so_row=None):
-	"""Job Output class = Finish Good (SO item), not mother-coil Input Coil class."""
+def _ss_coil_job_output_class(doc, so_row=None, semi_finish=False):
+	"""Return the stock item name represented by a Job Output row."""
+	if semi_finish:
+		so_item_doc = _ss_coil_sales_order_item_doc(doc) if doc else None
+		coil_so_row = (doc.so_item or [None])[0] if doc else None
+		semi_item = getattr(coil_so_row, "semi_finish_item", None) if coil_so_row else None
+		semi_item = semi_item or (coil_so_row.get("semi_finish_item") if isinstance(coil_so_row, dict) else None)
+		semi_item = semi_item or (so_item_doc.get("custom_semi_finish_item") if so_item_doc else None)
+		if semi_item and frappe.db.exists("Item", semi_item):
+			return frappe.db.get_value("Item", semi_item, "item_name") or semi_item
+
 	so_row = so_row or ((doc.so_item or [None])[0] if doc else None)
 	for value in (
 		getattr(so_row, "item_name", None) if so_row else None,
@@ -4245,7 +4254,18 @@ def sync_ss_coil_process_tracking(doc, method=None):
 
 	# Cutting Scheme "Next Process" check wins: only checked cuts advance.
 	_apply_carry_forward_next_process(doc, next_process_label, next_process_date)
+	parent_input = (doc.input_coil or [None])[0]
+	parent_tag_no = getattr(parent_input, "tag_no", None) if parent_input else None
+	root_tag_no = _root_tag_for(parent_tag_no) if parent_tag_no else None
 	for row in doc.job_output or []:
+		output_class = _ss_coil_job_output_class(
+			doc,
+			so_row,
+			semi_finish=_truthy_process_value(getattr(row, "next_process", None)),
+		)
+		if output_class:
+			row.set("class", output_class)
+		_register_ss_coil_job_output_tag(doc, row, parent_tag_no, root_tag_no)
 		row.barcode = row.tag_no or ""
 		row.qr_code = _build_qr_html(_build_qr_payload(row, doc))
 
@@ -4401,6 +4421,7 @@ def create_next_ss_coil_entry(source_name):
 				"so_item",
 				{
 					"item_name": source_row.item_name,
+					"semi_finish_item": source_row.get("semi_finish_item"),
 					"dimension": source_row.dimension,
 					"ref_no": source_row.ref_no,
 					"location": source_row.location,

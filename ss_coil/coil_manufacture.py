@@ -1,11 +1,11 @@
 """Coil Manufacture — create Manufacture Stock Entry from finished SS Coil Job Output tags.
 
 Rules:
-- No Semi Finished stock between processes.
-- A Job Output tag is eligible when `next_process` is blank (final for that branch).
+- Continuing Job Output tags produce the configured Semi Finish item.
+- Final Job Output tags produce the Sales Order Finish Good item.
 - One BOM-based Manufacture SE is created per finished output tag.
 - FG receive: batch_no = tag_no = custom_tag_no.
-- Consume original mother raw material (root tag/batch), not intermediate tags.
+- Later processes consume the tagged item produced by the previous process.
 """
 
 from __future__ import annotations
@@ -207,12 +207,29 @@ def _resolve_fg_item(ss_coil):
 	return None
 
 
-def _resolve_output_fg_item(ss_coil, output_row):
-	"""Prefer the output row's finish-good Item; fall back to linked SO item."""
-	item_code = getattr(output_row, "class", None)
-	if item_code and frappe.db.exists("Item", item_code):
-		return item_code
+def _resolve_semi_finish_item(ss_coil):
+	"""Resolve the intermediate stock item from the SS Coil Sales Order row."""
+	coil_so_row = (ss_coil.so_item or [None])[0]
+	if coil_so_row:
+		item = coil_so_row.get("semi_finish_item")
+		if item:
+			return item
+	so_item = getattr(ss_coil, "sales_order_item", None)
+	if so_item and frappe.db.exists("Sales Order Item", so_item) and _has_field("Sales Order Item", "custom_semi_finish_item"):
+		return frappe.db.get_value("Sales Order Item", so_item, "custom_semi_finish_item")
+	return None
+
+
+def _stage_output_item(ss_coil, output_row):
+	"""Use Semi Finish when another process is required; otherwise use the FG."""
+	if _truthy_process_value(getattr(output_row, "next_process", None)):
+		return _resolve_semi_finish_item(ss_coil)
 	return _resolve_fg_item(ss_coil)
+
+
+def _resolve_output_fg_item(ss_coil, output_row):
+	"""Compatibility alias for the stock item produced at this process stage."""
+	return _stage_output_item(ss_coil, output_row)
 
 
 def _default_active_bom(item_code):
@@ -229,7 +246,7 @@ def _default_active_bom(item_code):
 
 
 def _resolve_mother(ss_coil):
-	"""Mother raw material item + root tag/batch for warehouse consumption."""
+	"""Resolve the tagged input item for this process stage."""
 	so_item = getattr(ss_coil, "sales_order_item", None)
 	mother_item = None
 	mother_tag = None
@@ -270,10 +287,32 @@ def _resolve_mother(ss_coil):
 		if klass and frappe.db.exists("Item", klass):
 			mother_item = klass
 
-	# Prefer root mother tag for stock (no semi-finished warehouse)
-	work_tag = mother_tag or input_tag
-	root = _root_tag_for(work_tag) if work_tag else None
-	mother_tag = root or work_tag
+	# A later process consumes the item received by the previous stage for its
+	# input tag. The first stage has no prior Manufacture row and uses the root
+	# mother coil configured on the Sales Order / production line.
+	if input_tag and _has_field("Stock Entry Detail", "custom_tag_no"):
+		previous = frappe.db.sql(
+			"""select detail.item_code, detail.batch_no, detail.custom_tag_no
+			from `tabStock Entry Detail` detail
+			inner join `tabStock Entry` entry on entry.name = detail.parent
+			where detail.custom_tag_no = %s and detail.is_finished_item = 1
+				and entry.purpose in ('Manufacture', 'Repack') and entry.docstatus = 1
+			order by entry.posting_date desc, entry.creation desc limit 1""",
+			(input_tag,),
+			as_dict=True,
+		)
+		if previous:
+			mother_item = previous[0].item_code
+			mother_tag = previous[0].custom_tag_no
+			mother_batch = previous[0].batch_no or mother_tag
+		else:
+			work_tag = mother_tag or input_tag
+			root = _root_tag_for(work_tag) if work_tag else None
+			mother_tag = root or work_tag
+	else:
+		work_tag = mother_tag or input_tag
+		root = _root_tag_for(work_tag) if work_tag else None
+		mother_tag = root or work_tag
 	if not mother_batch and mother_tag:
 		mother_batch = mother_tag if frappe.db.exists("Batch", mother_tag) else None
 
@@ -288,7 +327,7 @@ def _resolve_mother(ss_coil):
 	}
 
 
-def _tag_already_manufactured(tag_no, sales_order=None):
+def _tag_already_manufactured(tag_no, sales_order=None, ss_coil=None):
 	if not tag_no:
 		return None
 	filters = {
@@ -296,6 +335,8 @@ def _tag_already_manufactured(tag_no, sales_order=None):
 		"docstatus": ["<", 2],
 		"is_finished_item": 1,
 	}
+	if ss_coil and _has_field("Stock Entry Detail", "custom_ss_coil"):
+		filters["custom_ss_coil"] = ss_coil
 	# Prefer SE Detail with this tag as finished
 	name = frappe.db.get_value("Stock Entry Detail", filters, "parent")
 	if name:
@@ -310,15 +351,13 @@ def _tag_already_manufactured(tag_no, sales_order=None):
 
 
 def _finished_output_rows(ss_coil, include_already=False):
-	"""Job Output rows with no next process (= ready to manufacture)."""
+	"""Job Output rows that have not yet had stock produced for this stage."""
 	rows = []
 	for row in ss_coil.job_output or []:
 		tag = getattr(row, "tag_no", None)
 		if not tag:
 			continue
-		if _truthy_process_value(getattr(row, "next_process", None)):
-			continue
-		existing = _tag_already_manufactured(tag, getattr(ss_coil, "order_no", None))
+		existing = _tag_already_manufactured(tag, getattr(ss_coil, "order_no", None), ss_coil.name)
 		if existing and not include_already:
 			continue
 		rows.append(
@@ -361,8 +400,10 @@ def get_ss_coil_manufacture_preview(ss_coil):
 			row["blocked_reason"] = _("SS Coil must be Completed before manufacture.")
 		elif flt(row.get("actual_wt")) <= 0:
 			row["blocked_reason"] = _("Actual WT must be greater than zero.")
+		elif row.get("next_process") and not _resolve_semi_finish_item(doc):
+			row["blocked_reason"] = _("Set a Semi Finish Item on the Sales Order production line before creating intermediate stock.")
 		elif not row.get("fg_item"):
-			row["blocked_reason"] = _("No valid finished-good Item is set on this Job Output.")
+			row["blocked_reason"] = _("No valid output Item is set for this process stage.")
 		elif not row.get("bom_no"):
 			row["blocked_reason"] = _("No active default BOM is available for this finished-good Item.")
 		else:
@@ -388,6 +429,7 @@ def get_ss_coil_manufacture_preview(ss_coil):
 		"sales_order": doc.order_no,
 		"sales_order_item": doc.sales_order_item,
 		"fg_item": fg_item,
+		"semi_finish_item": _resolve_semi_finish_item(doc),
 		"mother": mother,
 		"coil_complete": coil_complete,
 		"ready_tags": ready,
@@ -643,7 +685,7 @@ def create_manufacture_stock_entry_from_ss_coil(
 		bom_no = output.get("bom_no") or _default_active_bom(fg_item)
 		if not fg_item or not bom_no:
 			frappe.throw(_("Tag {0}: no finished-good Item or active default BOM is available.").format(tag))
-		if _tag_already_manufactured(tag, doc.order_no):
+		if _tag_already_manufactured(tag, doc.order_no, doc.name):
 			frappe.throw(_("Tag {0} already has a Manufacture Stock Entry.").format(tag))
 
 		bom = frappe.get_doc("BOM", bom_no)

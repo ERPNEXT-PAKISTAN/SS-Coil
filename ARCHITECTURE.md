@@ -162,6 +162,8 @@ row: thickness/width/length, mill, spec, tags, etc).
   - Parent fields render as a 6-column grid (`STOCK_ENTRY_DATA_ENTRY_PARENT_FIELDS`).
   - Item rows render as a spreadsheet-style `<table>` (not Frappe's grid),
     grouped into columns via `STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS`.
+  - `custom_semi_finish_item` is included beside `custom_finish_good_item` so
+    inward Stock Entry rows can set both the intermediate and final items.
   - **Gotcha**: rows added via "+ Add Row" get a client-side placeholder
     `name` (`frappe.utils.get_random(10)`, with `__islocal: 1`). The client
     strips that fake name on save. The server matches by real child `name`
@@ -447,9 +449,9 @@ backfilled as `...-002`/`...-003` after a resave.
 
 ### Duplicate-entry guard + "Stopped"/Resume (2026-07-19)
 
-Two related gaps: (1) nothing stopped the same Sales Order Item + Operation
-from being started twice - either by hand (picking the same Sales Order
-Item again on a new SS Coil) or in principle by re-running the chain; (2) a
+Two related gaps: (1) nothing stopped the same Sales Order Item + Operation +
+input tag from being started twice - either by hand (picking the same Sales
+Order Item and tag again on a new SS Coil) or in principle by re-running the chain; (2) a
 process abandoned mid-way (any reason, not completed) had no state of its
 own - it either stayed "In Process" forever or someone force-closed it,
 after which the completed-lock made it awkward to pick back up.
@@ -461,12 +463,13 @@ after which the completed-lock made it awkward to pick back up.
 - `SSCoil._block_duplicate_active_entry()` (new, in `ss_coil.py`, called
   from `validate()`) throws on **insert** of a new SS Coil if another SS
   Coil already exists for the same `sales_order_item` + `operation` +
-  `input_coil[0].tag_no` whose `order_status` isn't `Completed`/`Closed` -
+  `input_coil.tag_no` -
   `Stopped` counts as still-active on purpose, so the fix is to reopen and
-  Resume the existing entry, not spawn a second one. This is a manual-path
-  safety net; `create_next_ss_coil_entry`'s existing
-  `_find_existing_next_process_doc` skip (not error) already prevents the
-  chain-creation path from duplicating.
+  Resume the existing entry, not spawn a second one for the same tag. Distinct
+  output tags may each create their own SS Coil for the same Sales Order item
+  and Operation; `_find_existing_next_process_doc` uses that input tag to
+  reuse a matching next-process entry. This protects both manual and chained
+  creation paths from duplicate jobs for the same tagged material.
 - Flow banner (`ss_coil.js`): the Status row grows a **Stop** button
   whenever `order_status` is `In Process`/`Partially Completed` (sets
   `order_status = "Stopped"`, same `process_control_enabled` gate as every
@@ -560,6 +563,18 @@ Separate from the tag/batch system: `get_available_raw_material_tags`,
 `save_so_production_plan`) implement a planning UI where a Sales Order Item
 gets matched against available raw-material tags in stock before production
 starts.
+
+## Semi-finished stock between required processes
+
+The inward Stock Entry Detail / Purchase Receipt Item may carry a `custom_semi_finish_item` in addition to the existing raw-material and Finish Good item values. The Semi Finish Item is copied to the Sales Order Item and the SS Coil `so_item` child row. It is kept on that child row rather than duplicated on the SS Coil parent. The Sales Order `item_code` remains the commercial Finish Good.
+
+The Semi Finish Item field is shown on inward and Sales Order rows only when more than one of `custom_slitter`, `custom_leveler`, and `custom_reshearing` is selected; the SS Coil child-row field uses the matching plain process fields. The actual stock output is decided per Job Output tag: only a non-empty `next_process` produces Semi Finish. A tag with no next process produces the Finish Good, even when other tags on the same job continue.
+
+`coil_manufacture.py` creates one BOM-based Manufacture Stock Entry per completed Job Output tag. If the tag has a `next_process`, its target item is the configured Semi Finish Item; if there is no next process, its target is the Sales Order Finish Good. The next process resolves its source item and batch from the most recent submitted Manufacture entry for its input tag, while the first process consumes the received mother coil. Both handoffs retain the output tag as the batch identity. Configure active BOMs and batch tracking for each stock item used by the route.
+
+The Job Output `class` is synchronized to the same stage output: Semi Finish for a continuing tag and Finish Good for a final tag. This keeps the next SS Coil's Input Coil class aligned with the stock item that its tag represents.
+
+The `Coil SO.semi_finish_item` child field is part of the `Coil SO` DocType and is populated from `Sales Order Item.custom_semi_finish_item`. Setup migrates values from the former temporary SS Coil parent field into this child field before removing the redundant parent field.
 
 ## One-time setup/migration functions
 

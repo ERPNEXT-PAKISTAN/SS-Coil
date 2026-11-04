@@ -37,9 +37,10 @@ class SSCoil(Document):
 			row.seq = idx
 
 	def _block_duplicate_active_entry(self):
-		# One SS Coil entry is allowed per production row and operation. This
-		# also blocks re-creating an entry after it is completed; reopen the
-		# existing document for corrections or continuation.
+		# One SS Coil entry is allowed per input tag and operation. A cutting
+		# process can produce several tagged coils for the same Sales Order
+		# item, and each tag needs its own next-process entry. Re-opening the
+		# same tag/process entry is still required instead of duplicating it.
 		if not self.is_new():
 			return
 		if self.get("allow_duplicate_process"):
@@ -52,6 +53,13 @@ class SSCoil(Document):
 		else:
 			context_filter = "ifnull(parent.sales_order_item, '') = %(sales_order_item)s"
 			context = {"sales_order_item": self.sales_order_item}
+		input_tag = next(
+			(row.get("tag_no") for row in (self.input_coil or []) if row.get("tag_no")),
+			None,
+		)
+		if input_tag:
+			context_filter += " and exists (select 1 from `tabCoil Input` input where input.parent = parent.name and input.parenttype = 'SS Coil' and input.tag_no = %(input_tag)s)"
+			context["input_tag"] = input_tag
 		existing = frappe.db.sql(
 			f"""
 			select parent.name, parent.order_status
@@ -71,7 +79,7 @@ class SSCoil(Document):
 		frappe.throw(
 			_(
 				"An SS Coil entry for {0} already exists for this Sales Order Item: {1} (status: {2}). "
-				"Open the existing entry. A Sales Order item can have only one SS Coil entry per process."
+				"Open the existing entry. A Sales Order item can have only one SS Coil entry per input tag and process."
 			).format(self.operation, frappe.utils.get_link_to_form("SS Coil", row.name), row.order_status)
 		)
 

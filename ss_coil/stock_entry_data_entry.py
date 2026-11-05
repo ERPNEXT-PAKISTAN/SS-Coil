@@ -85,6 +85,7 @@ def _meta_field_to_dict(meta, fieldname):
 		"default": df.default,
 		"read_only": df.read_only,
 		"depends_on": df.depends_on,
+		"mandatory_depends_on": df.mandatory_depends_on,
 		"columns": CHILD_FIELD_COLUMNS.get(fieldname, 1),
 	}
 

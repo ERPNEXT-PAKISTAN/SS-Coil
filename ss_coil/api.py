@@ -388,6 +388,7 @@ COIL_INWARD_SO_FIELDNAMES = (
 	"custom_estimated_wt",
 	"custom_specification",
 	"custom_dimension",
+	"custom_semi_finish_item",
 	"custom_comments",
 	"custom_qty_of_coil",
 )
@@ -2352,7 +2353,9 @@ def sync_sales_order_item_tags_from_stock_entry(doc, method=None):
 		se_row = _get_linked_stock_entry_detail_row(row, stock_entry)
 		if not se_row:
 			continue
-		_apply_stock_entry_row_tags_to_sales_order_item(row, se_row, copy_process=copy_process)
+		_apply_stock_entry_row_tags_to_sales_order_item(
+			row, se_row, copy_process=copy_process, copy_semi_finish=False
+		)
 		_apply_finish_good_to_sales_order_row(row, se_row)
 
 
@@ -2388,7 +2391,7 @@ def _get_linked_stock_entry_detail_row(so_row, stock_entry):
 
 
 def _apply_stock_entry_row_tags_to_sales_order_item(
-	so_row, se_row, copy_process=True, overwrite_process=False
+	so_row, se_row, copy_process=True, overwrite_process=False, copy_semi_finish=True
 ):
 	tag = se_row.get("custom_tag_no") or _find_tag_by_batch(
 		se_row.get("batch_no"), se_row.get("item_code")
@@ -2425,7 +2428,9 @@ def _apply_stock_entry_row_tags_to_sales_order_item(
 	if se_name and _has_field(se_row.doctype, "custom_entry_no") and not se_row.get("custom_entry_no"):
 		se_row.custom_entry_no = se_name
 
-	_apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row)
+	_apply_stock_entry_coil_fields_to_sales_order_item(
+		so_row, se_row, copy_semi_finish=copy_semi_finish
+	)
 
 	if not copy_process:
 		return
@@ -2438,9 +2443,11 @@ def _apply_stock_entry_row_tags_to_sales_order_item(
 		so_row.set(fieldname, _normalized_process_value(se_row.get(fieldname)))
 
 
-def _apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row):
+def _apply_stock_entry_coil_fields_to_sales_order_item(so_row, se_row, copy_semi_finish=True):
 	"""Copy coil line fields (length, dimensions, etc.) from Stock Entry Detail to Sales Order Item."""
 	for fieldname in COIL_INWARD_SO_FIELDNAMES:
+		if fieldname == "custom_semi_finish_item" and not copy_semi_finish:
+			continue
 		if not _has_field("Sales Order Item", fieldname) or not _has_field(se_row.doctype, fieldname):
 			continue
 		value = se_row.get(fieldname)
@@ -2468,6 +2475,7 @@ def _sales_order_item_tag_sync_values(so_row):
 		"stock_uom",
 		"uom",
 		"custom_finish_good_item",
+		"custom_semi_finish_item",
 		"custom_raw_material_tag_no",
 		"custom_raw_material_batch_no",
 		"custom_raw_material_item",
@@ -2513,6 +2521,7 @@ def _stock_entry_detail_line_sync_values(se_row):
 		"custom_tag_no",
 		"custom_entry_no",
 		"custom_finish_good_item",
+		"custom_semi_finish_item",
 	]:
 		if not _has_field("Stock Entry Detail", fieldname):
 			continue
@@ -6221,6 +6230,13 @@ def sync_sales_order_stock_entry_links(sales_order):
 			row.custom_source_stock_entry for row in (doc.items or []) if row.get("custom_source_stock_entry")
 		)
 	)
+	if _has_field("Sales Order", "custom_source_stock_entries"):
+		stock_entry_names = list(
+			dict.fromkeys(
+				stock_entry_names
+				+ _parse_comma_separated_names(doc.get("custom_source_stock_entries"))
+			)
+		)
 	item_updates = {}
 	stock_entry_updates = {}
 	for stock_entry_name in stock_entry_names:
@@ -6257,21 +6273,10 @@ def sync_stock_entry_links_from_source(stock_entry):
 	SE coil/process/tag values onto linked Sales Orders (and Coil Production).
 	Empty SE fields are filled from the Sales Order.
 	"""
-	sales_order_names = []
-	if _has_field("Sales Order Item", "custom_source_stock_entry"):
-		sales_orders = frappe.get_all(
-			"Sales Order Item",
-			filters={"custom_source_stock_entry": stock_entry},
-			fields=["parent"],
-			distinct=True,
-			order_by="parent asc",
-		)
-		sales_order_names = [row.parent for row in sales_orders]
-
-	if not sales_order_names and _has_field("Stock Entry", "custom_sales_order"):
-		manual_so = frappe.db.get_value("Stock Entry", stock_entry, "custom_sales_order")
-		if manual_so and frappe.db.exists("Sales Order", manual_so):
-			sales_order_names = [manual_so]
+	sales_order_names = [
+		name for name in _sales_orders_for_stock_entry(stock_entry)
+		if frappe.db.exists("Sales Order", name)
+	]
 
 	link_updates = {}
 	if _has_field("Stock Entry", "custom_linked_sales_orders"):
@@ -6309,18 +6314,10 @@ def sync_stock_entry_finish_good_to_sales_orders(doc, method=None):
 	if not _has_field("Stock Entry Detail", "custom_finish_good_item"):
 		return
 
-	sales_order_names = []
-	if _has_field("Sales Order Item", "custom_source_stock_entry"):
-		sales_order_names = frappe.get_all(
-			"Sales Order Item",
-			filters={"custom_source_stock_entry": doc.name},
-			pluck="parent",
-			distinct=True,
-		)
-	if not sales_order_names and _has_field("Stock Entry", "custom_sales_order"):
-		manual_so = doc.get("custom_sales_order")
-		if manual_so and frappe.db.exists("Sales Order", manual_so):
-			sales_order_names = [manual_so]
+	sales_order_names = [
+		name for name in _sales_orders_for_stock_entry(doc.name)
+		if frappe.db.exists("Sales Order", name)
+	]
 	if not sales_order_names:
 		return
 
@@ -6343,6 +6340,13 @@ def sync_stock_entry_sales_order_links(doc, method=None):
 			row.custom_source_stock_entry for row in (doc.items or []) if row.get("custom_source_stock_entry")
 		)
 	)
+	if _has_field("Sales Order", "custom_source_stock_entries"):
+		stock_entry_names = list(
+			dict.fromkeys(
+				stock_entry_names
+				+ _parse_comma_separated_names(doc.get("custom_source_stock_entries"))
+			)
+		)
 
 	if _has_field("Sales Order", "custom_source_stock_entries"):
 		doc.custom_source_stock_entries = ", ".join(stock_entry_names)

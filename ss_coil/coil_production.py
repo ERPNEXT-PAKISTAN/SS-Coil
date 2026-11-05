@@ -15,6 +15,7 @@ from ss_coil.api import (
 )
 
 SEMI_FINISH_DEPENDS_ON = "eval:[doc.custom_slitter, doc.custom_leveler, doc.custom_reshearing].filter(Boolean).length > 1"
+SEMI_FINISH_MANDATORY_DEPENDS_ON = SEMI_FINISH_DEPENDS_ON
 
 # Coil Production Line field -> Sales Order Item custom_* (for reuse of SO helpers)
 PROD_TO_SO_CUSTOM = {
@@ -264,6 +265,8 @@ def setup_coil_production_fields():
 				"insert_after": "custom_finish_good_item",
 				"in_list_view": 1,
 				"depends_on": SEMI_FINISH_DEPENDS_ON,
+				"mandatory_depends_on": SEMI_FINISH_MANDATORY_DEPENDS_ON,
+				"allow_on_submit": 1,
 			},
 		],
 		"Stock Entry Detail": [
@@ -275,6 +278,8 @@ def setup_coil_production_fields():
 				"insert_after": "custom_finish_good_item",
 				"in_list_view": 1,
 				"depends_on": SEMI_FINISH_DEPENDS_ON,
+				"mandatory_depends_on": SEMI_FINISH_MANDATORY_DEPENDS_ON,
+				"allow_on_submit": 1,
 			},
 		],
 		"Purchase Receipt Item": [
@@ -286,6 +291,7 @@ def setup_coil_production_fields():
 				"insert_after": "custom_finish_good_item",
 				"in_list_view": 1,
 				"depends_on": SEMI_FINISH_DEPENDS_ON,
+				"mandatory_depends_on": SEMI_FINISH_MANDATORY_DEPENDS_ON,
 			},
 		],
 		"Sales Order": [
@@ -395,14 +401,39 @@ def setup_coil_production_fields():
 
 
 def _sync_semi_finish_item_dependencies():
-	"""Only show the intermediate item field when more than one process is selected."""
+	"""Show/require the intermediate item for multi-process rows and allow correction after submit."""
 	for doctype in ("Stock Entry Detail", "Purchase Receipt Item", "Sales Order Item"):
 		name = f"{doctype}-custom_semi_finish_item"
 		if frappe.db.exists("Custom Field", name):
-			frappe.db.set_value(
-				"Custom Field", name, "depends_on", SEMI_FINISH_DEPENDS_ON, update_modified=False
-			)
+			values = {
+				"depends_on": SEMI_FINISH_DEPENDS_ON,
+				"mandatory_depends_on": SEMI_FINISH_MANDATORY_DEPENDS_ON,
+			}
+			if doctype in ("Stock Entry Detail", "Sales Order Item"):
+				values["allow_on_submit"] = 1
+			frappe.db.set_value("Custom Field", name, values, update_modified=False)
 		frappe.clear_cache(doctype=doctype)
+
+
+def validate_semi_finish_items(doc, method=None):
+	"""Require a Semi Finish Item when a row is configured for multiple processes."""
+	if doc.doctype not in ("Stock Entry", "Sales Order"):
+		return
+	rows = doc.get("items") or []
+	missing = []
+	for idx, row in enumerate(rows, start=1):
+		selected = sum(
+			bool(row.get(fieldname))
+			for fieldname in ("custom_slitter", "custom_leveler", "custom_reshearing")
+		)
+		if selected > 1 and not row.get("custom_semi_finish_item"):
+			missing.append(str(row.get("idx") or idx))
+	if missing:
+		frappe.throw(
+			frappe._(
+				"Select a Semi Finish Item for rows with more than one process. Missing on row(s): {0}."
+			).format(", ".join(missing))
+		)
 
 
 def migrate_ss_coil_semi_finish_to_so_item():

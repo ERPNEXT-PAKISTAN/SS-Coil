@@ -1257,6 +1257,10 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 		$tr
 			.find('[data-fieldname="custom_semi_finish_item"]')
 			.css("visibility", selected_process_count > 1 ? "visible" : "hidden");
+		if (controls.custom_semi_finish_item) {
+			controls.custom_semi_finish_item.df.reqd = selected_process_count > 1;
+			controls.custom_semi_finish_item.refresh();
+		}
 	}
 
 	function update_row_dimension_control() {

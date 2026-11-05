@@ -40,9 +40,16 @@ def _ensure_doc(doc):
 
 
 def _delivery_advise_header(doc):
+	from ss_coil.api import get_stock_entry_sticker_logo_url
+
+	logo_url = get_stock_entry_sticker_logo_url(doc.company) if doc.company else None
+	if logo_url and logo_url.startswith("/"):
+		logo_url = frappe.utils.get_url(logo_url)
+
 	if doc.doctype == "Stock Entry":
 		return {
 			"company": doc.company or "-",
+			"company_logo": logo_url,
 			"name": doc.name,
 			"job_purpose": doc.get("custom_job_purpose") or "-",
 			"date": formatdate(doc.posting_date) if doc.posting_date else "-",
@@ -57,6 +64,7 @@ def _delivery_advise_header(doc):
 
 	return {
 		"company": doc.company or "-",
+		"company_logo": logo_url,
 		"name": doc.name,
 		"job_purpose": "-",
 		"date": formatdate(doc.transaction_date) if doc.transaction_date else "-",
@@ -158,7 +166,10 @@ def _render_delivery_advise_html(header, rows, total_qty, total_weight, total_es
 		_render_delivery_advise_styles()
 		+ '<div class="coil-print"><div class="page-body">'
 		+ '<div class="report-header">'
+		+ '<div class="report-brand">'
+		+ (f'<img class="company-logo" src="{_cell(header["company_logo"])}" alt="Company logo">' if header.get("company_logo") else "")
 		+ f'<div class="company-heading">{_cell(header["company"])}</div>'
+		+ "</div>"
 		+ '<div class="report-meta">'
 		+ f'<span class="voucher-no">{_cell(header["name"])} | <strong class="job-purpose">{_cell(header["job_purpose"])}</strong></span>'
 		+ '<span class="doc-title">Delivery Advise</span>'
@@ -285,6 +296,21 @@ def _render_delivery_advise_styles():
 		font-weight: 800;
 		line-height: 1.2;
 		margin: 0 0 4px;
+	}
+	.coil-print .report-brand {
+		position: relative;
+		min-height: 42px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.coil-print .company-logo {
+		position: absolute;
+		left: 0;
+		top: 0;
+		max-width: 72px;
+		max-height: 40px;
+		object-fit: contain;
 	}
 	.coil-print .report-meta {
 		display: flex;

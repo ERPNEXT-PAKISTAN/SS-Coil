@@ -4,6 +4,9 @@
 	.sc-root { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; line-height: 1.35; }
 	.sc-root table { width: 100%; border-collapse: collapse; }
 	.sc-letterhead { margin-bottom: 8px; }
+	.sc-brand { position: relative; min-height: 48px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+	.sc-logo { position: absolute; left: 0; top: 0; max-width: 90px; max-height: 46px; object-fit: contain; }
+	.sc-company { font-size: 14px; font-weight: 700; text-align: center; }
 	.sc-title {
 		text-align: center; font-size: 18px; font-weight: 800; letter-spacing: .08em;
 		text-transform: uppercase; margin: 6px 0 10px; border-bottom: 2px solid #111; padding-bottom: 4px;
@@ -38,6 +41,12 @@
 
 <div class="sc-root">
 	{# Letterhead intentionally omitted for this format #}
+	{% set company_logo_url = get_stock_entry_sticker_logo_url(doc.company) if doc.company else "" %}
+	{% if company_logo_url and company_logo_url.startswith("/") %}{% set company_logo_url = frappe.utils.get_url(company_logo_url) %}{% endif %}
+	<div class="sc-brand">
+		{% if company_logo_url %}<img class="sc-logo" src="{{ company_logo_url | e }}" alt="Company logo">{% endif %}
+		<div class="sc-company">{{ doc.company }}</div>
+	</div>
 	<div class="sc-title">Sales Contract</div>
 
 	<table class="sc-meta">

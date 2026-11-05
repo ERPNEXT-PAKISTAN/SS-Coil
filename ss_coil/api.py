@@ -3578,7 +3578,7 @@ def build_stock_entry_sticker_footer_html(doc):
 	company_name = frappe.get_cached_value("Company", doc.get("company"), "company_name") if doc.get("company") else "-"
 	return (
 		'<div class="sticker-footer" style="margin-top:1px;padding-top:1px;line-height:1.05;flex:0 0 auto;">'
-		'<div class="sticker-company-name" style="font-size:16px;font-weight:800;line-height:1.1;">'
+		'<div class="sticker-company-name" style="font-size:20px;font-weight:800;line-height:1.1;">'
 		f"{html.escape(str(company_name or '-'))}</div></div>"
 	)
 
@@ -3869,7 +3869,7 @@ def build_ss_coil_sticker_footer_html(doc):
 	company_name = frappe.get_cached_value("Company", company, "company_name") if company else "-"
 	return (
 		'<div class="sticker-footer" style="margin-top:1px;padding-top:1px;line-height:1.05;flex:0 0 auto;">'
-		f'<div class="sticker-company-name" style="font-size:16px;font-weight:800;line-height:1.1;">'
+		f'<div class="sticker-company-name" style="font-size:20px;font-weight:800;line-height:1.1;">'
 		f"{html.escape(str(company_name))}</div></div>"
 	)
 

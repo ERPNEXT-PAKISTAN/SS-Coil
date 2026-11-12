@@ -322,7 +322,7 @@ ss_coil.inspections.render = function (frm) {
       const field = fieldMap[prefix + suffix];
       const cell = $('<td></td>').appendTo(values);
       if (field) {
-       const automaticLimit = ["thickness_min", "thickness_max"].includes(suffix) ? details.tolerances?.[suffix]
+       const automaticLimit = ["thickness_min", "thickness_max", "length_min", "length_max"].includes(suffix) ? details.tolerances?.[suffix]
         : ["width_min", "width_max"].includes(suffix) ? widthTolerances[suffix] : null;
        const isWidthLimit = ["width_min", "width_max"].includes(suffix);
        const hasAutomaticLimit = (automaticLimit != null && automaticLimit !== "") || (isWidthLimit && !!widthToleranceRow);

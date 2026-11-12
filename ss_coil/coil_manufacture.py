@@ -480,6 +480,19 @@ def _ensure_batch(item_code, tag_no):
 	return row.batch_no or tag_no
 
 
+def _mother_batch_for_item(mother, item_code):
+	"""Preserve the received raw-material batch; use tag=batch only as fallback."""
+	if not item_code or not frappe.get_cached_value("Item", item_code, "has_batch_no"):
+		return None
+
+	batch_no = (mother or {}).get("batch_no")
+	if batch_no and frappe.db.exists("Batch", {"name": batch_no, "item": item_code}):
+		return batch_no
+
+	tag_no = (mother or {}).get("tag_no")
+	return _ensure_batch(item_code, tag_no) if tag_no else None
+
+
 def _set_stock_entry_detail_values(row, values):
 	"""Copy supported trace values without relying on optional custom fields."""
 	for fieldname, value in values.items():
@@ -736,6 +749,14 @@ def create_manufacture_stock_entry_from_ss_coil(
 			component_rows[f"{item.item_code}-{idx}"] = item
 		se.add_to_stock_entry_detail(component_rows, bom_no=bom_no)
 		se.load_items_from_bom()
+		# BOM loading can leave component warehouses blank or use the BOM's
+		# configured source. The warehouse selected in the Manufacture dialog is
+		# the requested source for this entry, so persist it on both parent and
+		# raw-material rows after all BOM rows have been loaded.
+		se.from_warehouse = source_warehouse
+		for component in se.items:
+			if not component.is_finished_item:
+				component.s_warehouse = source_warehouse
 
 		finished_rows = [row for row in se.items if row.is_finished_item and row.item_code == fg_item]
 		if len(finished_rows) != 1:
@@ -801,7 +822,7 @@ def create_manufacture_stock_entry_from_ss_coil(
 					},
 				)
 				if frappe.get_cached_value("Item", component.item_code, "has_batch_no"):
-					component.batch_no = _ensure_batch(component.item_code, mother.get("tag_no"))
+					component.batch_no = _mother_batch_for_item(mother, component.item_code)
 					if _has_field("Stock Entry Detail", "use_serial_batch_fields"):
 						component.use_serial_batch_fields = 1
 

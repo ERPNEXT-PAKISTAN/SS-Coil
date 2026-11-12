@@ -135,6 +135,7 @@ function coil_mfg_render_manufacturing_tab_content(frm, preview) {
 		...already.map((row) => ({ ...row, status_label: __("Manufactured"), status_class: "done", entry: row.already_se })),
 		...blocked.map((row) => ({ ...row, status_label: __("Blocked"), status_class: "blocked", note: row.blocked_reason })),
 	];
+	const total_actual_wt = rows.reduce((total, row) => total + flt(row.actual_wt != null ? row.actual_wt : row.qty), 0);
 	const tableRows = rows.map((row) => {
 		const qty = row.actual_wt != null ? row.actual_wt : row.qty;
 		const entry = row.entry
@@ -182,7 +183,8 @@ function coil_mfg_render_manufacturing_tab_content(frm, preview) {
 				<th class="coil-mfg-th">${__("Output Tag")}</th><th class="coil-mfg-th">${__("Output Item / BOM")}</th>
 				<th class="coil-mfg-th" style="text-align:right">${__("Actual WT")}</th><th class="coil-mfg-th">${__("FG Batch No")}</th>
 				<th class="coil-mfg-th">${__("Status")}</th><th class="coil-mfg-th">${__("Manufacture Entry / Action")}</th>
-			</tr></thead><tbody>${tableRows || `<tr><td class="coil-mfg-td" colspan="6">${__("No output tags found.")}</td></tr>`}</tbody></table></div>
+			</tr></thead><tbody>${tableRows || `<tr><td class="coil-mfg-td" colspan="6">${__("No output tags found.")}</td></tr>`}</tbody>
+			<tfoot><tr><td class="coil-mfg-td" colspan="2"><b>${__("Total Actual WT")}</b></td><td class="coil-mfg-td" style="text-align:right"><b>${total_actual_wt.toFixed(3)}</b></td><td class="coil-mfg-td" colspan="3"></td></tr></tfoot></table></div>
 			<div class="coil-mfg-section">${__("Remarks (optional)")}</div>
 			<textarea class="coil-mfg-remarks" id="coil-mfg-tab-remarks" placeholder="${esc(__("Manufactured from {0}", [preview.ss_coil || ""]))}"></textarea>
 		</div>`);

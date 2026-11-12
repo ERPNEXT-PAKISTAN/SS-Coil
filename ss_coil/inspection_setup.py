@@ -97,6 +97,9 @@ def get_inspection_context(ss_coil=None, sales_order=None, sales_order_item=None
         sales_order_item = coil.sales_order_item
         operation = coil.operation
         output_row = next((row for row in (coil.get('job_output') or []) if row.get('tag_no') == inspection_tag), None)
+    def first_value(*values):
+        return next((value for value in values if value not in (None, '')), None)
+
     context = {}
     company = frappe.defaults.get_global_default('company')
     if sales_order:
@@ -116,26 +119,76 @@ def get_inspection_context(ss_coil=None, sales_order=None, sales_order_item=None
             from ss_coil.api import get_so_production_plan_rows
 
             cutting_rows = get_so_production_plan_rows(sales_order_item) or []
+        # For Leveler, the inspection sheet's nominal length is the cut length
+        # on this SS Coil's cutting scheme. Match the selected output width so
+        # multi-width jobs show the corresponding cut row.
+        if operation == 'Leveler' and cutting_rows:
+            from frappe.utils import flt
+
+            output_width_for_cut = (output_row.get('width') if output_row else None) or output_width
+            matching_cut = next((cut for cut in cutting_rows
+                                 if output_width_for_cut not in (None, '')
+                                 and cut.get('width') not in (None, '')
+                                 and flt(cut.get('width')) == flt(output_width_for_cut)), None)
+            matching_cut = matching_cut or next((cut for cut in cutting_rows
+                                                  if cut.get('length') not in (None, '')), None)
+            if matching_cut:
+                context['length'] = first_value(matching_cut.get('length'), context.get('length'))
+                cut_length = flt(matching_cut.get('length'))
+                lower = matching_cut.get('tolerance_minus')
+                upper = matching_cut.get('tolerance_plus')
+                # These fields are shared with width tolerance on some legacy
+                # rows. Treat them as length limits only when they bracket the
+                # configured cut length.
+                if cut_length and lower not in (None, '') and upper not in (None, '') \
+                        and flt(lower) <= cut_length <= flt(upper):
+                    length_min, length_max = lower, upper
+                elif cut_length:
+                    # New Leveler process rows use the established ±1 mm
+                    # default when no explicit length range is stored.
+                    length_min, length_max = cut_length - 1, cut_length + 1
+                else:
+                    length_min = length_max = None
+                if length_min is not None:
+                    context.setdefault('tolerances', {}).update({
+                        'length_min': length_min,
+                        'length_max': length_max,
+                    })
         cutting_widths = []
         for cutting_row in cutting_rows:
             width = cutting_row.get('width') if isinstance(cutting_row, dict) else getattr(cutting_row, 'width', None)
             if width not in (None, '') and str(width) not in [str(value) for value in cutting_widths]:
                 cutting_widths.append(width)
         context['cutting_widths'] = ' / '.join(str(width) for width in cutting_widths)
+    if coil:
+        input_row = next(iter(coil.get('input_coil') or []), None)
+        # SO Item thickness is the nominal specification; use actual SS Coil
+        # output/input values as fallbacks for older or incomplete SO rows.
+        context['thickness'] = first_value(
+            context.get('thickness'),
+            output_row.get('thickness') if output_row else None,
+            input_row.get('thickness') if input_row else None,
+            coil.get('thickness'),
+        )
     selected_width = (output_row.get('width') if output_row else None) or output_width or context.get('width')
     context['inspection_width'] = selected_width
     context['output_width'] = selected_width
     if context.get('thickness') not in (None, '') and selected_width not in (None, ''):
         tolerance = _get_thickness_tolerance(context['thickness'], selected_width, operation or 'Slitter')
+        # Thickness does not change in Leveler, and this site only has a
+        # configured thickness tolerance table for Slitter. Reuse that rule
+        # for Leveler until a dedicated Leveler table is configured.
+        if not tolerance and operation == 'Leveler':
+            tolerance = _get_thickness_tolerance(context['thickness'], selected_width, 'Slitter')
         if tolerance:
             from frappe.utils import flt
 
             nominal = flt(context['thickness'])
             deviation = flt(tolerance['tolerance_amount'])
-            context['tolerances'] = {
+            context.setdefault('tolerances', {}).update({
                 'thickness_min': round(nominal - deviation, 3),
                 'thickness_max': round(nominal + deviation, 3),
-            }
+            })
             context['thickness_tolerance'] = deviation
             context['tolerance_set'] = tolerance.get('parent')
     if company:

@@ -41,14 +41,23 @@ def _register_remainder_tag(doc, tag_no, parent_tag_no, method):
 	if not tag_no or not method:
 		return
 	from ss_coil.api import _register_tag
+	parent = frappe.db.get_value(
+		"Tag Registry", {"tag_no": parent_tag_no}, ["item_code", "item_name"], as_dict=True
+	) or frappe._dict()
 	_register_tag(tag_no, source_doctype=doc.doctype, source_docname=doc.name,
+		item_code=parent.get("item_code"), item_name=parent.get("item_name"),
 		sales_order=doc.name if doc.doctype == "Sales Order" else doc.get("order_no"),
 		parent_tag_no=parent_tag_no, root_tag_no=parent_tag_no, status="Active")
 
 
 def _material_type(processed_width, remaining_width, previous=None):
 	if previous and frappe.db.exists("Coil Balance Type", previous):
-		return previous
+		previous_status = frappe.db.get_value("Coil Balance Type", previous, "balance_status")
+		# Scrap is a deliberate disposition. Other labels must follow current
+		# measured balance values so stale "Fully Processed" values do not hide
+		# an actual remainder.
+		if previous_status == "Scrap / Waste":
+			return previous
 	if processed_width <= 0:
 		status = "Unprocessed"
 	elif remaining_width > 0:
@@ -58,6 +67,31 @@ def _material_type(processed_width, remaining_width, previous=None):
 	if frappe.db.exists("DocType", "Coil Balance Type"):
 		return frappe.db.get_value("Coil Balance Type", {"balance_status": status}, "name", order_by="type_name asc") or None
 	return status
+
+
+def _actual_final_output_qty(sales_order_item):
+	"""Return measured output weight when every terminal tag has Actual WT."""
+	job_names = frappe.get_all(
+		"SS Coil", filters={"sales_order_item": sales_order_item}, pluck="name"
+	)
+	if not job_names:
+		return None
+	coils = [frappe.get_doc("SS Coil", name) for name in job_names]
+	consumed_tags = {
+		row.get("tag_no")
+		for coil in coils
+		for row in (coil.get("input_coil") or [])
+		if row.get("tag_no")
+	}
+	terminal_outputs = [
+		row
+		for coil in coils
+		for row in (coil.get("job_output") or [])
+		if row.get("tag_no") and row.get("tag_no") not in consumed_tags
+	]
+	if not terminal_outputs or any(flt(row.get("actual_wt")) <= 0 for row in terminal_outputs):
+		return None
+	return sum(flt(row.get("actual_wt")) for row in terminal_outputs)
 
 
 def _qty_by_width(qty, processed_width, remaining_width, received_width):
@@ -134,7 +168,16 @@ def sync_sales_order_coil_balance_rows(doc, method=None, extra_output_tags_by_it
 			processed_width = max(received_width - flt(item.get("custom_remaining_width")), 0)
 		processed_width = min(processed_width, received_width) if received_width > 0 else processed_width
 		remaining_width = max(received_width - processed_width, 0)
-		produced_qty, remaining_qty = _qty_by_width(received_qty, processed_width, remaining_width, received_width)
+		actual_produced_qty = _actual_final_output_qty(item.name)
+		if actual_produced_qty is not None:
+			produced_qty = actual_produced_qty
+			remaining_qty = max(received_qty - produced_qty, 0)
+			qty_basis = "Actual output weight"
+		else:
+			produced_qty, remaining_qty = _qty_by_width(
+				received_qty, processed_width, remaining_width, received_width
+			)
+			qty_basis = "Width ratio estimate"
 		raw_tag_no = (
 			item.get("custom_raw_material_tag_no")
 			or item.get("custom_finish_good_item")
@@ -162,7 +205,7 @@ def sync_sales_order_coil_balance_rows(doc, method=None, extra_output_tags_by_it
 				"remaining_width": remaining_width,
 				"remaining_qty": remaining_qty,
 				"remaining_type": _material_type(processed_width, remaining_width, old_types.get(raw_tag_no)),
-				"qty_basis": "Width ratio estimate",
+				"qty_basis": qty_basis,
 			},
 		)
 		_register_remainder_tag(doc, remainder_tag_no, raw_tag_no, method)

@@ -703,7 +703,7 @@ def clear_copied_stock_entry_origin_tags(doc):
 
 	Each Material Receipt inward row must get its own origin tag on save.
 	"""
-	if doc.doctype != "Stock Entry" or not doc.get("items"):
+	if doc.doctype != "Stock Entry" or not doc.get("items") or not _is_material_receipt_stock_entry(doc):
 		return
 
 	seen_tags = set()
@@ -1604,13 +1604,17 @@ def _register_tag(
 		doc.item_name = item_name
 	doc.sales_order = sales_order
 	doc.stock_entry = stock_entry
-	doc.parent_tag_no = parent_tag_no
-	doc.root_tag_no = resolved_root_tag
+	# Location updates from Sales Orders and Stock Entries pass no hierarchy
+	# arguments. Preserve ancestry already recorded when the child was created;
+	# otherwise each subsequent stock movement turns it into a new root tag.
+	if not registry or parent_tag_no not in (None, "") or root_tag_no not in (None, ""):
+		doc.parent_tag_no = parent_tag_no
+		doc.root_tag_no = resolved_root_tag
+		doc.generation_level = generation_level
+		doc.lineage_path = lineage_path
 	doc.customer_name = customer_name
 	doc.current_process = current_process
 	doc.next_process = next_process
-	doc.generation_level = generation_level
-	doc.lineage_path = lineage_path
 	if batch_no and _has_field("Tag Registry", "batch_no"):
 		doc.batch_no = batch_no
 	doc.status = status or "Active"
@@ -1685,6 +1689,55 @@ def backfill_tag_registry_hierarchy():
 			updated += 1
 	frappe.db.commit()
 	return {"updated": updated}
+
+
+def repair_tag_registry_hierarchy_for_sales_order(sales_order):
+	"""Restore output parent links from SS Coil input/output rows for one order.
+
+	This changes Tag Registry ancestry metadata only; it does not alter stock,
+	Stock Entry bundles, or submitted transaction rows.
+	"""
+	if not sales_order or not frappe.db.exists("Sales Order", sales_order):
+		frappe.throw(_("Sales Order not found"))
+
+	updated = 0
+	skipped = 0
+	for coil_name in frappe.get_all("SS Coil", filters={"order_no": sales_order}, pluck="name"):
+		coil = frappe.get_doc("SS Coil", coil_name)
+		input_row = next(iter(coil.get("input_coil") or []), None)
+		parent_tag = input_row.get("tag_no") if input_row else None
+		if not parent_tag:
+			skipped += len(coil.get("job_output") or [])
+			continue
+
+		parent = frappe.db.get_value(
+			"Tag Registry", {"tag_no": parent_tag},
+			["root_tag_no", "generation_level", "lineage_path"], as_dict=True,
+		) or frappe._dict()
+		root_tag = parent.get("root_tag_no") or parent_tag
+		parent_level = cint(parent.get("generation_level"))
+		parent_path = parent.get("lineage_path") or parent_tag
+
+		for output in coil.get("job_output") or []:
+			tag_no = output.get("tag_no")
+			if not tag_no or tag_no == parent_tag:
+				continue
+			registry_name = frappe.db.get_value("Tag Registry", {"tag_no": tag_no}, "name")
+			if not registry_name:
+				skipped += 1
+				continue
+			values = {
+				"parent_tag_no": parent_tag,
+				"root_tag_no": root_tag,
+				"generation_level": parent_level + 1,
+				"lineage_path": f"{parent_path} > {tag_no}",
+			}
+			current = frappe.db.get_value("Tag Registry", registry_name, list(values), as_dict=True) or {}
+			if any(current.get(fieldname) != value for fieldname, value in values.items()):
+				frappe.db.set_value("Tag Registry", registry_name, values, update_modified=False)
+				updated += 1
+
+	return {"sales_order": sales_order, "updated": updated, "skipped": skipped}
 
 
 def _next_tag_number():
@@ -3578,7 +3631,7 @@ def build_stock_entry_sticker_footer_html(doc):
 	company_name = frappe.get_cached_value("Company", doc.get("company"), "company_name") if doc.get("company") else "-"
 	return (
 		'<div class="sticker-footer" style="margin-top:1px;padding-top:1px;line-height:1.05;flex:0 0 auto;">'
-		'<div class="sticker-company-name" style="font-size:20px;font-weight:800;line-height:1.1;">'
+		'<div class="sticker-company-name" style="font-size:18px;font-weight:800;line-height:1.1;text-align:center;">'
 		f"{html.escape(str(company_name or '-'))}</div></div>"
 	)
 
@@ -3869,7 +3922,7 @@ def build_ss_coil_sticker_footer_html(doc):
 	company_name = frappe.get_cached_value("Company", company, "company_name") if company else "-"
 	return (
 		'<div class="sticker-footer" style="margin-top:1px;padding-top:1px;line-height:1.05;flex:0 0 auto;">'
-		f'<div class="sticker-company-name" style="font-size:20px;font-weight:800;line-height:1.1;">'
+		f'<div class="sticker-company-name" style="font-size:18px;font-weight:800;line-height:1.1;text-align:center;">'
 		f"{html.escape(str(company_name))}</div></div>"
 	)
 

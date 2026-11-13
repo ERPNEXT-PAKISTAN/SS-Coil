@@ -10,6 +10,14 @@ window.SS_COIL_DEFAULT_WAREHOUSE = window.SS_COIL_DEFAULT_WAREHOUSE || "Stores -
 window.SS_COIL_DEFAULT_QTY_OF_COIL = window.SS_COIL_DEFAULT_QTY_OF_COIL || 1;
 window.SS_COIL_DEFAULT_LENGTH_C = window.SS_COIL_DEFAULT_LENGTH_C || "C";
 
+const STOCK_ENTRY_ROW_COPY_FIELDS = [
+	"item_code", "qty", "s_warehouse", "t_warehouse", "custom_tag_no", "custom_ref_no", "custom_mill",
+	"custom_thickness", "custom_width", "custom_length_c", "custom_dimension", "custom_condition",
+	"custom_commodity", "custom_specification", "custom_estimated_wt", "custom_qty_of_coil",
+	"custom_finish_good_item", "custom_semi_finish_item", "custom_slitter", "custom_leveler",
+	"custom_reshearing", "custom_comments", "custom_location",
+];
+
 frappe.ui.form.on("Stock Entry", {
 	setup(frm) {
 		apply_ss_coil_stock_entry_header_defaults(frm);
@@ -30,6 +38,7 @@ frappe.ui.form.on("Stock Entry", {
 		add_stock_entry_create_sales_order_button(frm);
 		add_stock_entry_tag_buttons(frm);
 		bind_live_stock_entry_dimension_events(frm);
+		bind_stock_entry_grid_fill_controls(frm);
 		toggle_stock_entry_tag_fields(frm);
 		setup_finish_good_item_query(frm);
 		(frm.doc.items || []).forEach((row) => {
@@ -59,6 +68,10 @@ frappe.ui.form.on("Stock Entry", {
 	},
 	items_add(frm, cdt, cdn) {
 		apply_ss_coil_stock_entry_row_defaults(frm, cdt, cdn);
+		setTimeout(() => bind_stock_entry_grid_fill_controls(frm), 0);
+	},
+	items_on_form_rendered(frm) {
+		bind_stock_entry_grid_fill_controls(frm);
 	},
 });
 
@@ -309,6 +322,102 @@ function setup_finish_good_item_query(frm) {
 			custom_ss_coil_item_type: ["in", ["Finished Good", "Semi Finished"]],
 		},
 	}));
+}
+
+function bind_stock_entry_grid_fill_controls(frm) {
+	const grid = frm.fields_dict.items?.grid;
+	if (!grid?.wrapper || !grid.header_row || !grid.grid_rows) return;
+	ensure_stock_entry_fill_preview_styles();
+	const $wrapper = $(grid.wrapper);
+	STOCK_ENTRY_ROW_COPY_FIELDS.forEach((fieldname) => {
+		const $header = grid.header_row.columns[fieldname];
+		if ($header?.length && !$header.find(".ss-coil-grid-fill-below").length) {
+			const $label = $header.find(".static-area");
+			$label.css({ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "4px" });
+			$label.append(`<button type="button" class="ss-coil-grid-fill-below" data-fieldname="${fieldname}" title="${__("Copy this column down from row 1")}" style="border:0;background:transparent;color:var(--primary);font-weight:700;padding:0 3px;cursor:pointer;">+</button>`);
+		}
+		grid.grid_rows.forEach((grid_row, row_index) => {
+			const $column = grid_row.columns[fieldname];
+			if ($column?.length && !$column.find(".ss-coil-grid-fill-handle").length) {
+				$column.css("position", "relative").append(`<button type="button" class="ss-coil-grid-fill-handle" data-fieldname="${fieldname}" data-row-name="${grid_row.doc?.name || ""}" title="${__("Drag down to fill this column")}" style="position:absolute;right:1px;bottom:1px;width:8px;height:8px;padding:0;border:1px solid white;border-radius:2px;background:#2563eb;cursor:crosshair;z-index:3;"></button>`);
+			}
+		});
+	});
+	$wrapper.off("click.ssCoilFillDown", ".ss-coil-grid-fill-below");
+	$wrapper.on("click.ssCoilFillDown", ".ss-coil-grid-fill-below", function (event) {
+		event.preventDefault();
+		event.stopPropagation();
+		fill_stock_entry_grid_column(frm, $(this).data("fieldname"), 0, grid.grid_rows.length - 1);
+	});
+	$wrapper.off("mousedown.ssCoilFillDown", ".ss-coil-grid-fill-handle");
+	$wrapper.on("mousedown.ssCoilFillDown", ".ss-coil-grid-fill-handle", function (event) {
+		event.preventDefault();
+		event.stopPropagation();
+		frm.__ss_coil_fill_drag = {
+			fieldname: $(this).data("fieldname"),
+			start_name: $(this).data("row-name"),
+		};
+		update_stock_entry_grid_fill_preview(frm, grid, frm.__ss_coil_fill_drag, -1);
+	});
+	$(document).off("mousemove.ssCoilGridFillDown").on("mousemove.ssCoilGridFillDown", (event) => {
+		const drag = frm.__ss_coil_fill_drag;
+		if (!drag) return;
+		const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".grid-row[data-name]");
+		const end_index = target ? grid.grid_rows.findIndex((row) => row.doc?.name === target.dataset.name) : -1;
+		update_stock_entry_grid_fill_preview(frm, grid, drag, end_index);
+	});
+	$(document).off("mouseup.ssCoilGridFillDown").on("mouseup.ssCoilGridFillDown", (event) => {
+		const drag = frm.__ss_coil_fill_drag;
+		frm.__ss_coil_fill_drag = null;
+		if (!drag) return;
+		const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".grid-row[data-name]");
+		const start_index = grid.grid_rows.findIndex((row) => row.doc?.name === drag.start_name);
+		const end_index = target ? grid.grid_rows.findIndex((row) => row.doc?.name === target.dataset.name) : -1;
+		if (end_index > start_index) {
+			fill_stock_entry_grid_column(frm, drag.fieldname, start_index, end_index);
+		}
+		clear_stock_entry_fill_preview($wrapper);
+	});
+}
+
+function ensure_stock_entry_fill_preview_styles() {
+	if (document.getElementById("ss-coil-fill-preview-styles")) return;
+	const style = document.createElement("style");
+	style.id = "ss-coil-fill-preview-styles";
+	style.textContent = `
+		.ss-coil-fill-source-preview { background-color:#bfdbfe!important; box-shadow:inset 0 0 0 2px #2563eb!important; }
+		.ss-coil-fill-target-preview { background-color:#dbeafe!important; box-shadow:inset 0 0 0 1px #60a5fa!important; }
+		.ss-coil-fill-source-preview input,.ss-coil-fill-target-preview input { background-color:#dbeafe!important; }
+	`;
+	document.head.appendChild(style);
+}
+
+function clear_stock_entry_fill_preview($scope) {
+	$scope.find(".ss-coil-fill-source-preview,.ss-coil-fill-target-preview").removeClass(
+		"ss-coil-fill-source-preview ss-coil-fill-target-preview"
+	);
+}
+
+function update_stock_entry_grid_fill_preview(frm, grid, drag, end_index) {
+	const $wrapper = $(grid.wrapper);
+	clear_stock_entry_fill_preview($wrapper);
+	const start_index = grid.grid_rows.findIndex((row) => row.doc?.name === drag.start_name);
+	if (start_index < 0) return;
+	grid.grid_rows[start_index]?.columns[drag.fieldname]?.addClass("ss-coil-fill-source-preview");
+	if (end_index <= start_index) return;
+	for (let index = start_index + 1; index <= end_index; index++) {
+		grid.grid_rows[index]?.columns[drag.fieldname]?.addClass("ss-coil-fill-target-preview");
+	}
+}
+
+function fill_stock_entry_grid_column(frm, fieldname, start_index, end_index) {
+	if (!STOCK_ENTRY_ROW_COPY_FIELDS.includes(fieldname)) return;
+	const rows = frm.doc.items || [];
+	const source = rows[start_index];
+	if (!source || end_index <= start_index) return;
+	for (let index = start_index + 1; index <= end_index && index < rows.length; index++) {
+		frappe.model.set_value(rows[index].doctype, rows[index].name, fieldname, source[fieldname] ?? "");
+	}
 }
 
 frappe.ui.form.on("Stock Entry Detail", {
@@ -619,7 +728,7 @@ const STOCK_ENTRY_DATA_ENTRY_PARENT_FIELDS = [
 ];
 
 const STOCK_ENTRY_DATA_ENTRY_CHILD_GROUPS = [
-	{ label: "Item", fields: ["item_code", "qty"] },
+	{ label: "Item", fields: ["item_code", "qty", "s_warehouse", "t_warehouse"] },
 	{
 		label: "Identification",
 		fields: ["custom_tag_no", "custom_ref_no", "custom_mill"],
@@ -783,6 +892,7 @@ function setup_stock_entry_data_entry_ui(state, $root) {
 	const $table = $root.find(".ss-coil-de-table");
 	render_stock_entry_data_entry_table_head(state, $table.find("thead"));
 	render_stock_entry_data_entry_item_rows(state, $table.find("tbody"));
+	bind_stock_entry_data_entry_fill_controls(state, $table);
 	update_stock_entry_data_entry_row_count(state);
 
 	$root.find(".ss-coil-de-add-row").on("click", () => {
@@ -1096,10 +1206,10 @@ function apply_stock_entry_data_entry_parent_to_items(parent_data, items) {
 			updated.custom_for_customer = parent_data.custom_for_customer || "";
 		}
 		if (parent_data.from_warehouse !== undefined) {
-			updated.s_warehouse = parent_data.from_warehouse || "";
+			updated.s_warehouse = updated.s_warehouse || parent_data.from_warehouse || "";
 		}
 		if (parent_data.to_warehouse !== undefined) {
-			updated.t_warehouse = parent_data.to_warehouse || "";
+			updated.t_warehouse = updated.t_warehouse || parent_data.to_warehouse || "";
 		}
 		return updated;
 	});
@@ -1121,8 +1231,6 @@ function get_stock_entry_data_entry_initial_items(frm) {
 	return (frm.doc.items || []).map((row) => {
 		const item = { ...row };
 		delete item.custom_for_customer;
-		delete item.s_warehouse;
-		delete item.t_warehouse;
 		delete item.custom_create_tag_no;
 		delete item.custom_remarks;
 		return item;
@@ -1177,9 +1285,11 @@ function render_stock_entry_data_entry_table_head(state, $thead) {
 			`<th class="ss-coil-de-group-head" colspan="${group.fields.length}">${__(group.label)}</th>`
 		);
 		group.fields.forEach((df) => {
-			$field_row.append(
-				`<th data-fieldname="${df.fieldname}">${df.fieldname === "qty" || df.label === "Qty" || df.label === "Quantity" ? __("Qty (kg)") : __(df.label)}${df.reqd ? '<span class="ss-coil-de-reqd">*</span>' : ""}</th>`
-			);
+			const label = df.fieldname === "qty" || df.label === "Qty" || df.label === "Quantity" ? __("Qty (kg)") : __(df.label);
+			const fill_button = STOCK_ENTRY_ROW_COPY_FIELDS.includes(df.fieldname)
+				? `<button type="button" class="ss-coil-de-fill-below" data-fieldname="${df.fieldname}" title="${__("Copy this column down from row 1")}" style="margin-left:4px;border:0;background:transparent;color:var(--primary);font-weight:700;padding:0 3px;cursor:pointer;">+</button>`
+				: "";
+			$field_row.append(`<th data-fieldname="${df.fieldname}"><span>${label}${df.reqd ? '<span class="ss-coil-de-reqd">*</span>' : ""}</span>${fill_button}</th>`);
 		});
 	});
 
@@ -1187,6 +1297,74 @@ function render_stock_entry_data_entry_table_head(state, $thead) {
 	$field_row.append('<th class="ss-coil-de-col-action ss-coil-de-sticky-right"></th>');
 
 	$thead.empty().append($group_row).append($field_row);
+}
+
+function bind_stock_entry_data_entry_fill_controls(state, $table) {
+	ensure_stock_entry_fill_preview_styles();
+	$table.off("click.ssCoilFillDown", ".ss-coil-de-fill-below").on("click.ssCoilFillDown", ".ss-coil-de-fill-below", function (event) {
+		event.preventDefault();
+		event.stopPropagation();
+		fill_stock_entry_data_entry_column(state, $(this).data("fieldname"), 0, state.item_rows.length - 1);
+	});
+	$table.off("mousedown.ssCoilFillDown", ".ss-coil-de-fill-handle").on("mousedown.ssCoilFillDown", ".ss-coil-de-fill-handle", function (event) {
+		event.preventDefault();
+		event.stopPropagation();
+		state.fill_drag = {
+			fieldname: $(this).data("fieldname"),
+			start_name: $(this).data("row-name"),
+		};
+		update_stock_entry_data_entry_fill_preview(state, state.fill_drag, -1);
+	});
+	$(document).off("mousemove.ssCoilDataEntryFillDown").on("mousemove.ssCoilDataEntryFillDown", (event) => {
+		const drag = state.fill_drag;
+		if (!drag) return;
+		const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".ss-coil-de-item-row");
+		const end_index = target
+			? state.item_rows.findIndex((row) => row.item.name === target.dataset.rowName)
+			: -1;
+		update_stock_entry_data_entry_fill_preview(state, drag, end_index);
+	});
+	$(document).off("mouseup.ssCoilDataEntryFillDown").on("mouseup.ssCoilDataEntryFillDown", (event) => {
+		const drag = state.fill_drag;
+		state.fill_drag = null;
+		if (!drag) return;
+		const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".ss-coil-de-item-row");
+		const start_index = state.item_rows.findIndex((row) => row.item.name === drag.start_name);
+		const end_index = target
+			? state.item_rows.findIndex((row) => row.item.name === target.dataset.rowName)
+			: -1;
+		if (end_index > start_index) {
+			fill_stock_entry_data_entry_column(state, drag.fieldname, start_index, end_index);
+		}
+		clear_stock_entry_fill_preview(state.$root);
+	});
+}
+
+function update_stock_entry_data_entry_fill_preview(state, drag, end_index) {
+	clear_stock_entry_fill_preview(state.$root);
+	const start_index = state.item_rows.findIndex((row) => row.item.name === drag.start_name);
+	if (start_index < 0) return;
+	state.item_rows[start_index]?.$tr
+		.find(`[data-fieldname="${drag.fieldname}"]`)
+		.addClass("ss-coil-fill-source-preview");
+	if (end_index <= start_index) return;
+	for (let index = start_index + 1; index <= end_index; index++) {
+		state.item_rows[index]?.$tr
+			.find(`[data-fieldname="${drag.fieldname}"]`)
+			.addClass("ss-coil-fill-target-preview");
+	}
+}
+
+function fill_stock_entry_data_entry_column(state, fieldname, start_index, end_index) {
+	if (!STOCK_ENTRY_ROW_COPY_FIELDS.includes(fieldname)) return;
+	const source_row = state.item_rows[start_index];
+	if (!source_row || end_index <= start_index) return;
+	const value = source_row.controls[fieldname]?.get_value() ?? source_row.item[fieldname] ?? "";
+	for (let index = start_index + 1; index <= end_index && index < state.item_rows.length; index++) {
+		const target_row = state.item_rows[index];
+		target_row.item[fieldname] = value;
+		target_row.controls[fieldname]?.set_value(value);
+	}
 }
 
 function render_stock_entry_data_entry_item_rows(state, $tbody) {
@@ -1210,7 +1388,7 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 
 	state.child_columns.forEach((group) => {
 		group.fields.forEach((df) => {
-			const $td = $(`<td data-fieldname="${df.fieldname}"></td>`).appendTo($tr);
+			const $td = $(`<td data-fieldname="${df.fieldname}" style="position:relative;"></td>`).appendTo($tr);
 			const control = frappe.ui.form.make_control({
 				df: {
 					fieldtype: df.fieldtype,
@@ -1245,6 +1423,9 @@ function append_stock_entry_data_entry_item_row(state, $tbody, item, idx) {
 			control.set_value(item[df.fieldname]);
 			relocate_stock_entry_data_entry_dropdown(control);
 			controls[df.fieldname] = control;
+			if (STOCK_ENTRY_ROW_COPY_FIELDS.includes(df.fieldname)) {
+				$td.append(`<button type="button" class="ss-coil-de-fill-handle" data-fieldname="${df.fieldname}" data-row-name="${item.name}" title="${__("Drag down to fill this column")}" style="position:absolute;right:1px;bottom:1px;width:8px;height:8px;padding:0;border:1px solid white;border-radius:2px;background:#2563eb;cursor:crosshair;z-index:3;"></button>`);
+			}
 		});
 	});
 	update_semi_finish_item_visibility();

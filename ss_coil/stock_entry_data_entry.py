@@ -30,6 +30,8 @@ PARENT_SECTIONS = [
 
 STOCK_ENTRY_DATA_ENTRY_CHILD_FIELDS = [
 	"item_code",
+	"s_warehouse",
+	"t_warehouse",
 	"custom_finish_good_item",
 	"custom_semi_finish_item",
 	"qty",
@@ -107,6 +109,8 @@ def _sync_item_from_parent(doc, item):
 	for child_field, parent_field in CHILD_FIELDS_SYNCED_FROM_PARENT.items():
 		parent_value = doc.get(parent_field)
 		if parent_value not in (None, ""):
+			if child_field in ("s_warehouse", "t_warehouse") and item.get(child_field):
+				continue
 			item.set(child_field, parent_value)
 
 
